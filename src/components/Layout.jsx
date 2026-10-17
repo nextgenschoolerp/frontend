@@ -49,6 +49,16 @@ export default function Layout() {
   const logout = () => { signOut(); navigate('/login', { replace: true }); };
   useEffect(() => { window.scrollTo(0, 0); document.title = `Oakridge Academy – ${crumbs[crumbs.length - 1]}`; }, [pathname]);
 
+  // Cards below the fold slide up as they scroll into view; the rest come in with the page entrance.
+  useEffect(() => {
+    const below = [...document.querySelectorAll('.page .card')].filter((el) => el.getBoundingClientRect().top > window.innerHeight);
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('is-revealed'); observer.unobserve(e.target); } });
+    }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+    below.forEach((el) => { el.classList.add('reveal'); observer.observe(el); });
+    return () => observer.disconnect();
+  }, [pathname]);
+
   return (
     <div className="app">
       <aside className="sidebar">
@@ -103,7 +113,7 @@ export default function Layout() {
             </div>
           </div>
         </header>
-        <div className="page"><Outlet /></div>
+        <div className="page" key={pathname}><Outlet /></div>
       </div>
     </div>
   );

@@ -337,3 +337,18 @@ select.select{appearance:none;padding-right:26px;background:var(--card) url("dat
 }
 [data-theme="black"] .navitem.active,[data-theme="black"] .themeopt,[data-theme="black"] .navitem .count{color:#aeb2f5}
 [data-theme="black"] .thememenu{box-shadow:0 12px 32px rgba(0,0,0,.5)}
+
+/* entrance + scroll reveal (slide in from below) */
+@keyframes slideInUp{from{opacity:0;transform:translateY(40px)}to{opacity:1;transform:none}}
+.page>*,.login-quote>*,.login-form>*,.login-art>.brand{animation:slideInUp .85s cubic-bezier(.16,1,.3,1) both}
+.page>:nth-child(1),.login-art>.brand,.login-form>:nth-child(1){animation-delay:.1s}
+.page>:nth-child(2),.login-quote>:nth-child(1),.login-form>:nth-child(2){animation-delay:.25s}
+.page>:nth-child(3),.login-quote>:nth-child(2),.login-form>:nth-child(3){animation-delay:.4s}
+.page>:nth-child(4),.login-form>:nth-child(4){animation-delay:.55s}
+.page>:nth-child(n+5),.login-form>:nth-child(n+5){animation-delay:.7s}
+.reveal{opacity:0;transform:translateY(35px);transition:opacity .85s cubic-bezier(.16,1,.3,1),transform .85s cubic-bezier(.16,1,.3,1)}
+.reveal.is-revealed{opacity:1;transform:none}
+@media (prefers-reduced-motion:reduce){
+  .page>*,.login-quote>*,.login-form>*,.login-art>.brand{animation:none}
+  .reveal{opacity:1;transform:none;transition:none}
+}
