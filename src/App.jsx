@@ -1,5 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout.jsx';
+import Login from './pages/Login.jsx';
+import { RequireAuth } from './auth.jsx';
 import Overview from './pages/Overview.jsx';
 import { StudentsDirectory, StudentForm, StudentProfile } from './pages/Students.jsx';
 import { StaffDirectory, StaffForm, StaffProfile } from './pages/Staff.jsx';
@@ -9,7 +11,8 @@ import { Calendar, Communications, Reports, Documents, Settings, Help } from './
 export default function App() {
   return (
     <Routes>
-      <Route element={<Layout />}>
+      <Route path="login" element={<Login />} />
+      <Route element={<RequireAuth><Layout /></RequireAuth>}>
         <Route index element={<Overview />} />
         <Route path="students" element={<StudentsDirectory />} />
         <Route path="students/new" element={<StudentForm mode="add" />} />

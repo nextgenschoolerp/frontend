@@ -1,10 +1,11 @@
-import { NavLink, Outlet, useLocation, Link } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate, Link } from 'react-router-dom';
 import {
   School, Building2, ChevronsUpDown, LayoutDashboard, GraduationCap, Users, BookOpen,
   ClipboardCheck, Wallet, CalendarDays, Megaphone, ChartNoAxesCombined, FolderOpen,
-  Settings as SettingsIcon, CircleHelp, ChevronRight, ChevronDown, Search, CalendarRange, Bell,
+  Settings as SettingsIcon, CircleHelp, ChevronRight, ChevronDown, Search, CalendarRange, Bell, LogOut,
 } from 'lucide-react';
 import { useEffect } from 'react';
+import { useAuth } from '../auth.jsx';
 
 const GROUPS = [
   ['WORKSPACE', [
@@ -42,6 +43,9 @@ function crumbsFor(pathname) {
 export default function Layout() {
   const { pathname } = useLocation();
   const crumbs = crumbsFor(pathname);
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
+  const logout = () => { signOut(); navigate('/login', { replace: true }); };
   useEffect(() => { window.scrollTo(0, 0); document.title = `Oakridge Academy – ${crumbs[crumbs.length - 1]}`; }, [pathname]);
 
   return (
@@ -75,9 +79,9 @@ export default function Layout() {
           </div>
           <hr />
           <div className="account">
-            <div className="avatar-s">SW</div>
-            <div><b>Sarah Williams</b><small>Administrator</small></div>
-            <ChevronsUpDown size={13} />
+            <div className="avatar-s">{user.initials}</div>
+            <div><b>{user.name}</b><small>{user.role}</small></div>
+            <button className="signout" onClick={logout} title="Sign out" aria-label="Sign out"><LogOut size={15} /></button>
           </div>
         </div>
       </aside>
