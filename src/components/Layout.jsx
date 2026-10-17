@@ -2,9 +2,9 @@ import { NavLink, Outlet, useLocation, useNavigate, Link } from 'react-router-do
 import {
   School, Building2, ChevronsUpDown, LayoutDashboard, GraduationCap, Users, BookOpen,
   ClipboardCheck, Wallet, CalendarDays, Megaphone, ChartNoAxesCombined, FolderOpen,
-  Settings as SettingsIcon, CircleHelp, ChevronRight, ChevronDown, Search, CalendarRange, Bell, LogOut,
+  Settings as SettingsIcon, CircleHelp, ChevronRight, ChevronDown, Search, CalendarRange, Bell, LogOut, Menu, X,
 } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../auth.jsx';
 import ThemePicker from './ThemePicker.jsx';
 
@@ -46,8 +46,18 @@ export default function Layout() {
   const crumbs = crumbsFor(pathname);
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const [navOpen, setNavOpen] = useState(false);
   const logout = () => { signOut(); navigate('/login', { replace: true }); };
   useEffect(() => { window.scrollTo(0, 0); document.title = `Oakridge Academy – ${crumbs[crumbs.length - 1]}`; }, [pathname]);
+
+  useEffect(() => setNavOpen(false), [pathname]);
+  useEffect(() => {
+    if (!navOpen) return;
+    const onKey = (e) => e.key === 'Escape' && setNavOpen(false);
+    document.addEventListener('keydown', onKey);
+    document.body.classList.add('noscroll');
+    return () => { document.removeEventListener('keydown', onKey); document.body.classList.remove('noscroll'); };
+  }, [navOpen]);
 
   // Cards below the fold slide up as they scroll into view; the rest come in with the page entrance.
   useEffect(() => {
@@ -61,10 +71,12 @@ export default function Layout() {
 
   return (
     <div className="app">
-      <aside className="sidebar">
+      {navOpen && <div className="backdrop" onClick={() => setNavOpen(false)} />}
+      <aside className={'sidebar' + (navOpen ? ' open' : '')} id="sidebar">
         <div className="brand">
           <div className="crest"><School size={22} /></div>
           <div><b>Oakridge</b><small>ACADEMY</small></div>
+          <button className="navclose" onClick={() => setNavOpen(false)} aria-label="Close menu"><X size={18} /></button>
         </div>
         <div className="campus">
           <Building2 size={16} />
@@ -92,6 +104,7 @@ export default function Layout() {
       </aside>
       <div className="main">
         <header className="toolbar">
+          <button className="menubtn" onClick={() => setNavOpen(true)} aria-label="Open menu" aria-controls="sidebar" aria-expanded={navOpen}><Menu size={20} /></button>
           <div className="crumbs">
             <Link to="/">Workspace</Link>
             {crumbs.map((c, i) => (
@@ -103,7 +116,7 @@ export default function Layout() {
           </div>
           <div className="tools">
             <label className="gsearch"><Search size={15} /><input placeholder="Search students, staff, records..." /><small>⌘ K</small></label>
-            <div className="year"><CalendarRange size={15} />2026–2027<ChevronDown size={12} /></div>
+            <div className="year"><CalendarRange size={15} /><span>2026–2027</span><ChevronDown size={12} /></div>
             <ThemePicker />
             <div className="bell"><Bell size={19} /></div>
             <div className="account">

@@ -62,7 +62,7 @@ export default function Overview() {
         ['Term fees collected', '£846,000', '£114,000 outstanding', '88.1% of term billing', true, Wallet],
       ]} />
 
-      <div className="cols" style={{ '--side': '448px', gridTemplateColumns: 'minmax(0,756fr) minmax(0,448fr)' }}>
+      <div className="cols ov">
         <Card>
           <div className="sh">
             <div><h3>Attendance trends</h3><p>Student attendance · 12–16 October</p></div>
@@ -110,7 +110,7 @@ export default function Overview() {
         </Card>
       </div>
 
-      <div className="cols" style={{ gridTemplateColumns: 'minmax(0,756fr) minmax(0,448fr)' }}>
+      <div className="cols ov">
         <Card flush>
           <SectionHead pad title="Needs your attention" sub="A clear queue for the day ahead" link="All tasks" />
           <div className="tablewrap">
