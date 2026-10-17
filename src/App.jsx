@@ -1,0 +1,35 @@
+import { Routes, Route, Navigate } from 'react-router-dom';
+import Layout from './components/Layout.jsx';
+import Overview from './pages/Overview.jsx';
+import { StudentsDirectory, StudentForm, StudentProfile } from './pages/Students.jsx';
+import { StaffDirectory, StaffForm, StaffProfile } from './pages/Staff.jsx';
+import { Academics, Attendance, Fees } from './pages/Operations.jsx';
+import { Calendar, Communications, Reports, Documents, Settings, Help } from './pages/Admin.jsx';
+
+export default function App() {
+  return (
+    <Routes>
+      <Route element={<Layout />}>
+        <Route index element={<Overview />} />
+        <Route path="students" element={<StudentsDirectory />} />
+        <Route path="students/new" element={<StudentForm mode="add" />} />
+        <Route path="students/:id" element={<StudentProfile />} />
+        <Route path="students/:id/edit" element={<StudentForm mode="edit" />} />
+        <Route path="staff" element={<StaffDirectory />} />
+        <Route path="staff/new" element={<StaffForm />} />
+        <Route path="staff/:id" element={<StaffProfile />} />
+        <Route path="staff/:id/edit" element={<StaffForm />} />
+        <Route path="academics" element={<Academics />} />
+        <Route path="attendance" element={<Attendance />} />
+        <Route path="fees" element={<Fees />} />
+        <Route path="calendar" element={<Calendar />} />
+        <Route path="communications" element={<Communications />} />
+        <Route path="reports" element={<Reports />} />
+        <Route path="documents" element={<Documents />} />
+        <Route path="settings" element={<Settings />} />
+        <Route path="help" element={<Help />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Route>
+    </Routes>
+  );
+}
