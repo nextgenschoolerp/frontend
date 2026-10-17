@@ -20,15 +20,15 @@ export function AttendanceChart() {
         <span>98%</span><span>96%</span><span>94%</span><span>92%</span>
       </div>
       <svg viewBox={`-6 0 ${W + 12} 133`} style={{ flex: 1, minWidth: 0, height: 133, overflow: 'visible' }} preserveAspectRatio="none">
-        {[4, 38, 72, 106].map((t) => <line key={t} x1="0" x2={W} y1={t} y2={t} stroke="#efeee9" />)}
-        <path d={`${line}L${W},106L0,106Z`} fill="#5054a6" opacity=".08" />
-        <line x1="0" x2={W} y1={y(95)} y2={y(95)} stroke="#9597a1" strokeDasharray="3 3" />
-        <path d={line} fill="none" stroke="#5054a6" strokeWidth="1.5" />
+        {[4, 38, 72, 106].map((t) => <line key={t} x1="0" x2={W} y1={t} y2={t} style={{ stroke: 'var(--gl)' }} />)}
+        <path d={`${line}L${W},106L0,106Z`} style={{ fill: 'var(--pr)' }} opacity=".08" />
+        <line x1="0" x2={W} y1={y(95)} y2={y(95)} style={{ stroke: 'var(--fa)' }} strokeDasharray="3 3" />
+        <path d={line} fill="none" style={{ stroke: 'var(--pr)' }} strokeWidth="1.5" />
         {POINTS.map((v, i) => (
           <g key={i}>
-            <circle cx={x(i)} cy={y(v)} r="3" fill="#fff" stroke="#5054a6" />
-            <text x={x(i)} y={y(v) - 8} fontSize="9" fill="#5054a6" textAnchor={anchor(i)}>{v}%</text>
-            <text x={x(i)} y="128" fontSize="9" fill="#767986" textAnchor={anchor(i)}>{DAYS[i]}</text>
+            <circle cx={x(i)} cy={y(v)} r="3" style={{ fill: 'var(--card)', stroke: 'var(--pr)' }} />
+            <text x={x(i)} y={y(v) - 8} fontSize="9" style={{ fill: 'var(--pr)' }} textAnchor={anchor(i)}>{v}%</text>
+            <text x={x(i)} y="128" fontSize="9" style={{ fill: 'var(--mu)' }} textAnchor={anchor(i)}>{DAYS[i]}</text>
           </g>
         ))}
       </svg>
@@ -75,9 +75,9 @@ export default function Overview() {
           <AttendanceChart />
           <div className="legendrow">
             <span>TODAY</span>
-            <span className="i"><i style={{ background: '#27846a' }} />1,188 present</span>
-            <span className="i"><i style={{ background: '#d5ad78' }} />42 excused</span>
-            <span className="i"><i style={{ background: '#bc5155' }} />18 unexcused</span>
+            <span className="i"><i style={{ background: 'var(--gr)' }} />1,188 present</span>
+            <span className="i"><i style={{ background: 'var(--chart-am)' }} />42 excused</span>
+            <span className="i"><i style={{ background: 'var(--rd)' }} />18 unexcused</span>
             <Link to="/attendance" className="link"><ArrowUpRight size={14} /></Link>
           </div>
         </Card>
@@ -93,9 +93,9 @@ export default function Overview() {
           </div>
           <div>
             <div className="collbar">
-              <i style={{ width: '88.1%', background: '#27846a' }} />
-              <i style={{ width: '7.9%', background: '#dadcf0' }} />
-              <i style={{ flex: 1, background: '#d5ad78' }} />
+              <i style={{ width: '88.1%', background: 'var(--gr)' }} />
+              <i style={{ width: '7.9%', background: 'var(--tint2)' }} />
+              <i style={{ flex: 1, background: 'var(--chart-am)' }} />
             </div>
             <div className="row xs muted" style={{ marginTop: 8 }}><span>Collected</span><span>Outstanding £114,000</span></div>
           </div>

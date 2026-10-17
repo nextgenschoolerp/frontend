@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useEffect } from 'react';
 import { useAuth } from '../auth.jsx';
+import ThemePicker from './ThemePicker.jsx';
 
 const GROUPS = [
   ['WORKSPACE', [
@@ -77,12 +78,6 @@ export default function Layout() {
             <NavLink to="/settings" className={({ isActive }) => (isActive ? 'active' : '')}><SettingsIcon size={18} />Settings</NavLink>
             <NavLink to="/help" className={({ isActive }) => (isActive ? 'active' : '')}><CircleHelp size={18} />Help & support</NavLink>
           </div>
-          <hr />
-          <div className="account">
-            <div className="avatar-s">{user.initials}</div>
-            <div><b>{user.name}</b><small>{user.role}</small></div>
-            <button className="signout" onClick={logout} title="Sign out" aria-label="Sign out"><LogOut size={15} /></button>
-          </div>
         </div>
       </aside>
       <div className="main">
@@ -99,7 +94,13 @@ export default function Layout() {
           <div className="tools">
             <label className="gsearch"><Search size={15} /><input placeholder="Search students, staff, records..." /><small>⌘ K</small></label>
             <div className="year"><CalendarRange size={15} />2026–2027<ChevronDown size={12} /></div>
+            <ThemePicker />
             <div className="bell"><Bell size={19} /></div>
+            <div className="account">
+              <div className="avatar-s" title={`${user.name} · ${user.role}`}>{user.initials}</div>
+              <div><b>{user.name}</b><small>{user.role}</small></div>
+              <button className="signout" onClick={logout} title="Sign out" aria-label="Sign out"><LogOut size={16} /></button>
+            </div>
           </div>
         </header>
         <div className="page"><Outlet /></div>

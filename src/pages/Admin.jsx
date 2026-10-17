@@ -276,7 +276,7 @@ export function Documents() {
           <div className="filters"><SearchBox placeholder="Search file name or owner" width={300} /><Select>All file types</Select><Select>All permissions</Select></div>
           <div className="tablebox">
             <DataTable cols={[
-              { label: 'Name', render: (r) => <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}><FileText size={16} color="#5054a6" /><b style={{ fontWeight: 500 }}>{r[0]}</b></span> },
+              { label: 'Name', render: (r) => <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}><FileText size={16} style={{ color: 'var(--pr)' }} /><b style={{ fontWeight: 500 }}>{r[0]}</b></span> },
               { label: 'Owner', key: 1 }, { label: 'Modified', key: 2 }, { label: 'Access', key: 3 }, { label: 'Size', key: 4 },
               { label: 'Action', render: (r) => <span className="act" onClick={() => setSel(FILES.indexOf(r))}>Open</span> },
             ]} rows={FILES} />
@@ -288,7 +288,7 @@ export function Documents() {
             <h3 style={{ fontSize: 15, fontWeight: 600 }}>Document details</h3>
             <p className="small muted" style={{ marginTop: 4 }}>{f[0]}</p>
             <div style={{ margin: '16px 0', border: '1px solid var(--bd)', borderRadius: 8, padding: 24, background: 'var(--sb)', textAlign: 'center' }}>
-              <FileText size={28} color="#5054a6" /><b style={{ display: 'block', margin: '8px 0 2px', fontSize: 12 }}>Oakridge Academy</b><span className="xs muted">{f[0].replace('.pdf', '')}<br />2026–2027</span>
+              <FileText size={28} style={{ color: 'var(--pr)' }} /><b style={{ display: 'block', margin: '8px 0 2px', fontSize: 12 }}>Oakridge Academy</b><span className="xs muted">{f[0].replace('.pdf', '')}<br />2026–2027</span>
             </div>
             <KV rows={[['File type', 'PDF document'], ['Size', f[4]], ['Owner', f[1]], ['Modified', f[2]], ['Version', '3.0 · Current']]} />
             <div className="actions" style={{ marginTop: 14 }}><button className="btn primary"><Download size={14} />Download</button><button className="btn">Share</button></div>
@@ -302,7 +302,7 @@ export function Documents() {
         </div>
       </div>
       <Card className="notice" style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-        <ShieldCheck size={18} color="#5054a6" />
+        <ShieldCheck size={18} style={{ color: 'var(--pr)' }} />
         <div><h4>Secure by default</h4><p>Student and staff records are restricted to authorised teams. Shared links respect existing permissions and access is logged.</p></div>
       </Card>
       <Footer />

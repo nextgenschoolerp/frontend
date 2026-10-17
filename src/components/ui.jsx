@@ -33,7 +33,7 @@ export const Metrics = ({ items }) => (
   <div className="grid4">
     {items.map(([label, value, sub, ctx, good, Icon]) => (
       <div className="card metric" key={label}>
-        <div className="mt">{label}{Icon ? <Icon size={17} color="#5054a6" /> : null}</div>
+        <div className="mt">{label}{Icon ? <Icon size={17} style={{ color: 'var(--pr)' }} /> : null}</div>
         <div className="mv">{value}</div>
         <div className={'mc' + (good ? ' good' : '')}>{ctx || sub}{ctx && <small>{sub}</small>}</div>
       </div>
