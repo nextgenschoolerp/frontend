@@ -19,10 +19,13 @@ svg.lucide{flex:none}
 .crest{width:36px;height:40px;border-radius:10px;background:var(--pr);color:#fff;display:grid;place-items:center}
 .brand b{display:block;font-weight:400;font-size:15px}
 .brand small{display:block;font-size:10px;color:var(--mu)}
-.campus{border:1px solid var(--bd);border-radius:8px;padding:10px;display:flex;gap:8px;align-items:center;color:var(--mu)}
-.campus div{flex:1}
-.campus b{display:block;font-weight:500;font-size:12px;color:var(--tx)}
+/* Campus switcher in the top bar */
+.campus{border:1px solid var(--bd);border-radius:8px;padding:6px 10px;display:flex;gap:8px;align-items:center;color:var(--mu);max-width:240px;min-width:0;flex:none}
+.campus div{min-width:0}
+.campus b,.campus small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.campus b{font-weight:500;font-size:12px;color:var(--tx)}
 .campus small{font-size:10px}
+.campus>svg{flex:none}
 .navgroup h6{font-size:9px;font-weight:600;color:var(--fa);margin-bottom:10px;letter-spacing:.02em}
 .navlinks{display:flex;flex-direction:column;gap:4px}
 .navitem{display:flex;gap:11px;align-items:center;height:40px;padding:0 12px;border-radius:8px;color:var(--mu);font-size:12px}
@@ -64,6 +67,8 @@ svg.lucide{flex:none}
 .context .dot{width:6px;height:6px;border-radius:6px;background:var(--gr)}
 .context .sep{color:var(--fa)}
 .context .ok{color:var(--gr)}
+.context .off{color:var(--am)}
+.context .dot.off{background:var(--am)}
 
 /* cards */
 .card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:20px;min-width:0}
@@ -111,6 +116,11 @@ table.t .act{color:var(--pr);font-weight:600;font-size:10px;display:inline-flex;
 .pager .pages{display:flex;gap:10px;align-items:center}
 .pager .pages b{width:22px;height:22px;display:grid;place-items:center;border-radius:6px;font-weight:500}
 .pager .pages b.on{background:var(--tint);color:var(--pr)}
+.pager .pages button{background:none;border:0;padding:0 2px;font:inherit;color:var(--mu);cursor:pointer}
+.pager .pages button:disabled{opacity:.45;cursor:default}
+.pager .pages button.num{width:22px;height:22px;display:grid;place-items:center;border-radius:6px;font-weight:500}
+.pager .pages button.num.on{background:var(--tint);color:var(--pr)}
+.pager .pages button:not(:disabled):hover{color:var(--pr)}
 .avatar-sm{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--tint);color:var(--pr);font-size:10px;font-weight:600;margin-right:10px;vertical-align:middle}
 .cell-id{display:inline-block;vertical-align:middle}
 .cell-id b{display:block;font-weight:500}
@@ -309,7 +319,7 @@ select.select{appearance:none;padding-right:26px;background:var(--card) url("dat
   .login-art{display:none}
   .login-mobile-brand{display:flex}
 }
-@media (max-width:1200px){.toolbar .account div:not(.avatar-s){display:none}}
+@media (max-width:1200px){.toolbar .account>div:not(.acctmenu){display:none}}
 
 /* modal (role permissions, audit log) */
 .modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.45);display:grid;grid-template-columns:minmax(0,1fr);place-items:center;padding:16px;z-index:60}
@@ -445,3 +455,63 @@ body.noscroll{overflow:hidden}
 @media (max-width:420px){
   .grid4{grid-template-columns:1fr}
 }
+
+/* Review application → Next step */
+.nextstep .steps{display:flex;flex-direction:column;gap:8px}
+.nextstep .step{border:1px solid var(--bd);border-radius:10px;padding:10px 12px;background:var(--card)}
+.nextstep .step.on{border-color:var(--pr)}
+.nextstep .steprow{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.nextstep .steprow b{display:block;font-size:13px;font-weight:600}
+.nextstep .steprow small{display:block;font-size:11px;color:var(--mu);margin-top:2px}
+.nextstep .stepform{margin-top:12px;padding-top:12px;border-top:1px solid var(--bd)}
+.api-note.ok{background:var(--grbg);color:var(--gr)}
+
+/* Overview date button: a native date input opened with showPicker() */
+.today-label{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 4px;font-size:13px;font-weight:500;color:var(--tx)}
+.today-label svg{color:var(--pr)}
+
+/* Student photo and documents */
+.bigavatar{overflow:hidden}
+.bigavatar .avatar-img{width:100%;height:100%;object-fit:cover;display:block}
+.uploadrow{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:14px}
+.uploadrow input[type=file]{font-size:12px;max-width:100%}
+
+/* Academic progress: comparative bars per subject and term (student profile) */
+.cmpbars{display:flex;flex-direction:column;gap:10px}
+.cmpbars .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--mu)}
+.cmpbars .legend span{display:inline-flex;align-items:center;gap:6px}
+.cmpbars .legend i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.cmpbars .row{display:grid;grid-template-columns:150px 1fr;gap:12px;align-items:center}
+.cmpbars .name{font-size:12px;font-weight:500;color:var(--tx)}
+.cmpbars .bars{display:flex;flex-direction:column;gap:3px}
+.cmpbars .b{display:grid;grid-template-columns:1fr 64px;gap:8px;align-items:center}
+.cmpbars .b i{display:block;height:8px;border-radius:6px}
+.cmpbars .b small{font-size:10px;color:var(--mu);white-space:nowrap}
+@media (max-width:600px){.cmpbars .row{grid-template-columns:1fr}}
+.markinput{width:84px;height:30px;border:1px solid var(--bd);border-radius:6px;padding:0 8px;font:inherit;background:var(--card);color:var(--tx)}
+.markinput:disabled{opacity:.5}
+@media (max-width:1200px){.toolbar .campus small{display:none}}
+@media (max-width:800px){.toolbar .campus{padding:6px 8px;max-width:150px}.toolbar .campus>svg:last-of-type{display:none}}
+@media (max-width:640px){.toolbar .campus div{display:none}.toolbar .campus{max-width:none}}
+/* Account menu: the avatar opens user details, the academic session and sign out */
+.account{position:relative}
+.account button.avatar-s{cursor:pointer;border:0;flex:none}
+.account button.avatar-s:hover,.account button.avatar-s[aria-expanded="true"]{box-shadow:0 0 0 3px var(--gl)}
+.acctmenu{position:absolute;top:calc(100% + 10px);right:0;z-index:50;width:240px;background:var(--card);border:1px solid var(--bd);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.12);padding:6px;display:flex;flex-direction:column;color:var(--tx)}
+.acctmenu .acctmenu-head{padding:8px 10px 10px;border-bottom:1px solid var(--bd);margin-bottom:4px;line-height:1.4}
+.acctmenu .acctmenu-head small{display:block;color:var(--mu);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acctmenu>button.acctmenu-session{font-size:10px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--mu);white-space:nowrap}
+.acctmenu-session b{display:inline;color:var(--pr);font-weight:600}
+.acctmenu-session svg.flip{transform:rotate(180deg)}
+.acctmenu>button.acctmenu-year{padding-left:31px}
+.account button.avatar-s{overflow:hidden;padding:0}
+.account button.avatar-s img{width:100%;height:100%;object-fit:cover}
+.acctmenu>button.acctmenu-theme{padding-left:28px}
+.acctmenu>button.acctmenu-theme.on{color:var(--pr);font-weight:600}
+.acctmenu .swatch{display:block;flex:none;width:14px;height:14px;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(0,0,0,.12)}
+.acctmenu>button,.acctmenu>a{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;border-radius:7px;font-size:12px;color:var(--tx);text-align:left;text-decoration:none}
+.acctmenu>button span{flex:1}
+.acctmenu>button:hover,.acctmenu>a:hover{background:var(--gl)}
+.acctmenu>button.on{color:var(--pr);font-weight:600}
+.acctmenu>button.danger{color:var(--rd)}
+.acctmenu hr{border:0;border-top:1px solid var(--bd);margin:4px 0}

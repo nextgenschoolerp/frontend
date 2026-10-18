@@ -6,7 +6,9 @@ const SESSION_KEY = 'oakridge.session';
 
 export class ApiError extends Error {
   constructor(status, body) {
-    super(body?.message || (status === 0 ? 'Cannot reach the server. Check that the service is running.' : `Request failed (${status})`));
+    // A 5xx without the JSON envelope comes from the dev proxy when the backend service is not running
+    const unreachable = status === 0 || (status >= 500 && !body);
+    super(body?.message || (unreachable ? 'Cannot reach the server. Check that the service is running.' : `Request failed (${status})`));
     this.status = status;
     this.code = body?.errorCode;
     this.validationErrors = body?.validationErrors || [];
@@ -59,6 +61,25 @@ export async function request(method, path, { body, query, auth = true, token } 
   return json?.data ?? json;
 }
 
+/** GET a file with the bearer token (photos, document downloads); returns a Blob. */
+export async function fetchBlob(path) {
+  const bearer = storedToken();
+  let res;
+  try {
+    res = await fetch(path, { headers: bearer ? { Authorization: `Bearer ${bearer}` } : {} });
+  } catch {
+    throw new ApiError(0);
+  }
+  if (!res.ok) {
+    let json = null;
+    try { json = await res.json(); } catch { /* binary or empty */ }
+    const err = new ApiError(res.status, json);
+    if (res.status === 401 && bearer) onUnauthorized(err);
+    throw err;
+  }
+  return res.blob();
+}
+
 /** multipart/form-data upload (the browser sets the boundary header). */
 export async function upload(path, formData, { query } = {}) {
   const url = new URL(path, window.location.origin);
@@ -87,6 +108,7 @@ export const api = {
   get: (path, opts) => request('GET', path, opts),
   post: (path, body, opts) => request('POST', path, { ...opts, body }),
   put: (path, body, opts) => request('PUT', path, { ...opts, body }),
+  patch: (path, body, opts) => request('PATCH', path, { ...opts, body }),
   del: (path, opts) => request('DELETE', path, opts),
 };
 

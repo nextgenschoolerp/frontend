@@ -51,6 +51,7 @@ export function sessionFrom(res) {
     mfaRequired: !!res.mfaRequired,
     name,
     initials: name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase(),
+    photoUrl: res.photoUrl || res.avatarUrl || null, // uploaded profile picture, when the sign-in response carries one
     role: ROLE_LABELS[normaliseRole(res.userType)] || ROLE_LABELS[roles[0]] || normaliseRole(res.userType),
   };
 }

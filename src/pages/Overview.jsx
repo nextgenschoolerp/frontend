@@ -3,9 +3,10 @@ import {
   Calendar as CalIcon, Download, Plus, GraduationCap, ClipboardCheck, Users, Wallet,
   ArrowUpRight, Send, CalendarDays, ShieldCheck, ChevronDown,
 } from 'lucide-react';
-import { PageHeader, Metrics, SectionHead, Pill, Card, Footer } from '../components/ui.jsx';
+import { PageHeader, Metrics, SectionHead, Pill, Card, Footer, downloadCsv, TodayLabel } from '../components/ui.jsx';
 import { useAuth } from '../auth.jsx';
 import { useApplications } from '../components/Admissions.jsx';
+import { useStudents } from '../components/StudentRecords.jsx';
 
 const POINTS = [94.1, 95.8, 94.7, 96.1, 95.2];
 const DAYS = ['Mon 12', 'Tue 13', 'Wed 14', 'Thu 15', 'Fri 16'];
@@ -52,26 +53,39 @@ export default function Overview() {
   // "Admission applications" row: live count from GET /api/v1/admissions/enquiries (admissionservice)
   const apps = useApplications();
   const live = apps.canRead && !apps.missingBranch && !apps.error && apps.data;
+  // "Total students" and "Incomplete student records": GET /api/v1/students (studentservice); static for other roles
+  const students = useStudents();
   const work = WORK.map((row) => (row[0] === 'Admission applications'
     ? [row[0], row[1], live ? apps.open.length : (apps.loading ? '…' : '—'), row[3], row[4], row[5], row[6], '/students?tab=admissions']
-    : row));
+    : row[0] === 'Incomplete student records' && students.live
+      ? [row[0], 'Guardian, emergency phone or blood group missing', students.incomplete.length, row[3], row[4], row[5], row[6], row[7]]
+      : row));
+  const metrics = [
+    students.live
+      ? ['Total students', students.current.length.toLocaleString('en-GB'), `Across ${students.classCount} class sections`, `+${students.newThisYear.length} this year`, true, GraduationCap]
+      : ['Total students', '1,248', 'Across 44 classes', '+24 this term', true, GraduationCap],
+    ['Student attendance', '95.2%', '1,188 of 1,248 present', '+0.5 pp vs last week', true, ClipboardCheck],
+    ['Staff on campus', '86 / 92', 'All lessons covered', '6 on approved leave', false, Users],
+    ['Term fees collected', '£846,000', '£114,000 outstanding', '88.1% of term billing', true, Wallet],
+  ];
+  // "Export report": the figures and the attention list shown on this page, as CSV
+  const exportReport = () => downloadCsv('school-overview', ['Section', 'Item', 'Value', 'Detail'], [
+    ...metrics.map(([label, value, sub, ctx]) => ['Key figures', label, value, [sub, ctx].filter(Boolean).join(' · ')]),
+    ...work.map(([item, sub, qty, , status, owner]) => ['Needs your attention', item, qty, `${sub} · ${status} · ${owner}`]),
+  ]);
   return (
     <>
       <PageHeader
         title="School overview"
         desc={`${greeting()}, ${user.name.split(' ')[0]}. Here’s how your school is doing today.`}
         actions={[
-          { label: '16 Oct 2026', icon: <CalIcon size={15} /> },
-          { label: 'Export report', icon: <Download size={15} /> },
+          // Today's date (read only); the line under the title shows the school week and whether school is open
+          { label: 'Today', render: () => <TodayLabel /> },
+          { label: 'Export report', icon: <Download size={15} />, onClick: exportReport },
           { label: 'Quick add', icon: <Plus size={15} />, primary: true, to: '/students/new' },
         ]}
       />
-      <Metrics items={[
-        ['Total students', '1,248', 'Across 44 classes', '+24 this term', true, GraduationCap],
-        ['Student attendance', '95.2%', '1,188 of 1,248 present', '+0.5 pp vs last week', true, ClipboardCheck],
-        ['Staff on campus', '86 / 92', 'All lessons covered', '6 on approved leave', false, Users],
-        ['Term fees collected', '£846,000', '£114,000 outstanding', '88.1% of term billing', true, Wallet],
-      ]} />
+      <Metrics items={metrics} />
 
       <div className="cols ov">
         <Card>

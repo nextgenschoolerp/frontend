@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Download, Plus, ArrowLeft, Pencil, Upload } from 'lucide-react';
 import {
   PageHeader, Metrics, Card, SectionHead, Tabs, SearchBox, Select, DataTable, Pager, Person, Actions,
-  Pill, FieldGrid, Field, Footer, KV, Docs,
+  Pill, FieldGrid, Field, Footer, KV, Docs, downloadCsv,
 } from '../components/ui.jsx';
-import { useRoleOptions } from '../components/AuthSettings.jsx';
+import { useRoleOptions, Modal } from '../components/AuthSettings.jsx';
 
 const STAFF = [
   ['Eleanor Hughes', 'SF-2018-014', 'Head of Mathematics', 'Mathematics', 'Teaching', 'On campus'],
@@ -27,7 +27,8 @@ export function StaffDirectory() {
         title="Staff & faculty"
         desc="Manage your teaching and support teams, assignments and employment records."
         actions={[
-          { label: 'Export list', icon: <Download size={15} /> },
+          { label: 'Export list', icon: <Download size={15} />, onClick: () => downloadCsv('staff', ['Name', 'Staff ID', 'Role', 'Department', 'Type', 'Availability'],
+            rows.map((r) => [r.name, r.id, r.role, r.dept, r.type, r.avail])) },
           { label: 'Add staff member', icon: <Plus size={15} />, primary: true, to: '/staff/new' },
         ]}
       />
@@ -81,13 +82,151 @@ export function StaffDirectory() {
 
 /* ---------- profile ---------- */
 
+const LEAVE_TYPES = ['Annual leave', 'Sick leave', 'Training / CPD', 'Compassionate leave', 'Unpaid leave'];
+const fmtDay = (d) => new Date(`${d}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+/** School days (Mon–Fri) from `from` to `to`, inclusive; a half day counts 0.5. */
+function leaveDays(from, to, half) {
+  let n = 0;
+  for (let d = new Date(`${from}T00:00:00`); d <= new Date(`${to}T00:00:00`); d.setDate(d.getDate() + 1)) if (d.getDay() % 6) n += 1;
+  return half && n === 1 ? 0.5 : n;
+}
+
+/** Record leave dialog. There is no staff / HR service yet, so requests live in the page until it is reloaded. */
+function RecordLeaveModal({ name, onClose, onSave }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [error, setError] = useState('');
+  const submit = (e) => {
+    e.preventDefault();
+    const v = Object.fromEntries(new FormData(e.currentTarget));
+    if (!v.type || !v.from || !v.to) { setError('Choose the leave type and both dates.'); return; }
+    if (v.to < v.from) { setError('The last day cannot be before the first day.'); return; }
+    const days = leaveDays(v.from, v.to, v.half === 'on');
+    if (!days) { setError('The dates fall on a weekend; choose at least one school day.'); return; }
+    onSave({ type: v.type, from: v.from, to: v.to, days, reason: v.reason.trim(), status: 'Pending approval' });
+    onClose();
+  };
+  return (
+    <Modal title="Record leave" sub={name} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" form="leave-form">Record leave</button></>}>
+      <form id="leave-form" className="fieldlist" noValidate onSubmit={submit}>
+        <div className="field box"><label htmlFor="leave-type">LEAVE TYPE *</label>
+          <select id="leave-type" name="type" defaultValue=""><option value="" disabled>Select leave type</option>{LEAVE_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
+        <div className="field box"><label htmlFor="leave-from">FIRST DAY *</label><input id="leave-from" name="from" type="date" defaultValue={today} /></div>
+        <div className="field box"><label htmlFor="leave-to">LAST DAY *</label><input id="leave-to" name="to" type="date" defaultValue={today} /></div>
+        <label className="check"><input type="checkbox" name="half" />Half day (single-day leave only)</label>
+        <div className="field box"><label htmlFor="leave-reason">REASON / COVER NOTES</label><input id="leave-reason" name="reason" placeholder="Optional" /></div>
+        {error && <div className="api-error"><span>{error}</span></div>}
+        <p className="xs muted">Requests are kept on this page only until the staff service is connected.</p>
+      </form>
+    </Modal>
+  );
+}
+
+// One section per tab, kept in the URL (/staff/:id?tab=timetable); Overview shows the whole summary
+const STAFF_TABS = [
+  ['overview', 'Overview'], ['teaching', 'Teaching assignments'], ['timetable', 'Timetable'],
+  ['leave', 'Leave & attendance'], ['documents', 'Documents'],
+];
+
 export function StaffProfile() {
+  const [params, setParams] = useSearchParams();
+  const index = Math.max(0, STAFF_TABS.findIndex(([key]) => key === params.get('tab')));
+  const tab = STAFF_TABS[index][0];
+  const setTab = (i) => setParams(i === 0 ? {} : { tab: STAFF_TABS[i][0] }, { replace: true });
+  const [leaves, setLeaves] = useState([]);
+  const [recording, setRecording] = useState(false);
+  const upcoming = leaves.filter((l) => l.to >= new Date().toISOString().slice(0, 10)).sort((a, b) => a.from.localeCompare(b.from));
+
+  const assignmentsCard = (
+    <Card>
+      <SectionHead title="Teaching assignments" sub="2026–2027 · Term 1" link="Manage assignments →" />
+      <div style={{ margin: '18px 0 14px' }}>
+        <DataTable boxed cols={[
+          { label: 'Class', key: 'a' }, { label: 'Subject', key: 'b' }, { label: 'Students', key: 'c' },
+          { label: 'Lessons / week', key: 'd' }, { label: 'Room', key: 'e' },
+        ]} rows={[
+          { a: 'Year 10A', b: 'Mathematics', c: 28, d: 4, e: 'M02' },
+          { a: 'Year 10B', b: 'Mathematics', c: 29, d: 4, e: 'M02' },
+          { a: 'Year 11A', b: 'Further mathematics', c: 22, d: 4, e: 'M02' },
+          { a: 'Year 9C', b: 'Mathematics', c: 27, d: 4, e: 'M03' },
+        ]} />
+      </div>
+      <p className="xs muted">Form tutor: Year 10A · 16 teaching periods per week</p>
+    </Card>
+  );
+  const timetableCard = (
+    <Card>
+      <SectionHead title="Today’s timetable" sub="Friday, 16 October · Week A" link="Full timetable →" to="/academics" />
+      <div style={{ marginTop: 18 }}>
+        <DataTable boxed cols={[
+          { label: 'Time', key: 'a' }, { label: 'Lesson', key: 'b' }, { label: 'Class', key: 'c' }, { label: 'Room', key: 'd' },
+        ]} rows={[
+          { a: '08:30–08:50', b: 'Registration', c: '10A', d: 'M02' },
+          { a: '09:00–10:00', b: 'Mathematics', c: '10A', d: 'M02' },
+          { a: '10:20–11:20', b: 'Further mathematics', c: '11A', d: 'M02' },
+          { a: '11:20–12:20', b: 'Planning & preparation', c: '—', d: 'Staff room' },
+          { a: '13:10–14:10', b: 'Mathematics', c: '9C', d: 'M03' },
+        ]} />
+      </div>
+    </Card>
+  );
+  const qualificationsCard = (
+    <Card>
+      <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Qualifications & professional development</h3>
+      <KV rows={[
+        ['Qualifications', 'BSc Mathematics · University of Bristol, 2013'],
+        ['Teaching status', 'PGCE Secondary Mathematics · QTS, 2014'],
+        ['Latest training', 'Safeguarding refresher · Completed 12 Oct 2026'],
+      ]} />
+    </Card>
+  );
+  const employmentCard = (
+    <Card>
+      <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Employment & contact</h3>
+      <KV rows={[
+        ['Department', 'Mathematics'], ['Line manager', 'Dr Helen Morris · Deputy head'], ['Contract', 'Permanent · 1.0 FTE'],
+        ['Emergency contact', 'Thomas Hughes · Spouse'], ['Emergency phone', '+44 7700 900 215'],
+      ]} />
+    </Card>
+  );
+  const leaveCard = (
+    <Card>
+      <SectionHead title="Leave & attendance" sub="Academic year 2026–2027" link="Leave history →" />
+      <div className="row" style={{ justifyContent: 'flex-start', gap: 40, margin: '18px 0 14px', alignItems: 'flex-start' }}>
+        <div><div style={{ fontSize: 26, fontWeight: 600 }}>2 days</div><div className="xs muted">Approved leave taken</div></div>
+        <div><div style={{ fontSize: 26, fontWeight: 600 }}>{leaves.length}</div><div className="xs muted">Pending requests</div></div>
+      </div>
+      {upcoming.length
+        ? <Pill tone="amber">Upcoming: {upcoming[0].type} from {fmtDay(upcoming[0].from)}</Pill>
+        : <Pill tone="green">No upcoming leave</Pill>}
+      {leaves.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <DataTable boxed cols={[
+            { label: 'Leave', render: (l) => <span className="cell-id"><b>{l.type}</b><small>{l.reason || '—'}</small></span> },
+            { label: 'Dates', render: (l) => (l.from === l.to ? fmtDay(l.from) : `${fmtDay(l.from)} – ${fmtDay(l.to)}`) },
+            { label: 'Days', key: 'days', className: 'num' },
+            { label: 'Status', render: (l) => <Pill tone="amber">{l.status}</Pill> },
+          ]} rows={leaves} />
+        </div>
+      )}
+      <div style={{ marginTop: 16 }}><button type="button" className="btn" onClick={() => setRecording(true)}><Plus size={15} />Record leave</button></div>
+    </Card>
+  );
+  const documentsCard = (
+    <Card>
+      <SectionHead title="Documents" sub="Restricted · Human resources" link="View all →" />
+      <div style={{ marginTop: 14 }}>
+        <Docs items={[['Employment contract.pdf', '412 KB · 01 Sep 2018 · Verified'], ['QTS certificate.pdf', '268 KB · 01 Sep 2018 · Verified'], ['DBS confirmation.pdf', '182 KB · Reviewed 01 Sep 2026 · Verified']]} />
+      </div>
+    </Card>
+  );
   return (
     <>
       <PageHeader
         title="Staff profile"
         desc="Employment details, teaching responsibilities and staff records in one place."
         actions={[
+          { label: 'Back to staff', icon: <ArrowLeft size={15} />, to: '/staff' },
           { label: 'Message staff' },
           { label: 'Edit staff details', icon: <Pencil size={14} />, primary: true, to: 'edit' },
         ]}
@@ -104,72 +243,18 @@ export function StaffProfile() {
           <span>+44 7700 900 214 · Extension 204</span><span>Joined 01 September 2018</span>
         </div>
       </Card>
-      <Tabs items={['Overview', 'Teaching assignments', 'Timetable', 'Leave & attendance', 'Documents']} />
-      <div className="cols">
-        <div className="stack">
-          <Card>
-            <SectionHead title="Teaching assignments" sub="2026–2027 · Term 1" link="Manage assignments →" />
-            <div style={{ margin: '18px 0 14px' }}>
-              <DataTable boxed cols={[
-                { label: 'Class', key: 'a' }, { label: 'Subject', key: 'b' }, { label: 'Students', key: 'c' },
-                { label: 'Lessons / week', key: 'd' }, { label: 'Room', key: 'e' },
-              ]} rows={[
-                { a: 'Year 10A', b: 'Mathematics', c: 28, d: 4, e: 'M02' },
-                { a: 'Year 10B', b: 'Mathematics', c: 29, d: 4, e: 'M02' },
-                { a: 'Year 11A', b: 'Further mathematics', c: 22, d: 4, e: 'M02' },
-                { a: 'Year 9C', b: 'Mathematics', c: 27, d: 4, e: 'M03' },
-              ]} />
-            </div>
-            <p className="xs muted">Form tutor: Year 10A · 16 teaching periods per week</p>
-          </Card>
-          <Card>
-            <SectionHead title="Today’s timetable" sub="Friday, 16 October · Week A" link="Full timetable →" to="/academics" />
-            <div style={{ marginTop: 18 }}>
-              <DataTable boxed cols={[
-                { label: 'Time', key: 'a' }, { label: 'Lesson', key: 'b' }, { label: 'Class', key: 'c' }, { label: 'Room', key: 'd' },
-              ]} rows={[
-                { a: '08:30–08:50', b: 'Registration', c: '10A', d: 'M02' },
-                { a: '09:00–10:00', b: 'Mathematics', c: '10A', d: 'M02' },
-                { a: '10:20–11:20', b: 'Further mathematics', c: '11A', d: 'M02' },
-                { a: '11:20–12:20', b: 'Planning & preparation', c: '—', d: 'Staff room' },
-                { a: '13:10–14:10', b: 'Mathematics', c: '9C', d: 'M03' },
-              ]} />
-            </div>
-          </Card>
-          <Card>
-            <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Qualifications & professional development</h3>
-            <KV rows={[
-              ['Qualifications', 'BSc Mathematics · University of Bristol, 2013'],
-              ['Teaching status', 'PGCE Secondary Mathematics · QTS, 2014'],
-              ['Latest training', 'Safeguarding refresher · Completed 12 Oct 2026'],
-            ]} />
-          </Card>
+      <Tabs items={STAFF_TABS.map(([, label]) => label)} value={index} onChange={setTab} />
+      {tab === 'overview' && (
+        <div className="cols">
+          <div className="stack">{assignmentsCard}{timetableCard}{qualificationsCard}</div>
+          <div className="stack">{employmentCard}{leaveCard}{documentsCard}</div>
         </div>
-        <div className="stack">
-          <Card>
-            <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Employment & contact</h3>
-            <KV rows={[
-              ['Department', 'Mathematics'], ['Line manager', 'Dr Helen Morris · Deputy head'], ['Contract', 'Permanent · 1.0 FTE'],
-              ['Emergency contact', 'Thomas Hughes · Spouse'], ['Emergency phone', '+44 7700 900 215'],
-            ]} />
-          </Card>
-          <Card>
-            <SectionHead title="Leave & attendance" sub="Academic year 2026–2027" link="Leave history →" />
-            <div className="row" style={{ justifyContent: 'flex-start', gap: 40, margin: '18px 0 14px', alignItems: 'flex-start' }}>
-              <div><div style={{ fontSize: 26, fontWeight: 600 }}>2 days</div><div className="xs muted">Approved leave taken</div></div>
-              <div><div style={{ fontSize: 26, fontWeight: 600 }}>0</div><div className="xs muted">Pending requests</div></div>
-            </div>
-            <Pill tone="green">No upcoming leave</Pill>
-            <div style={{ marginTop: 16 }}><button className="btn"><Plus size={15} />Record leave</button></div>
-          </Card>
-          <Card>
-            <SectionHead title="Documents" sub="Restricted · Human resources" link="View all →" />
-            <div style={{ marginTop: 14 }}>
-              <Docs items={[['Employment contract.pdf', '412 KB · 01 Sep 2018 · Verified'], ['QTS certificate.pdf', '268 KB · 01 Sep 2018 · Verified'], ['DBS confirmation.pdf', '182 KB · Reviewed 01 Sep 2026 · Verified']]} />
-            </div>
-          </Card>
-        </div>
-      </div>
+      )}
+      {tab === 'teaching' && <div className="stack">{assignmentsCard}{qualificationsCard}</div>}
+      {tab === 'timetable' && <div className="stack">{timetableCard}</div>}
+      {tab === 'leave' && <div className="stack">{leaveCard}</div>}
+      {tab === 'documents' && <div className="stack">{documentsCard}</div>}
+      {recording && <RecordLeaveModal name="Eleanor Hughes" onClose={() => setRecording(false)} onSave={(l) => setLeaves((all) => [...all, l])} />}
       <Footer />
     </>
   );

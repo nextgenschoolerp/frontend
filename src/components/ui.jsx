@@ -1,8 +1,56 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowUpRight, ArrowLeft, FileText, Search, ChevronDown } from 'lucide-react';
+import { ArrowUpRight, ArrowLeft, FileText, Search, ChevronDown, Calendar } from 'lucide-react';
 import { useState } from 'react';
 
 export const Pill = ({ tone = '', children }) => <span className={`pill ${tone}`}>{children}</span>;
+
+/** Saves `content` as a file download (Export buttons build their files in the browser). */
+export function downloadFile(name, content, type = 'text/csv') {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], { type }));
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+/** CSV with a header row; values are quoted. File names get today's date: "students-2026-10-18.csv". */
+export function downloadCsv(base, header, rows) {
+  const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const csv = [header, ...rows].map((r) => r.map(cell).join(',')).join(String.fromCharCode(13, 10));
+  downloadFile(`${base}-${new Date().toISOString().slice(0, 10)}.csv`, `\uFEFF${csv}`);
+}
+
+/* ---------- school calendar and the date the pages are viewed for ---------- */
+
+// Term 1 of 2026–2027 (Calendar / Settings → Academic setup): 31 Aug – 18 Dec 2026, half-term 26–30 Oct
+const TERM = { name: 'Term 1', start: '2026-08-31', end: '2026-12-18', breaks: [['2026-10-26', '2026-10-30']] };
+const atNoon = (iso) => new Date(`${iso}T12:00:00`);
+const isoOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+export const todayIso = () => isoOf(new Date());
+const inBreak = (iso) => TERM.breaks.some(([a, b]) => iso >= a && iso <= b);
+/** Teaching weeks (Monday dates) of the term, half-term excluded. */
+const termWeeks = () => {
+  const weeks = [];
+  for (let d = atNoon(TERM.start); isoOf(d) <= TERM.end; d.setDate(d.getDate() + 7)) if (!inBreak(isoOf(d))) weeks.push(isoOf(d));
+  return weeks;
+};
+/** Term, week and whether school is open on a date: { date, week, weeks, status, open }. */
+export function schoolDay(iso) {
+  const d = atNoon(iso);
+  const date = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const weeks = termWeeks();
+  const week = weeks.filter((w) => w <= iso).length;
+  const inTerm = iso >= TERM.start && iso <= TERM.end;
+  const status = !inTerm ? 'Outside term dates' : inBreak(iso) ? 'Half-term break' : d.getDay() % 6 === 0 ? 'Weekend · school closed' : 'School in session';
+  return { date, week, weeks: weeks.length, inTerm, onBreak: inBreak(iso), status, open: status === 'School in session' };
+}
+
+/** Read-only "Today · 18 Oct 2026" with a calendar icon (Overview header). */
+export function TodayLabel() {
+  const short = atNoon(todayIso()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  return <span className="today-label"><Calendar size={15} />Today · {short}</span>;
+}
 
 /**
  * Click handler for a link to another page that lets that page offer "Back to <this page>".
@@ -32,21 +80,29 @@ export function PageHeader({ title, desc, actions = [], context = true }) {
         <div><h1>{title}</h1><p>{desc}</p></div>
         <div className="actions">
           {actions.map((a) => {
+            if (a.render) return <span key={a.label}>{a.render()}</span>;
             const cls = 'btn' + (a.primary ? ' primary' : '');
             const inner = <>{a.icon}{a.label}</>;
             return a.to
               ? <Link key={a.label} to={a.to} className={cls}>{inner}</Link>
-              : <button key={a.label} className={cls} onClick={a.onClick}>{inner}</button>;
+              : <button key={a.label} className={cls} onClick={a.onClick} disabled={a.disabled} title={a.title}>{inner}</button>;
           })}
         </div>
       </div>
-      {context && (
-        <div className="context">
-          <span className="dot" />Term 1 · Week 7 of 14<span className="sep">/</span>Friday, 16 October 2026
-          <span className="sep">/</span><span className="ok">School in session</span>
-        </div>
-      )}
+      {context && <DayContext />}
     </>
+  );
+}
+
+/** "Term 1 · Week 7 of 15 / Sunday, 18 October 2026 / Weekend · school closed" for today. */
+function DayContext() {
+  const day = schoolDay(todayIso());
+  return (
+    <div className="context">
+      <span className={`dot${day.open ? '' : ' off'}`} />{!day.inTerm ? '2026–2027' : day.onBreak ? `${TERM.name} · Half-term` : `${TERM.name} · Week ${Math.max(day.week, 1)} of ${day.weeks}`}
+      <span className="sep">/</span>{day.date}
+      <span className="sep">/</span><span className={day.open ? 'ok' : 'off'}>{day.status}</span>
+    </div>
   );
 }
 
@@ -113,12 +169,36 @@ export function DataTable({ cols, rows, boxed }) {
   return boxed ? <div className="tablebox">{t}</div> : t;
 }
 
-export const Pager = ({ text }) => (
-  <div className="pager">
-    <span>{text}</span>
-    <span className="pages"><span>← Previous</span><b className="on">1</b><b>2</b><b>3</b><span>Next →</span></span>
-  </div>
-);
+/**
+ * Table footer. With `pages` and `onPage` it pages for real (Previous / numbers / Next, at most 5 numbers around the
+ * current page, hidden when everything fits on one page); without them it is the static sample footer.
+ */
+export function Pager({ text, page, pages, onPage }) {
+  if (!onPage) {
+    return (
+      <div className="pager">
+        <span>{text}</span>
+        <span className="pages"><span>← Previous</span><b className="on">1</b><b>2</b><b>3</b><span>Next →</span></span>
+      </div>
+    );
+  }
+  const first = Math.max(1, Math.min(page - 2, pages - 4));
+  const numbers = Array.from({ length: Math.min(5, pages) }, (_, i) => first + i);
+  return (
+    <div className="pager">
+      <span>{text}</span>
+      {pages > 1 && (
+        <nav className="pages" aria-label="Pages">
+          <button type="button" disabled={page <= 1} onClick={() => onPage(page - 1)}>← Previous</button>
+          {numbers.map((n) => (
+            <button type="button" key={n} className={`num${n === page ? ' on' : ''}`} aria-current={n === page ? 'page' : undefined} onClick={() => onPage(n)}>{n}</button>
+          ))}
+          <button type="button" disabled={page >= pages} onClick={() => onPage(page + 1)}>Next →</button>
+        </nav>
+      )}
+    </div>
+  );
+}
 
 export const Person = ({ name, sub, initials }) => (
   <>

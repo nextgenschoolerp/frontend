@@ -3,10 +3,12 @@ import { ShieldAlert, Info, LoaderCircle } from 'lucide-react';
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as admissionApi from '../api/admissionService.js';
-import { DataTable, Person, Pill, KV, Actions } from './ui.jsx';
+import { DataTable, Person, Pill, KV, Actions, downloadCsv } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
+import { NextStep } from './AdmissionActions.jsx';
 
-const READ_ROLES = ['FRONT_OFFICE_COUNSELOR', 'ADMISSION_OFFICER', 'SUPER_ADMIN'];
+// Everyone who moves an application forward can read the list (GET /enquiries)
+const READ_ROLES = ['FRONT_OFFICE_COUNSELOR', 'ADMISSION_OFFICER', 'REGISTRAR', 'ENTRANCE_EXAM_EVALUATOR', 'FINANCE_CASHIER', 'SCHOOL_PRINCIPAL', 'SUPER_ADMIN'];
 
 export const ApiNote = ({ children }) => <div className="api-note"><Info size={14} style={{ flex: 'none', marginTop: 1 }} /><span>{children}</span></div>;
 export const ApiErr = ({ error }) => (
@@ -52,12 +54,21 @@ export function useOpenFollowUps() {
   return useApi(() => admissionApi.listFollowUps(user.tenantId, branchId), [user?.tenantId, branchId], enabled);
 }
 
+/** "Export list" on the Admissions tab: the loaded applications as CSV. */
+export function exportApplicationsCsv(rows) {
+  downloadCsv('admission-applications',
+    ['Application number', 'First name', 'Last name', 'Applying for', 'Academic year', 'Guardian', 'Guardian email', 'Guardian phone', 'Source', 'Received', 'Status', 'Counselor'],
+    rows.map((e) => [e.applicationNumber, e.candidateFirstName, e.candidateLastName, gradeLabel(e.targetGradeId), e.academicYearId, e.guardianName,
+      e.guardianEmail, e.guardianPhone, label(e.referralSource), e.createdAt?.slice(0, 10), (admissionApi.STATUS[e.enquiryStatus] || [e.enquiryStatus])[0], e.assignedCounselorId || '']));
+}
+
 /** Students → Admissions tab. */
 export function ApplicationsTable({ apps }) {
   const [viewing, setViewing] = useState(null);
-  if (!apps.canRead) return <ApiNote>Admission applications are visible to front-office counselors, admission officers and super administrators.</ApiNote>;
+  if (!apps.canRead) return <ApiNote>Admission applications are visible to admissions staff: counselors, admission officers, registrars, evaluators, cashiers, principals and super administrators.</ApiNote>;
   if (apps.missingBranch) return <ApiNote>Select a campus to see its applications.</ApiNote>;
-  if (apps.loading) return <Loading />;
+  // Only the first load shows the spinner: a reload after an action keeps the review modal open
+  if (apps.loading && !apps.data) return <Loading />;
   if (apps.error) return <ApiErr error={apps.error} />;
   if (!apps.rows.length) return <ApiNote>No applications for this campus yet. Use “Add student” to record one.</ApiNote>;
   return (
@@ -76,7 +87,9 @@ export function ApplicationsTable({ apps }) {
           rows={apps.rows}
         />
       </div>
-      {viewing && <ApplicationModal enquiry={viewing} onClose={() => setViewing(null)} />}
+      {/* The modal shows the latest list row, so a status change made inside it is reflected straight away */}
+      {viewing && <ApplicationModal enquiry={apps.rows.find((e) => e.enquiryId === viewing.enquiryId) || viewing}
+        onClose={() => setViewing(null)} onChanged={apps.reload} />}
     </>
   );
 }
@@ -90,13 +103,25 @@ function Section({ title, res, children }) {
   );
 }
 
-/** Review application: enquiry + documents, assessments, offers and calls (read-only). */
-export function ApplicationModal({ enquiry, onClose }) {
+/** Review application: enquiry details, the next step for the signed-in stakeholder, documents, assessments, offers and calls. */
+export function ApplicationModal({ enquiry, onClose, onChanged }) {
   const id = enquiry.enquiryId;
   const docs = useApi(() => admissionApi.listDocuments(id), [id]);
   const evals = useApi(() => admissionApi.listEvaluations(id), [id]);
   const offers = useApi(() => admissionApi.listOffers(id), [id]);
   const calls = useApi(() => admissionApi.listCalls(id), [id]);
+  const changed = () => { onChanged?.(); docs.reload(); evals.reload(); offers.reload(); calls.reload(); };
+  const { hasRole, user } = useAuth();
+  const canVerify = hasRole('REGISTRAR', 'ADMISSION_OFFICER', 'SUPER_ADMIN');
+  const [verifyError, setVerifyError] = useState(null);
+  const verify = async (d, verificationStatus) => {
+    setVerifyError(null);
+    try {
+      await admissionApi.verifyDocument(d.documentId, { verificationStatus,
+        verificationNotes: `${verificationStatus === 'VERIFIED' ? 'Verified' : 'Rejected'} by ${user.username} from the review modal` });
+      docs.reload();
+    } catch (err) { setVerifyError(err); }
+  };
 
   return (
     <Modal title={`${enquiry.candidateFirstName} ${enquiry.candidateLastName}`} sub={`${enquiry.applicationNumber} · ${gradeLabel(enquiry.targetGradeId)} · ${enquiry.academicYearId}`} onClose={onClose}>
@@ -110,15 +135,24 @@ export function ApplicationModal({ enquiry, onClose }) {
       ]} />
       {enquiry.remarks && <p className="body-s" style={{ marginTop: 10 }}>{enquiry.remarks}</p>}
 
+      <NextStep enquiry={enquiry} offers={offers} onChanged={changed} />
+
       <Section title="Documents" res={docs}>
         {(rows) => (rows.length ? (
           <DataTable boxed cols={[
             { label: 'Document', render: (d) => <span className="cell-id"><b>{label(d.documentType)}</b><small>{d.originalFileName}</small></span> },
             { label: 'Status', render: (d) => <Pill tone={d.verificationStatus === 'VERIFIED' ? 'green' : d.verificationStatus === 'REJECTED' ? 'red' : 'amber'}>{label(d.verificationStatus)}</Pill> },
             { label: 'Notes', render: (d) => <span className="xs muted">{d.verificationNotes || (d.mandatory ? 'Required' : 'Optional')}</span> },
+            // Registrar / admission officer: PATCH /documents/{id}/verification (US-02004)
+            ...(canVerify ? [{ label: 'Verify', render: (d) => (d.verificationStatus === 'PENDING' ? (
+              <Actions>
+                <button className="link" onClick={() => verify(d, 'VERIFIED')}>Verify</button>
+                <button className="link" onClick={() => verify(d, 'REJECTED')}>Reject</button>
+              </Actions>) : '—') }] : []),
           ]} rows={rows} />
         ) : <ApiNote>No documents uploaded yet.</ApiNote>)}
       </Section>
+      {verifyError && <ApiErr error={verifyError} />}
 
       <Section title="Assessments" res={evals}>
         {(rows) => (rows.length ? (

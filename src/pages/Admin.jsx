@@ -5,7 +5,7 @@ import {
   GraduationCap, FolderOpen, Settings as Cog, ShieldCheck, Folder, Bold, Italic, Underline, AlignLeft, Paperclip, Send,
 } from 'lucide-react';
 import {
-  PageHeader, Metrics, Card, SectionHead, Tabs, SearchBox, Select, DataTable, Pager, Pill, Footer, Field, FieldGrid, KV,
+  PageHeader, Metrics, Card, SectionHead, Tabs, SearchBox, Select, DataTable, Pager, Pill, Footer, Field, FieldGrid, KV, downloadFile, downloadCsv, schoolDay, todayIso,
 } from '../components/ui.jsx';
 import { AttendanceChart } from './Overview.jsx';
 import { RolesCard, SecurityCard } from '../components/AuthSettings.jsx';
@@ -23,6 +23,19 @@ const EVENTS = {
   23: ['16:00 · Reports due', 'amber'],
 };
 
+/** "Export calendar": the month's events as an iCalendar file (Outlook, Google Calendar, Apple Calendar). */
+function exportCalendar() {
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+  const events = Object.entries(EVENTS).map(([day, [text]]) => {
+    const [time, title] = text.split(' · ');
+    const [h, m] = time.split(':');
+    const start = `202610${String(day).padStart(2, '0')}T${h}${m}00`;
+    return ['BEGIN:VEVENT', `UID:oakridge-202610${day}@school-erp`, `DTSTAMP:${stamp}`, `DTSTART:${start}`, `DURATION:PT1H`, `SUMMARY:${title}`, 'LOCATION:Main campus', 'END:VEVENT'].join('\r\n');
+  });
+  downloadFile('oakridge-calendar-2026-10.ics',
+    ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Oakridge Academy//School ERP//EN', ...events, 'END:VCALENDAR'].join('\r\n'), 'text/calendar');
+}
+
 export function Calendar() {
   const [sel, setSel] = useState(19);
   return (
@@ -30,7 +43,7 @@ export function Calendar() {
       <PageHeader
         title="Calendar"
         desc="Plan school events, deadlines and term dates across Main campus."
-        actions={[{ label: 'Export calendar', icon: <Download size={15} /> }, { label: 'Add event', icon: <Plus size={15} />, primary: true }]}
+        actions={[{ label: 'Export calendar', icon: <Download size={15} />, onClick: exportCalendar }, { label: 'Add event', icon: <Plus size={15} />, primary: true }]}
       />
       <div className="cols s354">
         <Card style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -216,7 +229,13 @@ export function Reports() {
           <Card>
             <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Report options</h3>
             <KV rows={[['Period', '12–16 October 2026'], ['Audience', 'All year groups'], ['Data source', 'Daily attendance registers'], ['Updated', '16 Oct 2026 · 09:42']]} />
-            <div className="actions" style={{ margin: '12px 0' }}><button className="btn primary"><Download size={14} />Export PDF</button><button className="btn"><Download size={14} />CSV</button></div>
+            <div className="actions" style={{ margin: '12px 0' }}>
+              {/* PDF: the browser's print dialog ("Save as PDF"); CSV: the preview figures */}
+              <button className="btn primary" onClick={() => window.print()}><Download size={14} />Export PDF</button>
+              <button className="btn" onClick={() => downloadCsv('weekly-attendance-12-16-oct-2026', ['Status', 'Students', 'Proportion'],
+                [['Present', '1188', '95.2%'], ['Excused', '42', '3.4%'], ['Unexcused', '18', '1.4%'], ['Weekly average', '', '95.2%'], ['Change vs last week', '', '+0.5 pp']])}>
+                <Download size={14} />CSV</button>
+            </div>
             <button className="btn">Schedule weekly email</button>
             <p className="xs muted" style={{ marginTop: 14 }}>Reports respect your role permissions. Personal student data is only included for authorised users.</p>
           </Card>
@@ -373,7 +392,7 @@ export function Settings() {
             <FieldGrid cols={[
               [{ label: 'Academic year', required: true, select: true, value: '2026–2027' }, { label: 'Year starts', select: true, value: '01 September 2026' }],
               [{ label: 'Current term', required: true, select: true, value: 'Term 1', options: ['Term 1', 'Term 2', 'Term 3'] }, { label: 'Year ends', select: true, value: '23 July 2027' }],
-              [{ label: 'Current week', value: 'Week 7 of 14' }, { label: 'Week structure', select: true, value: 'Monday–Friday' }],
+              [{ label: 'Current week', value: `Week ${schoolDay(todayIso()).week} of ${schoolDay(todayIso()).weeks}` }, { label: 'Week structure', select: true, value: 'Monday–Friday' }],
             ]} />
             <Card className="notice" style={{ marginTop: 16, padding: 14 }}><h4>Half-term: 26–30 October</h4><p>School reopens Monday, 2 November. Attendance registers and recurring lessons pause during the break.</p></Card>
           </Card>

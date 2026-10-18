@@ -1,13 +1,22 @@
 import { useState } from 'react';
 import { Plus, Download, Check, Upload } from 'lucide-react';
 import {
-  PageHeader, Metrics, Card, SectionHead, Tabs, SearchBox, Select, DataTable, Pager, Person, Pill, Footer,
+  PageHeader, Metrics, Card, SectionHead, Tabs, SearchBox, Select, DataTable, Pager, Person, Pill, Footer, downloadCsv,
 } from '../components/ui.jsx';
+import { useAuth } from '../auth.jsx';
+import { ROLES as financeRoles } from '../api/financeService.js';
+import { FeesLive } from '../components/FeesLive.jsx';
+import { AssessmentsLive } from '../components/AssessmentsLive.jsx';
+import { ROLES as examRoles } from '../api/examService.js';
+import { ApiNote } from '../components/Admissions.jsx';
 
 const act = (t) => <span className="act">{t}</span>;
 
 /* ---------- Academics ---------- */
+/** Live assessments for teachers, exam staff, principals and registrars; other roles see the sample page. */
 export function Academics() {
+  const { hasRole } = useAuth();
+  if (hasRole(...examRoles.view)) return <AssessmentsLive />;
   return (
     <>
       <PageHeader
@@ -15,6 +24,7 @@ export function Academics() {
         desc="Coordinate classes, curriculum, teaching schedules and assessment deadlines."
         actions={[{ label: 'View timetable' }, { label: 'Add class', icon: <Plus size={15} />, primary: true }]}
       />
+      <Card><ApiNote>Sample data. Assessment terms, mark entry and results are shown to teachers, the exam controller, principals and registrars.</ApiNote></Card>
       <Metrics items={[
         ['Active classes', '44', '1,248 students enrolled'],
         ['Curriculum subjects', '18', 'Across Years 7–13'],
@@ -109,7 +119,8 @@ export function Attendance() {
       <PageHeader
         title="Attendance"
         desc="Monitor daily attendance, complete registers and follow up on student absences."
-        actions={[{ label: 'Export attendance', icon: <Download size={15} /> }, { label: 'Save register', icon: <Check size={15} />, primary: true }]}
+        actions={[{ label: 'Export attendance', icon: <Download size={15} />, onClick: () => downloadCsv('attendance-10A',
+          ['Student', 'Student ID', 'AM', 'PM', 'Absence reason'], REGISTER) }, { label: 'Save register', icon: <Check size={15} />, primary: true }]}
       />
       <Metrics items={[
         ['Present today', '1,188', '95.2% of 1,248 students'],
@@ -170,15 +181,40 @@ export function Attendance() {
   );
 }
 
+const TRANSACTIONS = [
+  ['Oliver Bennett', 'PAY-261016-04', '16 Oct 2026', 'Bank transfer', '£800.00'],
+  ['Isla Patel', 'PAY-261016-03', '16 Oct 2026', 'Card', '£1,200.00'],
+  ['Leo Ahmed', 'PAY-261015-12', '15 Oct 2026', 'Bank transfer', '£600.00'],
+  ['Freya Clarke', 'PAY-261015-11', '15 Oct 2026', 'Direct debit', '£800.00'],
+  ['Amara Thompson', 'PAY-260905-06', '05 Sep 2026', 'Bank transfer', '£2,400.00'],
+];
+const OUTSTANDING = [
+  ['Noah Williams · 10B', 'INV-26-0418', '16 days', '£1,200.00', '14 Oct'],
+  ['Theo Martin · 9A', 'INV-26-0364', '16 days', '£800.00', '14 Oct'],
+  ['Emily Harris · 8B', 'INV-26-0281', '9 days', '£1,000.00', '14 Oct'],
+  ['Archie Green · 7A', 'INV-26-0142', '9 days', '£600.00', '14 Oct'],
+];
+/** "Export statement": term summary, transactions and overdue accounts in one CSV. */
+const exportStatement = () => downloadCsv('fee-statement-term1', ['Section', 'Student / account', 'Reference', 'Date / overdue', 'Detail', 'Amount'], [
+  ['Summary', 'Term 1 billing', '', '', '', '£960,000'], ['Summary', 'Collected', '', '', '88.1%', '£846,000'],
+  ['Summary', 'Not yet due', '', '02 Nov 2026', '', '£76,000'], ['Summary', 'Overdue', '', '', '38 accounts', '£38,000'],
+  ...TRANSACTIONS.map(([n, ref, d, m, a]) => ['Payment', n, ref, d, m, a]),
+  ...OUTSTANDING.map(([n, inv, od, bal, rem]) => ['Overdue', n, inv, od, `Last reminder ${rem}`, bal]),
+]);
+
 /* ---------- Fees ---------- */
+/** Live from financeservice for finance staff and principals; other roles see the sample page. */
 export function Fees() {
+  const { hasRole } = useAuth();
+  if (hasRole(...financeRoles.staff)) return <FeesLive />;
   return (
     <>
       <PageHeader
         title="Fees & payments"
         desc="Track term billing, reconcile payments and follow up on outstanding accounts."
-        actions={[{ label: 'Export statement', icon: <Download size={15} /> }, { label: 'Record payment', icon: <Plus size={15} />, primary: true }]}
+        actions={[{ label: 'Export statement', icon: <Download size={15} />, onClick: exportStatement }, { label: 'Record payment', icon: <Plus size={15} />, primary: true }]}
       />
+      <Card><ApiNote>Sample data. Live fee accounts, receipts and defaulter lists are shown to finance staff, principals and super administrators.</ApiNote></Card>
       <Metrics items={[
         ['Term billing', '£960,000', 'Term 1 · September–December'],
         ['Collected', '£846,000', '88.1% of term billing'],
@@ -194,13 +230,7 @@ export function Fees() {
               { label: 'Student / reference', render: (r) => <span className="cell-id"><b>{r[0]}</b><small>{r[1]}</small></span> },
               { label: 'Date', key: '2' }, { label: 'Method', key: '3' }, { label: 'Amount', key: '4', className: 'num' },
               { label: 'Status', render: () => <Pill tone="green">Reconciled</Pill> }, { label: 'Action', render: () => act('Receipt') },
-            ].map((c) => (c.key ? { ...c, key: Number(c.key) } : c))} rows={[
-              ['Oliver Bennett', 'PAY-261016-04', '16 Oct 2026', 'Bank transfer', '£800.00'],
-              ['Isla Patel', 'PAY-261016-03', '16 Oct 2026', 'Card', '£1,200.00'],
-              ['Leo Ahmed', 'PAY-261015-12', '15 Oct 2026', 'Bank transfer', '£600.00'],
-              ['Freya Clarke', 'PAY-261015-11', '15 Oct 2026', 'Direct debit', '£800.00'],
-              ['Amara Thompson', 'PAY-260905-06', '05 Sep 2026', 'Bank transfer', '£2,400.00'],
-            ]} />
+            ].map((c) => (c.key ? { ...c, key: Number(c.key) } : c))} rows={TRANSACTIONS} />
           </Card>
           <Card>
             <SectionHead title="Outstanding accounts" sub="38 overdue accounts · £38,000 total" link="Send reminders →" />
@@ -208,12 +238,7 @@ export function Fees() {
             <DataTable boxed cols={[
               { label: 'Student', key: 0 }, { label: 'Invoice', key: 1 }, { label: 'Overdue', key: 2 },
               { label: 'Balance', key: 3, className: 'num' }, { label: 'Last reminder', key: 4 }, { label: 'Action', render: () => act('Record payment') },
-            ]} rows={[
-              ['Noah Williams · 10B', 'INV-26-0418', '16 days', '£1,200.00', '14 Oct'],
-              ['Theo Martin · 9A', 'INV-26-0364', '16 days', '£800.00', '14 Oct'],
-              ['Emily Harris · 8B', 'INV-26-0281', '9 days', '£1,000.00', '14 Oct'],
-              ['Archie Green · 7A', 'INV-26-0142', '9 days', '£600.00', '14 Oct'],
-            ]} />
+            ]} rows={OUTSTANDING} />
           </Card>
         </div>
         <div className="stack">

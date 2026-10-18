@@ -2,13 +2,13 @@ import { NavLink, Outlet, useLocation, useNavigate, Link } from 'react-router-do
 import {
   School, Building2, ChevronsUpDown, LayoutDashboard, GraduationCap, Users, BookOpen,
   ClipboardCheck, Wallet, CalendarDays, Megaphone, ChartNoAxesCombined, FolderOpen,
-  Settings as SettingsIcon, CircleHelp, ChevronRight, ChevronDown, Search, CalendarRange, Bell, LogOut, Menu, X,
+  Settings as SettingsIcon, CircleHelp, ChevronRight, ChevronDown, Search, CalendarRange, Bell, LogOut, Menu, X, Check,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth.jsx';
 import { listBranches } from '../api/authService.js';
 import { useApi } from '../api/useApi.js';
-import ThemePicker from './ThemePicker.jsx';
+import { THEMES, getTheme, applyTheme } from '../theme.js';
 
 const GROUPS = [
   ['WORKSPACE', [
@@ -37,7 +37,8 @@ function crumbsFor(pathname) {
   const [seg, id, tail] = pathname.split('/').filter(Boolean);
   if (!seg) return ['Overview'];
   const out = [SECTION[seg] || 'Overview'];
-  const person = seg === 'students' ? 'Amara Thompson' : seg === 'staff' ? 'Eleanor Hughes' : null;
+  // Live student records have UUID ids (studentservice); other ids are the static sample people
+  const person = seg === 'students' ? (/^[0-9a-f]{8}-/i.test(id || '') ? 'Student profile' : 'Amara Thompson') : seg === 'staff' ? 'Eleanor Hughes' : null;
   if (id === 'new') out.push(seg === 'students' ? 'Add student' : 'Add staff member');
   else if (id && person) out.push(tail === 'edit' ? `${person} / Edit` : person);
   return out;
@@ -60,6 +61,76 @@ function CampusSwitcher() {
         <select aria-label="Switch campus" value={current?.branchCode} onChange={(e) => selectBranch(e.target.value)}>
           {branches.map((b) => <option key={b.branchCode} value={b.branchCode}>{b.branchName}</option>)}
         </select>
+      )}
+    </div>
+  );
+}
+
+const SESSIONS = ['2025–2026', '2026–2027', '2027–2028'];
+const SESSION_KEY = 'erp.academicSession';
+const shortSession = (s) => s.replace(/^(\d{4})–\d{2}(\d{2})$/, '$1-$2'); // 2026–2027 → 2026-27
+const readSession = () => { try { return localStorage.getItem(SESSION_KEY) || '2026–2027'; } catch { return '2026–2027'; } };
+
+/** Account menu: the avatar opens the signed-in user's details, the academic session picker and sign out. */
+function AccountMenu({ onSignOut }) {
+  const { user } = useAuth();
+  const { pathname } = useLocation();
+  const [open, setOpen] = useState(false);
+  const [session, setSession] = useState(readSession);
+  const [expand, setExpand] = useState(null); // 'session' | 'theme'
+  const [theme, setTheme] = useState(getTheme);
+  const currentTheme = THEMES.find((t) => t.id === theme) || THEMES[0];
+  const toggle = (k) => setExpand((v) => (v === k ? null : k));
+  const pickTheme = (id) => { applyTheme(id); setTheme(id); };
+  const ref = useRef(null);
+  const pick = (s) => { setSession(s); try { localStorage.setItem(SESSION_KEY, s); } catch { /* storage unavailable */ } setOpen(false); };
+
+  useEffect(() => setOpen(false), [pathname]);
+  useEffect(() => { if (!open) setExpand(null); }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    const onKey = (e) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [open]);
+
+  return (
+    <div className="account" ref={ref}>
+      <button className="avatar-s" onClick={() => setOpen((o) => !o)} aria-haspopup="menu" aria-expanded={open}
+        title={`${user.name} · ${user.role} · Session ${shortSession(session)}`} aria-label="Account menu">
+        {user.photoUrl ? <img src={user.photoUrl} alt="" /> : user.initials}
+      </button>
+      {open && (
+        <div className="acctmenu" role="menu">
+          <div className="acctmenu-head">
+            <b>{user.name}</b>
+            <small>{user.role}</small>
+            <small>{user.email || user.username}</small>
+          </div>
+          <button className="acctmenu-session" onClick={() => toggle('session')} aria-expanded={expand === 'session'}>
+            <CalendarRange size={13} /><span>Academic session – <b>{shortSession(session)}</b></span>
+            <ChevronDown size={13} className={expand === 'session' ? 'flip' : ''} />
+          </button>
+          {expand === 'session' && SESSIONS.map((s) => (
+            <button key={s} role="menuitemradio" aria-checked={s === session} className={'acctmenu-year' + (s === session ? ' on' : '')} onClick={() => pick(s)}>
+              <span>{shortSession(s)}</span>{s === session && <Check size={14} />}
+            </button>
+          ))}
+          <button className="acctmenu-session" onClick={() => toggle('theme')} aria-expanded={expand === 'theme'}>
+            <i className="swatch" style={{ background: currentTheme.swatch }} /><span>Theme – <b>{currentTheme.name}</b></span>
+            <ChevronDown size={13} className={expand === 'theme' ? 'flip' : ''} />
+          </button>
+          {expand === 'theme' && THEMES.map((t) => (
+            <button key={t.id} role="menuitemradio" aria-checked={t.id === theme} className={'acctmenu-theme' + (t.id === theme ? ' on' : '')} onClick={() => pickTheme(t.id)}>
+              <i className="swatch" style={{ background: t.swatch }} /><span>{t.name}</span>{t.id === theme && <Check size={14} />}
+            </button>
+          ))}
+          <hr />
+          <Link to="/settings" role="menuitem"><SettingsIcon size={15} />Settings</Link>
+          <button role="menuitem" className="danger" onClick={onSignOut}><LogOut size={15} />Sign out</button>
+        </div>
       )}
     </div>
   );
@@ -102,7 +173,6 @@ export default function Layout() {
           <div><b>Oakridge</b><small>ACADEMY</small></div>
           <button className="navclose" onClick={() => setNavOpen(false)} aria-label="Close menu"><X size={18} /></button>
         </div>
-        <CampusSwitcher />
         {GROUPS.map(([label, items]) => (
           <div className="navgroup" key={label}>
             <h6>{label}</h6>
@@ -136,14 +206,9 @@ export default function Layout() {
           </div>
           <div className="tools">
             <label className="gsearch"><Search size={15} /><input placeholder="Search students, staff, records..." /><small>⌘ K</small></label>
-            <div className="year"><CalendarRange size={15} /><span>2026–2027</span><ChevronDown size={12} /></div>
-            <ThemePicker />
+            <CampusSwitcher />
             <div className="bell"><Bell size={19} /></div>
-            <div className="account">
-              <div className="avatar-s" title={`${user.name} · ${user.role} · ${user.email || user.username}`}>{user.initials}</div>
-              <div><b>{user.name}</b><small>{user.role}</small></div>
-              <button className="signout" onClick={logout} title="Sign out" aria-label="Sign out"><LogOut size={16} /></button>
-            </div>
+            <AccountMenu onSignOut={logout} />
           </div>
         </header>
         <div className="page" key={pathname}><Outlet /></div>

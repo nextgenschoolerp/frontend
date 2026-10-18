@@ -26,7 +26,7 @@ For super administrators it is the campus picked in the sidebar switcher.
 
 | Screen · action | Method & endpoint | Story | Roles | Status |
 |---|---|---|---|---|
-| Metric **Admission applications** ("Awaiting review") | `GET /api/v1/admissions/enquiries?tenantId=&branchId=` | US-02001 | FRONT_OFFICE_COUNSELOR, ADMISSION_OFFICER, SUPER_ADMIN | **Wired**. Counts applications in an open status (new, contacted, assessment scheduled/passed, offer issued) |
+| Metric **Admission applications** ("Awaiting review") | `GET /api/v1/admissions/enquiries?tenantId=&branchId=` | US-02001 | FRONT_OFFICE_COUNSELOR, ADMISSION_OFFICER, REGISTRAR, ENTRANCE_EXAM_EVALUATOR, FINANCE_CASHIER, SCHOOL_PRINCIPAL, SUPER_ADMIN | **Wired**. Counts applications in an open status (new, contacted, assessment scheduled/passed, offer issued) |
 | Tab **Admissions (n)** → applications table | same as above | US-02001 | same | **Wired**. Newest first. Columns: applicant and application number, grade and academic year, guardian, source, received date, status pill. The tab is kept in the URL (`/students?tab=admissions`) |
 | Admissions card · "*n* new applications" | same as above | US-02001 | same | **Wired**: counts `NEW_INQUIRY` and `CONTACTED` |
 | Admissions card · "*n* with documents pending" | `GET /api/v1/admissions/document-follow-ups?tenantId=&branchId=&status=OPEN` | US-02011 | REGISTRAR, ADMISSION_OFFICER, FRONT_OFFICE_COUNSELOR, SUPER_ADMIN | **Wired** |
@@ -36,19 +36,43 @@ For super administrators it is the campus picked in the sidebar switcher.
 | Review modal · **Assessments** | `GET /api/v1/admissions/enquiries/{id}/evaluations` | US-02003 | REGISTRAR, ADMISSION_OFFICER, SUPER_ADMIN | **Wired / Role-gated** |
 | Review modal · **Offers** | `GET /api/v1/admissions/enquiries/{id}/offers` | US-02006 | FINANCE_CASHIER, ADMISSION_OFFICER, SCHOOL_PRINCIPAL, SUPER_ADMIN | **Wired / Role-gated** |
 | Review modal · **Calls** | `GET /api/v1/admissions/enquiries/{id}/calls` | US-02015 | FRONT_OFFICE_COUNSELOR, ADMISSION_OFFICER, MARKETING_MANAGER, SUPER_ADMIN | **Wired / Role-gated** |
-| **Export list** | — | — | — | **Gap**: there is no export endpoint |
+| Review modal · Documents → **Verify** / **Reject** (pending documents) | `PATCH /api/v1/admissions/documents/{documentId}/verification` | US-02004 | REGISTRAR, ADMISSION_OFFICER, SUPER_ADMIN | **Wired / Role-gated** |
+| **Export list** (All students / Archived tab) | — | — | — | Exports the tab as CSV (studentservice data, built in the browser) |
+| **Export list** (Admissions tab) | same list as the tab | US-02001 | as for the list | **Wired**: `admission-applications-<date>.csv` built in the browser; disabled for roles without the list |
+
+## Review application → Next step (status changes)
+
+The modal shows the action that moves the application to its next status. The stakeholder whose role the endpoint allows gets the button; everyone else sees "Done by …".
+Each action reloads the modal and the list, so the status pill changes in place.
+
+| Current status | Next step · stakeholder | Method & endpoint | Story | Roles | New status |
+|---|---|---|---|---|---|
+| New enquiry, Contacted | **Log a call** · counselor | `POST /api/v1/admissions/enquiries/{id}/calls` | US-02015 | FRONT_OFFICE_COUNSELOR, ADMISSION_OFFICER, SUPER_ADMIN | Connected / Callback requested → **Contacted**; Not interested → **Withdrawn** |
+| New enquiry, Contacted | **Schedule entrance exam** · admission officer | `POST /api/v1/admissions/entrance-exams` (`enquiryIds: [id]`) | US-02002 | ADMISSION_OFFICER, SUPER_ADMIN | **Assessment scheduled** (admit card issued) |
+| Assessment scheduled / passed | **Record assessment** · registrar (scores from the evaluator) | `GET /api/v1/admissions/evaluation-rubrics?evaluationType=`, `POST /api/v1/admissions/evaluations` | US-02003 | REGISTRAR, ADMISSION_OFFICER, SUPER_ADMIN | All assessments passed → **Assessment passed** |
+| Assessment passed | **Issue offer** · admission officer or cashier | `POST /api/v1/admissions/offers` | US-02006 | FINANCE_CASHIER, ADMISSION_OFFICER, SUPER_ADMIN | **Offer issued** |
+| Offer issued (not paid) | **Collect seat deposit** · cashier | `POST /api/v1/admissions/offers/{offerId}/deposits` | US-02008 | FINANCE_CASHIER, SCHOOL_PRINCIPAL, SUPER_ADMIN | offer **Accepted** (amount must equal the amount due) |
+| Offer accepted (or passed with no offer) | **Enrol student** · registrar | `POST /api/v1/admissions/enquiries/{id}/student-conversion`, then `POST /api/v1/students` (studentservice) in the chosen section of the offered class | US-02005 | REGISTRAR, ADMISSION_OFFICER, FRONT_OFFICE_COUNSELOR, APPLICANT_PARENT, SUPER_ADMIN | **Enrolled** (birth and transfer certificates must be verified) |
+| Any open status | **Not offered / Withdrawn** · admission officer or principal | `PATCH /api/v1/admissions/enquiries/{id}/decision` **(new)** | – | ADMISSION_OFFICER, SCHOOL_PRINCIPAL, SUPER_ADMIN | **Not offered** (REJECTED) or **Withdrawn**; the reason and who decided are appended to the remarks; 409 when already closed |
+
+Backend changes for this:
+- New `PATCH /enquiries/{enquiryId}/decision` (`EnquiryDecisionRequest`: `decision` REJECTED | WITHDRAWN, `reason` required). No API set REJECTED before.
+- `GET /enquiries` and `GET /enquiries/{id}` now also allow REGISTRAR, ENTRANCE_EXAM_EVALUATOR, FINANCE_CASHIER and SCHOOL_PRINCIPAL (read only), so every stakeholder can open the applications they act on.
+
+Regression: `scripts/cases/admissionservice.json` ADM-19 … ADM-48 walk one application through every step as its stakeholder, with a role negative (403) and a validation negative (400) for each action and the 409 cases.
 
 ## Students → Add student (`/students/new`)
 
 A student record in admissionservice is created only by converting an application that has passed every step (US-02010).
 So "Add student" records an **application** (an enquiry) in the admissions pipeline.
+Registrars and office clerks instead get **Enrol student**, which creates the student master record in studentservice straight away (see `studentservice-api-mapping.md`).
 
 | Screen · action | Method & endpoint | Story | Roles | Status |
 |---|---|---|---|---|
 | **Save draft** | `POST /api/v1/admissions/enquiries` | US-02001 | FRONT_OFFICE_COUNSELOR, ADMISSION_OFFICER, APPLICANT_PARENT, SUPER_ADMIN | **Wired**. Form → `CaptureEnquiryRequest`: first and last name; class → `targetGradeId` (`Class 7` → `GRADE-07`, `Nursery` → `GRADE-NURSERY`); section and year group are kept in `remarks`; academic year → `academicYearId` (`2026–2027` → `AY-2026-27`); primary guardian, guardian email and mobile number → guardian fields; relationship is kept in `remarks`; `referralSource=WALK_IN`. Missing required fields or a bad phone number are reported before the call, and service validation messages are shown. On success it stays on the page with "Application APP-… saved" |
 | **Add student** | same as above | US-02001 | same | **Wired**: saves, then opens `/students?tab=admissions` |
 | Documents panel · **Upload document** (type and file) | `POST /api/v1/admissions/enquiries/{id}/documents?documentType=` (multipart `file`) | US-02004 | ENTRANCE_EXAM_EVALUATOR, SCHOOL_PRINCIPAL, ADMISSION_OFFICER, SUPER_ADMIN | **Wired / Role-gated**. Enabled once the application is saved; PDF, JPG or PNG up to 5 MB. The list reloads from `GET …/documents` |
-| Upload student photo, date of birth, gender, house, class, medical fields, emergency contact | — | — | — | **Gap**: `CaptureEnquiryRequest` has no fields for these. They are entered but not sent; class placement comes later (US-02012) |
+| Upload student photo, date of birth, gender, house, class, medical fields, emergency contact | — | — | — | **Gap** for applications: `CaptureEnquiryRequest` has no fields for these. They are entered but not sent; class placement comes later (US-02012). **Enrol student** (studentservice) sends all of them except the photo |
 
 ## Overview
 
@@ -79,3 +103,5 @@ The UI has no pages for these yet. All of them are in the Postman collection `Sc
 | Marketing and analytics | `POST`/`GET /marketing-campaigns`, `PATCH /marketing-campaigns/{id}`, `GET /analytics/cost-per-acquisition`, `GET /analytics/conversion-rates`, `POST /lead-archives`, `GET /analytics/archived-lead-trends` |
 
 All paths above are relative to `/api/v1/admissions`.
+
+Enrol student also creates the student master record in studentservice (section picker from `GET /api/v1/academic/sections?gradeId=`; class `GRADE-07` → `Class 7`), so the new student appears in the directory, fees and exams. If the role cannot add students (403), the application is still enrolled and the message says a registrar can add the student from Add student.

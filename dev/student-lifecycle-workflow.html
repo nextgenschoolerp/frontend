@@ -1,0 +1,716 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Student lifecycle runner</title>
+<!--
+  Dev-only page (served by the Vite dev server at /dev/student-lifecycle-workflow.html, not part of the production build).
+  Walks one demo student through the whole school year, each step done by the staff member who owns it:
+    admission (admissionservice) → student record (studentservice) → fees (financeservice)
+    → marks, results and progress card (examservice) → promotion to the next class (studentservice).
+  1. Sign in as a directory administrator (SUPER_ADMIN) and pick a school, campus, academic year, class, section and term.
+     Societies and staff with their roles come from authservice (GET /api/v1/tenants, GET /api/v1/tenants/{id}/users);
+     each endpoint's allowed roles come from the services themselves (GET …/access-rules of admissionservice,
+     studentservice, financeservice and examservice).
+  2. Each workflow role (counselor, registrar, cashier, chief accountant, teachers, principal) is filled with a staff
+     member of that campus; change any of them.
+  3. "Check permissions" signs every selected staff member in (one attempt each, with the shared password) and shows,
+     step by step, whether they hold a role that the endpoint allows. Nothing is written.
+  4. "Run whole workflow" runs the 15 steps against the real services as those staff members.
+  Demo rows carry "[workflow-demo]" in the application remarks and a guardian e-mail at workflow-demo.example;
+  .agents/skills/test-ui/scripts/db/db.ps1 -Cleanup removes them (application, student, fees, marks and cards).
+  Attendance is not part of the run (no attendance service yet).
+-->
+<style>
+  :root{--bg:#f6f6f4;--card:#fff;--bd:#e6e5e0;--tx:#24283b;--mu:#7b7f8c;--fa:#9597a1;--pr:#5f53a8;--tint:#efedf9;
+    --gr:#2f8a5b;--grt:#e7f4ec;--am:#a8730e;--amt:#fbf2df;--rd:#b8434a;--rdt:#f9e8e9;--bl:#2f6aa8;--blt:#e6eef8}
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--bg);color:var(--tx);font:400 13px/1.45 Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  button,select,input{font:inherit;color:inherit}
+  button{cursor:pointer}
+  .wrap{max-width:1180px;margin:0 auto;padding:24px 16px 60px}
+  header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+  h1{font-size:24px;font-weight:700;letter-spacing:-.01em}
+  h2{font-size:15px;font-weight:600}
+  .sub{color:var(--mu);margin-top:4px;max-width:720px}
+  .ctrl{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .btn{height:36px;padding:0 14px;border-radius:8px;border:1px solid var(--bd);background:var(--card);font-weight:500;display:inline-flex;align-items:center;gap:6px}
+  .btn.primary{background:var(--pr);border-color:var(--pr);color:#fff}
+  .btn:disabled{opacity:.5;cursor:default}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px 18px}
+  .muted{color:var(--mu)} .small{font-size:11px}
+  .form{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-top:14px}
+  .form label{display:block;font-size:10px;font-weight:600;letter-spacing:.04em;color:var(--mu);margin-bottom:5px;text-transform:uppercase}
+  .form select,.form input,.staff select{width:100%;height:36px;border:1px solid var(--bd);border-radius:8px;padding:0 10px;background:var(--card)}
+  .check{display:flex;gap:8px;align-items:center;margin-top:10px;font-size:12px}
+  .staff{margin-top:12px}
+  .staff table{width:100%;border-collapse:collapse;margin-top:10px}
+  .staff th{font-size:10px;font-weight:600;letter-spacing:.04em;color:var(--mu);text-align:left;padding:6px 8px;text-transform:uppercase;border-bottom:1px solid var(--bd)}
+  .staff td{padding:8px;border-bottom:1px solid var(--bd);vertical-align:top}
+  .staff td:first-child{width:190px;font-weight:600}
+  .staff td:nth-child(2){width:360px}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;margin:1px 4px 1px 0}
+  .pill.ok{background:var(--grt);color:var(--gr)} .pill.no{background:var(--rdt);color:var(--rd)} .pill.warn{background:var(--amt);color:var(--am)} .pill.role{background:var(--tint);color:var(--pr)}
+  .verdict{margin-top:12px;padding:10px 12px;border-radius:8px;font-weight:600;display:none}
+  .verdict.show{display:block} .verdict.ok{background:var(--grt);color:var(--gr)} .verdict.no{background:var(--rdt);color:var(--rd)}
+  .track{display:flex;gap:6px;margin-top:14px;flex-wrap:wrap}
+  .track span{flex:1;min-width:110px;text-align:center;padding:8px 6px;border-radius:8px;background:var(--card);border:1px solid var(--bd);color:var(--fa);font-size:11px;font-weight:600;transition:.3s}
+  .track span.done{color:var(--gr);background:var(--grt);border-color:transparent}
+  .track span.now{color:#fff;background:var(--pr);border-color:var(--pr);transform:translateY(-2px);box-shadow:0 6px 16px rgba(95,83,168,.25)}
+  .applicant{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px 18px}
+  .applicant .big{font-size:15px;font-weight:700;overflow-wrap:anywhere}
+  .steps{margin-top:18px;display:flex;flex-direction:column;gap:10px}
+  .phase{margin:14px 0 2px 58px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--pr)}
+  .step{display:grid;grid-template-columns:44px minmax(0,1fr);gap:14px;opacity:.6;transition:opacity .3s}
+  .step.active,.step.ok,.step.fail,.step.skip,.step.checked{opacity:1}
+  .num{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font-weight:700;background:var(--card);border:1px solid var(--bd);color:var(--mu)}
+  .step.active .num{background:var(--pr);border-color:var(--pr);color:#fff;animation:pulse 1.2s infinite}
+  .step.ok .num{background:var(--gr);border-color:var(--gr);color:#fff}
+  .step.fail .num{background:var(--rd);border-color:var(--rd);color:#fff}
+  .step.skip .num{background:var(--amt);border-color:transparent;color:var(--am)}
+  @keyframes pulse{50%{box-shadow:0 0 0 6px rgba(95,83,168,.18)}}
+  .step .card{padding:14px 16px}
+  .shead{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start}
+  .shead h3{font-size:14px;font-weight:600}
+  .shead p{color:var(--mu);font-size:12px;margin-top:2px}
+  .actors{display:flex;gap:6px;flex-wrap:wrap}
+  .actor{display:inline-flex;align-items:center;gap:6px;padding:3px 9px 3px 3px;border-radius:999px;background:var(--tint);color:var(--pr);font-size:11px;font-weight:600}
+  .actor i{width:20px;height:20px;border-radius:50%;background:var(--pr);color:#fff;display:grid;place-items:center;font-style:normal;font-size:9px}
+  .actor small{font-weight:500;color:var(--mu)}
+  .actor.none{background:var(--rdt);color:var(--rd)} .actor.none i{background:var(--rd)}
+  .perm{margin-top:10px;display:flex;flex-direction:column;gap:4px}
+  .perm div{display:flex;gap:8px;align-items:baseline;font-size:12px;flex-wrap:wrap}
+  .perm code{font:11px ui-monospace,monospace}
+  .calls{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+  .call{border:1px solid var(--bd);border-radius:8px;overflow:hidden}
+  .call summary{list-style:none;display:flex;gap:10px;align-items:center;padding:7px 10px;cursor:pointer;font-size:12px}
+  .call summary::-webkit-details-marker{display:none}
+  .m{font:600 10px ui-monospace,monospace;padding:2px 6px;border-radius:4px;background:var(--blt);color:var(--bl);min-width:48px;text-align:center}
+  .svc{font:600 10px ui-monospace,monospace;padding:2px 6px;border-radius:4px;background:var(--tint);color:var(--pr)}
+  .path{font-family:ui-monospace,monospace;font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .who{font-size:11px;color:var(--mu)}
+  .code{font:600 11px ui-monospace,monospace;padding:2px 6px;border-radius:4px}
+  .code.ok{background:var(--grt);color:var(--gr)} .code.err{background:var(--rdt);color:var(--rd)}
+  .call pre{background:#1f2233;color:#d7d9e4;font:11px/1.5 ui-monospace,monospace;padding:10px 12px;overflow:auto;max-height:260px;white-space:pre-wrap;word-break:break-word}
+  .note{margin-top:8px;font-size:12px;padding:8px 10px;border-radius:8px;background:var(--grt);color:var(--gr)}
+  .note.fail{background:var(--rdt);color:var(--rd)} .note.skip{background:var(--amt);color:var(--am)}
+  .done-card{margin-top:18px;display:none} .done-card.show{display:block}
+  .done-card a{color:var(--pr);font-weight:600}
+  .done-card ul{margin:10px 0 0 18px;display:flex;flex-direction:column;gap:4px}
+  @media (max-width:760px){.staff td:first-child,.staff td:nth-child(2){width:auto}.staff tr{display:grid}.staff th{display:none}}
+  @media (max-width:640px){.step{grid-template-columns:32px minmax(0,1fr);gap:8px}.num{width:28px;height:28px;font-size:11px}.phase{margin-left:40px}.call summary{flex-wrap:wrap}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Admission → promotion, live</h1>
+      <p class="sub">One student's school year, step by step: admission, student record, fees, marks and results, then promotion to the next class. Each step runs against the real services as the staff member who owns it.</p>
+    </div>
+    <div class="ctrl">
+      <select class="btn" id="speed" title="Pause between steps">
+        <option value="1800">Presenter pace</option><option value="700" selected>Normal pace</option><option value="0">No pauses</option>
+      </select>
+      <button class="btn" id="checkBtn">Check permissions</button>
+      <button class="btn" id="stepBtn">Next step</button>
+      <button class="btn primary" id="runBtn">Run whole workflow</button>
+    </div>
+  </header>
+
+  <div class="card" style="margin-top:18px">
+    <h2>School, class and year</h2>
+    <div class="form">
+      <div><label for="school">School (society)</label><select id="school"></select></div>
+      <div><label for="campus">Campus</label><select id="campus"></select></div>
+      <div><label for="year">Academic year</label><select id="year"><option value="AY-2026-27">2026-2027</option></select></div>
+      <div><label for="grade">Class</label><select id="grade"></select></div>
+      <div><label for="section">Section</label><select id="section"><option>A</option><option selected>B</option><option>C</option><option>D</option><option>E</option></select></div>
+      <div><label for="term">Result from (final term)</label><select id="term"><option>Annual</option><option>Half-Yearly</option><option>Periodic Test 2</option><option>Periodic Test 1</option></select></div>
+      <div><label for="password">Password (same for every staff member)</label><input id="password" type="password" value="Password@123" autocomplete="off" /></div>
+      <div><label for="admin">Read the staff directory as (super admin)</label><input id="admin" value="superadmin_mahesh" autocomplete="off" /></div>
+    </div>
+    <label class="check"><input type="checkbox" id="wholeSection" /> Promote every student of the section who passed (otherwise only the demo student moves up)</label>
+    <p class="muted small" style="margin-top:6px">An empty section (B–E) keeps the seeded classes unchanged. In a section with classmates, the subject teacher also fills their missing marks so the results can be published.</p>
+    <div class="ctrl" style="margin-top:10px"><button class="btn" id="loadBtn">Load schools and staff</button><span class="muted small" id="dirStatus"></span></div>
+  </div>
+
+  <div class="card staff">
+    <h2>Staff for each workflow role</h2>
+    <p class="muted small" style="margin-top:3px">Staff of the selected school, from the authservice staff directory (this campus first). Each role is pre-filled with someone whose roles allow every call it makes; change any of them. <b>Check permissions</b> signs each one in once (a wrong password counts as a failed sign-in) and verifies their roles against what each endpoint allows.</p>
+    <table><thead><tr><th>Workflow role</th><th>Staff member</th><th>Can they do it?</th></tr></thead><tbody id="slots"></tbody></table>
+    <div class="verdict" id="verdict"></div>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <div class="applicant">
+      <div><div class="muted small">Student</div><div class="big" id="sName">Not created yet</div></div>
+      <div><div class="muted small">Application</div><div class="big" id="sApp">—</div></div>
+      <div><div class="muted small">Student ID · class</div><div class="big" id="sUid">—</div></div>
+      <div><div class="muted small">Fees</div><div class="big" id="sFees">—</div></div>
+      <div><div class="muted small">Result</div><div class="big" id="sResult">—</div></div>
+    </div>
+    <div class="track" id="track"></div>
+  </div>
+
+  <div class="steps" id="steps"></div>
+
+  <div class="card done-card" id="doneCard">
+    <h2>School year complete</h2>
+    <p class="muted" style="margin-top:4px" id="doneText"></p>
+    <ul id="doneLinks"></ul>
+  </div>
+</div>
+
+<script>
+const ADM = '/api/v1/admissions', ACAD = '/api/v1/academic', STU = '/api/v1/students', FIN = '/api/v1/finance', EXM = '/api/v1/exams';
+const RULE_SOURCES = [[ADM, 'admissions'], [ACAD, 'students'], [FIN, 'finance'], [EXM, 'exams']];
+const SERVICE_OF = (path) => path.startsWith(ADM) ? 'admission' : path.startsWith(FIN) ? 'finance' : path.startsWith(EXM) ? 'exam' : 'student';
+const TRACK = [['enquiry', 'Enquiry'], ['assessed', 'Assessment passed'], ['offer', 'Offer accepted'], ['enrolled', 'Enrolled'],
+  ['fees', 'Fees paid'], ['results', 'Results published'], ['promoted', 'Promoted']];
+const CLASSES = [['GRADE-NURSERY', 'Nursery'], ['GRADE-LKG', 'LKG'], ['GRADE-UKG', 'UKG'],
+  ...Array.from({ length: 11 }, (_, i) => [`GRADE-${String(i + 1).padStart(2, '0')}`, `Class ${i + 1}`])];
+const DEMO_NAMES = [['Aditi', 'Verma', 'FEMALE', 'Sanjay'], ['Kabir', 'Malhotra', 'MALE', 'Rohit'], ['Ira', 'Sethi', 'FEMALE', 'Neeraj'],
+  ['Vihaan', 'Chopra', 'MALE', 'Amit'], ['Anaya', 'Bhatia', 'FEMALE', 'Vikas'], ['Reyansh', 'Gill', 'MALE', 'Harpreet']];
+// Workflow roles; `prefer` picks the default staff member when several are allowed
+const SLOTS = {
+  counselor: { label: 'Front-office counselor', prefer: 'FRONT_OFFICE_COUNSELOR' },
+  officer: { label: 'Admission officer', prefer: 'ADMISSION_OFFICER' },
+  registrar: { label: 'Registrar', prefer: 'REGISTRAR' },
+  cashier: { label: 'Finance cashier', prefer: 'FINANCE_CASHIER' },
+  accountant: { label: 'Chief accountant', prefer: 'CHIEF_ACCOUNTANT' },
+  teacher: { label: 'Subject teacher', prefer: 'SUBJECT_TEACHER' },
+  classTeacher: { label: 'Class teacher', prefer: 'CLASS_TEACHER' },
+  principal: { label: 'Principal', prefer: 'SCHOOL_PRINCIPAL' },
+};
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const daysFromNow = (d) => new Date(Date.now() + d * 864e5);
+const isoDate = (d) => d.toISOString().slice(0, 10);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const inr = (n) => `₹${Number(n).toLocaleString('en-IN')}`;
+/** AY-2026-27 → 2026-2027 (studentservice session and financeservice year) */
+const sessionOf = (ay) => { const y = Number(ay.slice(3, 7)); return `${y}-${y + 1}`; };
+const nextSessionName = (name) => name.replace(/(\d{4})-(\d{4})/, (_, a, b) => `${Number(a) + 1}-${Number(b) + 1}`);
+/** Deterministic 0…1 from a string, so a run's marks are stable for a student */
+const hash01 = (s) => { let h = 7; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return (h % 1000) / 1000; };
+
+// ---------- data from the services ----------
+let SCHOOLS = [], STAFF = [], PERMS = [];
+const assigned = {};          // workflow role -> username
+const signedIn = {};          // username -> { token, roles } or { error }
+let ctx = {}, current = null;
+
+const conf = () => ({ tenantId: $('school').value, branchId: $('campus').value, ay: $('year').value, session: sessionOf($('year').value),
+  grade: $('grade').value, className: ($('grade').selectedOptions[0]?.text || '').replace(/ \(.*/, ''), sectionName: $('section').value,
+  termName: $('term').value, wholeSection: $('wholeSection').checked });
+const user = (slot) => STAFF.find((u) => u.username === assigned[slot]);
+
+/** Roles that the endpoint allows (GET …/access-rules, from its @PreAuthorize), or null when unknown. */
+function allowedRoles(method, path) {
+  const hit = PERMS.find((p) => p.method === method && new RegExp(`^${p.path.replace(/\{[^}]+\}/g, '[^/]+')}$`).test(path));
+  return hit ? hit.roles : null;
+}
+
+// ---------- the workflow: `calls` lists [workflow role, method, endpoint] for the permission check ----------
+const STEPS = [
+  // ---- Admission (admissionservice) ----
+  { n: 1, phase: 'Admission', title: 'Capture the enquiry', story: 'US-02001', calls: [['counselor', 'POST', `${ADM}/enquiries`], ['officer', 'GET', `${ADM}/enquiries/{id}`]],
+    desc: 'A walk-in family asks about admission; the counselor records the lead (Students → Add student).',
+    async run() {
+      const stamp = Date.now().toString().slice(-6);
+      const [first, last, gender, parent] = DEMO_NAMES[Number(stamp) % DEMO_NAMES.length];
+      ctx.kid = { first, last, gender, parent, dob: `${2026 - 7 - Number(ctx.className.replace(/\D/g, '') || 0)}-08-14`,
+        email: `${parent.toLowerCase()}.${last.toLowerCase()}.${stamp}@workflow-demo.example`, phone: `+9198110${stamp.slice(-5)}` };
+      const e = await call('counselor', 'POST', `${ADM}/enquiries`, { body: {
+        tenantId: ctx.tenantId, branchId: ctx.branchId, candidateFirstName: first, candidateLastName: last,
+        targetGradeId: ctx.grade, academicYearId: ctx.ay, guardianName: `${parent} ${last}`, guardianEmail: ctx.kid.email,
+        guardianPhone: ctx.kid.phone, referralSource: 'WALK_IN', remarks: `[workflow-demo] Lifecycle run for ${ctx.className}-${ctx.sectionName}` } });
+      ctx.enquiry = e; show();
+      return refresh(`Application ${e.applicationNumber} created for ${first} ${last}`);
+    } },
+  { n: 2, phase: 'Admission', title: 'Counselling call', story: 'US-02015', calls: [['counselor', 'POST', `${ADM}/enquiries/{id}/calls`], ['officer', 'GET', `${ADM}/enquiries/{id}`]],
+    desc: 'The counselor calls the family; they confirm interest.',
+    async run() {
+      const c = await call('counselor', 'POST', `${ADM}/enquiries/${ctx.enquiry.enquiryId}/calls`, { body: {
+        direction: 'OUTBOUND', outcome: 'CONNECTED', durationSeconds: 240, notes: 'Explained the admission process and the entrance test.' } });
+      return refresh(`Call logged (${c.outcome})`);
+    } },
+  { n: 3, phase: 'Admission', title: 'Collect and verify documents', story: 'US-02004',
+    calls: [['officer', 'POST', `${ADM}/enquiries/{id}/documents`], ['registrar', 'PATCH', `${ADM}/documents/{id}/verification`]],
+    desc: 'The officer uploads the birth and transfer certificates; the registrar checks them against the originals.',
+    async run() {
+      const out = [];
+      for (const t of ['BIRTH_CERTIFICATE', 'TRANSFER_CERTIFICATE']) {
+        const d = await call('officer', 'POST', `${ADM}/enquiries/${ctx.enquiry.enquiryId}/documents`, { query: { documentType: t }, form: pdf(`${ctx.kid.first.toLowerCase()}_${t.toLowerCase()}.pdf`) });
+        const v = await call('registrar', 'PATCH', `${ADM}/documents/${d.documentId}/verification`, { body: { verificationStatus: 'VERIFIED', verificationNotes: 'Original sighted at the front office.' } });
+        out.push(`${t.replace('_', ' ').toLowerCase()} ${v.verificationStatus}`);
+      }
+      return out.join(' · ');
+    } },
+  { n: 4, phase: 'Admission', title: 'Entrance test and interview', story: 'US-02002 · US-02003',
+    calls: [['officer', 'POST', `${ADM}/entrance-exams`], ['registrar', 'POST', `${ADM}/evaluations`], ['officer', 'GET', `${ADM}/enquiries/{id}`]],
+    desc: 'The officer schedules the test and issues the admit card; the registrar records the test and interview scores.',
+    async run() {
+      const start = daysFromNow(2); start.setUTCHours(4, 30, 0, 0);
+      const ex = await call('officer', 'POST', `${ADM}/entrance-exams`, { body: {
+        tenantId: ctx.tenantId, branchId: ctx.branchId, examTitle: `${ctx.className} entrance test (lifecycle demo)`, academicYearId: ctx.ay, targetGradeId: ctx.grade,
+        examStartAt: start.toISOString(), durationMinutes: 90, venue: 'Main block, Room 12', maxMarks: 100, passingMarks: 50,
+        reportingInstructions: 'Report 30 minutes early with the admit card.', enquiryIds: [ctx.enquiry.enquiryId] } });
+      const base = { enquiryId: ctx.enquiry.enquiryId, evaluationDate: new Date().toISOString(), examinerId: user('registrar')?.email || assigned.registrar, passingScore: 50 };
+      await call('registrar', 'POST', `${ADM}/evaluations`, { body: { ...base, evaluationType: 'ENTRANCE_TEST',
+        rubricScores: [{ criterion: 'MATHEMATICS', awardedScore: 34 }, { criterion: 'LANGUAGE', awardedScore: 25 }, { criterion: 'LOGICAL_REASONING', awardedScore: 25 }],
+        feedbackNotes: 'Strong in arithmetic and reasoning.' } });
+      await call('registrar', 'POST', `${ADM}/evaluations`, { body: { ...base, evaluationType: 'INTERVIEW',
+        rubricScores: [{ criterion: 'COMMUNICATION', awardedScore: 16 }, { criterion: 'ACADEMIC_APTITUDE', awardedScore: 25 }, { criterion: 'GENERAL_AWARENESS', awardedScore: 16 },
+          { criterion: 'CONFIDENCE_AND_CONDUCT', awardedScore: 12 }, { criterion: 'PARENT_INTERACTION', awardedScore: 12 }], feedbackNotes: 'Confident and curious.' } });
+      return refresh(`${ex.examCode}: entrance test 84/100 and interview 81/100, both passed`);
+    } },
+  { n: 5, phase: 'Admission', title: 'Offer and seat deposit', story: 'US-02006 · US-02008',
+    calls: [['officer', 'POST', `${ADM}/offers`], ['cashier', 'POST', `${ADM}/offers/{id}/deposits`], ['officer', 'GET', `${ADM}/enquiries/{id}`]],
+    desc: 'The officer issues the offer letter; the cashier takes the ₹25,000 seat deposit by UPI.',
+    async run() {
+      const o = await call('officer', 'POST', `${ADM}/offers`, { body: { enquiryId: ctx.enquiry.enquiryId, offeredGradeId: ctx.grade, validUntilDate: isoDate(daysFromNow(14)), initialFeeAmount: 25000 } });
+      const r = await call('cashier', 'POST', `${ADM}/offers/${o.offerId}/deposits`, { body: { amountPaid: o.initialFeeAmount, paymentMode: 'UPI', transactionReference: `UPI-DEMO-${Date.now()}`, remarks: 'Seat deposit at the accounts counter' } });
+      return refresh(`${o.offerCode} accepted · deposit receipt ${r.receiptNumber}`);
+    } },
+  { n: 6, phase: 'Admission', title: 'Enrol the student', story: 'US-02005 · US-03000',
+    calls: [['registrar', 'POST', `${ADM}/enquiries/{id}/student-conversion`], ['registrar', 'GET', `${ACAD}/grades`], ['registrar', 'GET', `${ACAD}/sections`], ['registrar', 'POST', STU]],
+    desc: 'The registrar converts the application and creates the student record in the chosen section (Review application → Enrol student).',
+    async run() {
+      const s = await call('registrar', 'POST', `${ADM}/enquiries/${ctx.enquiry.enquiryId}/student-conversion`, { body: { dateOfBirth: ctx.kid.dob, gender: ctx.kid.gender } });
+      const grades = await call('registrar', 'GET', `${ACAD}/grades`, { query: { tenantId: ctx.tenantId } });
+      ctx.grades = grades.slice().sort((a, b) => a.sequenceOrder - b.sequenceOrder);
+      ctx.gradeRow = ctx.grades.find((g) => g.gradeName === ctx.className);
+      if (!ctx.gradeRow) throw new Error(`${ctx.className} is not set up in Academic setup for this school`);
+      const sections = await call('registrar', 'GET', `${ACAD}/sections`, { query: { gradeId: ctx.gradeRow.gradeId } });
+      ctx.sectionRow = sections.find((x) => x.sectionName === ctx.sectionName);
+      if (!ctx.sectionRow) throw new Error(`${ctx.className} has no section ${ctx.sectionName}`);
+      const st = await call('registrar', 'POST', STU, { body: { tenantId: ctx.tenantId, branchId: ctx.branchId, firstName: ctx.kid.first, lastName: ctx.kid.last,
+        dateOfBirth: ctx.kid.dob, gender: ctx.kid.gender, bloodGroup: 'B+', emergencyContactPhone: ctx.kid.phone, gradeId: ctx.gradeRow.gradeId, sectionId: ctx.sectionRow.sectionId,
+        guardianName: `${ctx.kid.parent} ${ctx.kid.last}`, guardianRelationship: 'Father', guardianPhone: ctx.kid.phone, guardianEmail: ctx.kid.email } });
+      ctx.admission = s; ctx.student = st; ctx.stage = 'enrolled'; show();
+      return refresh(`Admission ${s.admissionNumber} · student ${st.studentUid} in ${ctx.className}-${ctx.sectionName}`);
+    } },
+  // ---- Fees (financeservice) ----
+  { n: 7, phase: 'Fees', title: 'Raise the year\'s fees', story: 'US-04000',
+    calls: [['accountant', 'GET', `${FIN}/fee-schedules`], ['accountant', 'POST', `${FIN}/fee-schedules/{id}/demands`]],
+    desc: 'The chief accountant posts the class fee schedule to the new student (profile → Fee status → Raise fees).',
+    async run() {
+      const list = await call('accountant', 'GET', `${FIN}/fee-schedules`, { query: { branchId: ctx.branchId } });
+      const sch = list.find((x) => x.gradeName === ctx.className && x.academicYear === ctx.session);
+      if (!sch) throw new Error(`There is no ${ctx.session} fee schedule for ${ctx.className} at ${ctx.branchId}`);
+      const p = await call('accountant', 'POST', `${FIN}/fee-schedules/${sch.scheduleId}/demands`, { body: { students: [{
+        studentId: ctx.student.studentId, studentUid: ctx.student.studentUid, studentName: `${ctx.kid.first} ${ctx.kid.last}`, sectionName: ctx.sectionName }] } });
+      $('sFees').textContent = `${inr(p.totalDemanded)} due`;
+      return `${sch.gradeName} ${sch.academicYear}: ${p.ledgerLinesCreated} installments, ${inr(p.totalDemanded)} demanded`;
+    } },
+  { n: 8, phase: 'Fees', title: 'Pay the fees at the counter', story: 'US-04013 · US-04004',
+    calls: [['cashier', 'GET', `${FIN}/students/{id}/fee-account`], ['cashier', 'POST', `${FIN}/receipts/counter`]],
+    desc: 'The parent pays the full year in cash; the cashier records it and the receipt is issued (Fees → Record payment).',
+    async run() {
+      const before = await call('cashier', 'GET', `${FIN}/students/${ctx.student.studentId}/fee-account`);
+      const r = await call('cashier', 'POST', `${FIN}/receipts/counter`, { body: { studentId: ctx.student.studentId, amount: before.outstanding, paymentMode: 'CASH',
+        payerName: `${ctx.kid.parent} ${ctx.kid.last}`, remarks: 'Full year fees (lifecycle demo)' } });
+      const after = await call('cashier', 'GET', `${FIN}/students/${ctx.student.studentId}/fee-account`);
+      ctx.receipt = r.receiptNumber; ctx.stage = 'fees';
+      $('sFees').textContent = `${after.feeStatus === 'PAID' ? 'Paid in full' : after.feeStatus} · ${r.receiptNumber}`; show();
+      return `Receipt ${r.receiptNumber}: ${inr(r.totalAmountPaid)} received · balance ${inr(after.outstanding)} (${after.feeStatus})`;
+    } },
+  // ---- Academics (examservice) ----
+  { n: 9, phase: 'Academics', title: 'Enter the marks', story: 'US-05003',
+    calls: [['teacher', 'GET', `${EXM}/terms`], ['teacher', 'GET', `${EXM}/terms/{id}/subjects`], ['teacher', 'GET', `${EXM}/terms/{id}/marks`], ['teacher', 'PUT', `${EXM}/terms/{id}/marks`]],
+    desc: 'The subject teacher fills the mark entry grid for every subject of the term (Academics → Mark entry).',
+    async run() {
+      const terms = await call('teacher', 'GET', `${EXM}/terms`);
+      ctx.term = terms.find((t) => t.termName === ctx.termName && (!t.sessionName || t.sessionName === ctx.session));
+      if (!ctx.term) throw new Error(`No "${ctx.termName}" term for ${ctx.session}`);
+      if (ctx.term.locked) throw new Error(`${ctx.term.termName} is locked for mark entry; pick an open term or ask for an unlock ticket`);
+      const subjects = await call('teacher', 'GET', `${EXM}/terms/${ctx.term.examTermId}/subjects`, { query: { gradeId: ctx.gradeRow.gradeId } });
+      if (!subjects.length) throw new Error(`${ctx.term.termName} has no subjects for ${ctx.className}`);
+      let mine = 0, others = 0, total = 0;
+      for (const sub of subjects) {
+        const q = { sectionId: ctx.sectionRow.sectionId, subjectCode: sub.subjectCode, branchId: ctx.branchId };
+        const sheet = await call('teacher', 'GET', `${EXM}/terms/${ctx.term.examTermId}/marks`, { query: q });
+        const max = Number(sheet.maxMarks);
+        const entries = sheet.rows.filter((r) => !r.entered).map((r) => {
+          const demo = r.studentId === ctx.student.studentId;
+          const pctScore = demo ? 0.8 + hash01(sub.subjectCode + r.studentId) * 0.12 : 0.55 + hash01(sub.subjectCode + r.studentId) * 0.3;
+          if (demo) { mine++; total += Math.round(max * pctScore); } else others++;
+          return { studentId: r.studentId, marksObtained: Math.round(max * pctScore) };
+        });
+        if (entries.length) await call('teacher', 'PUT', `${EXM}/terms/${ctx.term.examTermId}/marks`, { query: { branchId: ctx.branchId },
+          body: { sectionId: ctx.sectionRow.sectionId, subjectCode: sub.subjectCode, entries } });
+      }
+      return `${ctx.term.termName}: ${mine} marks for ${ctx.kid.first} (${total} in all)${others ? ` and ${others} missing marks of classmates` : ''} across ${subjects.length} subjects`;
+    } },
+  { n: 10, phase: 'Academics', title: 'Publish the results', story: 'US-05007 · US-05010',
+    calls: [['classTeacher', 'GET', `${EXM}/terms/{id}/broadsheet`], ['classTeacher', 'POST', `${EXM}/terms/{id}/publish`]],
+    desc: 'The class teacher checks the broadsheet and publishes the progress cards to parents (Academics → Broadsheet).',
+    async run() {
+      const b = await call('classTeacher', 'GET', `${EXM}/terms/${ctx.term.examTermId}/broadsheet`, { query: { sectionId: ctx.sectionRow.sectionId, branchId: ctx.branchId } });
+      const row = b.rows.find((r) => r.studentId === ctx.student.studentId);
+      const p = await call('classTeacher', 'POST', `${EXM}/terms/${ctx.term.examTermId}/publish`, { query: { branchId: ctx.branchId }, body: { sectionId: ctx.sectionRow.sectionId } });
+      ctx.result = row; ctx.stage = 'results';
+      $('sResult').textContent = `${Number(row.percentage).toFixed(1)}% · ${row.grade} · ${row.result === 'PASS' ? 'Pass' : row.result}`; show();
+      return `${b.className}: class average ${b.classAveragePercent}% · ${ctx.kid.first} ${Number(row.percentage).toFixed(1)}% ${row.grade}, rank ${row.rank} of ${b.rows.length} · ${p.published} card(s) published${p.alreadyPublished ? `, ${p.alreadyPublished} already` : ''}`;
+    } },
+  { n: 11, phase: 'Academics', title: 'Progress card', story: 'US-05009',
+    calls: [['registrar', 'GET', `${EXM}/students/{id}/progress-card`]],
+    desc: 'The holistic progress card the parent now sees (student profile → Academics → Progress card).',
+    async run() {
+      const c = await call('registrar', 'GET', `${EXM}/students/${ctx.student.studentId}/progress-card`, { query: { examTermId: ctx.term.examTermId } });
+      ctx.card = c;
+      return `${c.className} · ${c.termName}: ${c.totalObtained}/${c.totalMax} (${c.percentage}%), ${c.grade}, ${c.result === 'PASS' ? 'Pass' : c.result}, rank ${c.sectionRank} of ${c.sectionSize}${c.published ? ' · published' : ''}`;
+    } },
+  // ---- Promotion (studentservice) ----
+  { n: 12, phase: 'Promotion', title: 'Open the next academic year', story: 'US-03003',
+    calls: [['registrar', 'GET', `${ACAD}/sessions`], ['registrar', 'POST', `${ACAD}/sessions`]],
+    desc: 'The registrar makes sure the next academic session exists before the class moves up.',
+    async run() {
+      const sessions = await call('registrar', 'GET', `${ACAD}/sessions`, { query: { tenantId: ctx.tenantId } });
+      ctx.currentSession = sessions.find((s) => s.sessionName === ctx.session);
+      if (!ctx.currentSession) throw new Error(`Academic session ${ctx.session} is not set up`);
+      const name = nextSessionName(ctx.session);
+      ctx.nextSession = sessions.find((s) => s.sessionName === name);
+      if (ctx.nextSession) return `${name} already exists`;
+      const [y1, y2] = name.split('-');
+      ctx.nextSession = await call('registrar', 'POST', `${ACAD}/sessions`, { body: { tenantId: ctx.tenantId, sessionName: name, startDate: `${y1}-04-01`, endDate: `${y2}-03-31`, isActive: false } });
+      return `${name} created (1 April ${y1} – 31 March ${y2})`;
+    } },
+  { n: 13, phase: 'Promotion', title: 'Promote to the next class', story: 'US-03005',
+    calls: [['principal', 'GET', `${EXM}/terms/{id}/broadsheet`], ['principal', 'POST', `${ACAD}/batch-promotion`]],
+    desc: 'The principal promotes the students who passed the year; they keep their section letter (Students → Promote class).',
+    async run() {
+      const b = await call('principal', 'GET', `${EXM}/terms/${ctx.term.examTermId}/broadsheet`, { query: { sectionId: ctx.sectionRow.sectionId, branchId: ctx.branchId } });
+      const me = b.rows.find((r) => r.studentId === ctx.student.studentId);
+      if (me?.result !== 'PASS') throw new Error(`${ctx.kid.first} did not pass ${ctx.term.termName} (${me?.result || 'no result'}) and repeats ${ctx.className}`);
+      const to = ctx.grades[ctx.grades.indexOf(ctx.gradeRow) + 1];
+      if (!to) throw new Error(`${ctx.className} is the last class; graduation is not part of this run`);
+      // Promote only students still in this class (earlier demo runs may already have moved on)
+      const passed = ctx.wholeSection ? b.rows.filter((r) => r.result === 'PASS').map((r) => r.studentId) : [ctx.student.studentId];
+      const p = await call('principal', 'POST', `${ACAD}/batch-promotion`, { body: { currentAcademicYearId: ctx.currentSession.academicYearId,
+        nextAcademicYearId: ctx.nextSession.academicYearId, fromGradeId: ctx.gradeRow.gradeId, toGradeId: to.gradeId, studentIds: passed } });
+      ctx.to = to;
+      const held = b.rows.filter((r) => r.result !== 'PASS').map((r) => r.studentName);
+      return `${p.totalPromoted} promoted to ${to.gradeName} for ${ctx.nextSession.sessionName}${held.length ? ` · repeating ${ctx.className}: ${held.join(', ')}` : ''}`;
+    } },
+  { n: 14, phase: 'Promotion', title: 'Check the record', story: 'US-03001 · US-05013',
+    calls: [['registrar', 'GET', `${STU}/{id}`], ['registrar', 'GET', `${EXM}/students/{id}/progress-trend`]],
+    desc: 'The student is in the next class; last year\'s results still show the class they were earned in.',
+    async run() {
+      const s = await call('registrar', 'GET', `${STU}/${ctx.student.studentId}`);
+      const t = await call('registrar', 'GET', `${EXM}/students/${ctx.student.studentId}/progress-trend`);
+      const last = t.terms[t.terms.length - 1];
+      ctx.stage = 'promoted'; ctx.after = s;
+      $('sUid').textContent = `${s.studentUid} · ${s.gradeName}-${s.sectionName || '?'}`; show();
+      if (s.studentStatus !== 'PROMOTED' || s.gradeName !== ctx.to.gradeName) throw new Error(`Expected ${ctx.to.gradeName} and PROMOTED, got ${s.gradeName} ${s.studentStatus}`);
+      if (last?.className && !last.className.startsWith(ctx.className)) throw new Error(`${last.termName} results now show ${last.className} instead of ${ctx.className}-${ctx.sectionName}`);
+      return `${s.studentUid}: ${s.gradeName}-${s.sectionName}, ${s.studentStatus} · ${last?.termName} result kept as ${last?.className}`;
+    } },
+  { n: 15, phase: 'Promotion', title: 'Attendance', story: '—', calls: [], skip: true,
+    desc: 'Attendance has no service yet.',
+    async run() { return 'Skipped: attendance is not connected yet'; } },
+];
+
+// ---------- permission logic ----------
+const slotCalls = (slot) => STEPS.flatMap((s) => s.calls.filter(([sl]) => sl === slot));
+/** Every call a workflow role makes, and whether one of `roles` is allowed by that endpoint. */
+function evaluate(slot, roles) {
+  return slotCalls(slot).map(([, method, path]) => {
+    const allowed = allowedRoles(method, path);
+    return { method, path, allowed, ok: !!allowed && allowed.some((r) => roles.includes(r)) };
+  });
+}
+const canDoAll = (slot, roles) => evaluate(slot, roles).every((c) => c.ok);
+const superAdminOnly = (slot, roles) => roles.includes('SUPER_ADMIN') && !canDoAll(slot, roles.filter((r) => r !== 'SUPER_ADMIN'));
+const uncoveredByStaff = () => Object.keys(SLOTS).filter((slot) => !STAFF.some((u) => !u.blocker && canDoAll(slot, u.roles.filter((r) => r !== 'SUPER_ADMIN'))));
+
+/** Staff whose database roles allow every call of the workflow role: this campus and its main role first. */
+function candidatesFor(slot) {
+  const { branchId } = conf();
+  const rank = (u) => (u.branchId === branchId ? 0 : 2) + (u.roles.includes(SLOTS[slot].prefer) ? 0 : 1) + (u.roles.includes('SUPER_ADMIN') ? 0.5 : 0);
+  return STAFF.filter((u) => u.canSignIn && canDoAll(slot, u.roles))
+    .sort((a, b) => rank(a) - rank(b) || a.username.localeCompare(b.username)).map((u) => u.username);
+}
+const defaultFor = (slot) => candidatesFor(slot)[0] || '';
+const replaced = {};
+
+// ---------- API helper: one sign-in per staff member, every call is logged on the current step card ----------
+async function login(username) {
+  if (signedIn[username]?.token) return signedIn[username];
+  if (signedIn[username]?.error) throw new Error(signedIn[username].error);
+  const r = await fetch('/api/v1/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password: $('password').value }) });
+  const j = await r.json().catch(() => null);
+  if (!r.ok || !j?.data?.accessToken) {
+    signedIn[username] = { error: `Sign-in failed for ${username}: ${j?.message || r.status}` };
+    throw new Error(signedIn[username].error);
+  }
+  if (j.data.mustChangePassword) {
+    signedIn[username] = { error: `${username} must change their password before working` };
+    throw new Error(signedIn[username].error);
+  }
+  return (signedIn[username] = { token: j.data.accessToken, roles: (j.data.roles || []).map((x) => x.replace(/^ROLE_/, '')) });
+}
+async function call(slot, method, path, { query, body, form } = {}) {
+  const username = assigned[slot];
+  if (!username) throw new Error(`No staff member is assigned to the ${SLOTS[slot].label} role`);
+  const { token } = await login(username);
+  const url = path + (query ? '?' + new URLSearchParams(Object.entries(query).filter(([, v]) => v != null)) : '');
+  const headers = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  const r = await fetch(url, { method, headers, body: form || (body !== undefined ? JSON.stringify(body) : undefined) });
+  const j = await r.json().catch(() => null);
+  logCall(username, method, url, r.status, body ?? (form ? '(multipart file upload)' : undefined), j);
+  if (!r.ok || j?.success === false) {
+    const v = j?.validationErrors?.[0];
+    const hint = r.status === 403 ? ` (${username} has no role this endpoint allows: ${(allowedRoles(method, path.replace(/\/[0-9a-f-]{36}/g, '/{id}')) || ['?']).join(', ')})`
+      : r.status >= 500 && !j ? ' (is the service running?)' : '';
+    throw new Error(`${method} ${path} → ${r.status}: ${v ? `${v.field} ${v.message}` : j?.message || 'request failed'}${hint}`);
+  }
+  return j?.data ?? j;
+}
+function pdf(name) {
+  const body = `%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF`;
+  const fd = new FormData();
+  fd.append('file', new File([body], name, { type: 'application/pdf' }));
+  return fd;
+}
+async function refresh(msg) {
+  const e = await call('officer', 'GET', `${ADM}/enquiries/${ctx.enquiry.enquiryId}`);
+  ctx.enquiry = e;
+  if (!['enrolled', 'fees', 'results', 'promoted'].includes(ctx.stage)) {
+    ctx.stage = { NEW_INQUIRY: 'enquiry', CONTACTED: 'enquiry', EVALUATION_SCHEDULED: 'enquiry', EVALUATION_PASSED: 'assessed', OFFER_ISSUED: 'offer', ENROLLED: 'enrolled' }[e.enquiryStatus] || ctx.stage;
+  }
+  show();
+  return `${msg} · application ${e.enquiryStatus.replace(/_/g, ' ').toLowerCase()}`;
+}
+
+// ---------- rendering ----------
+function renderSchool() {
+  $('school').innerHTML = SCHOOLS.map((s) => `<option value="${esc(s.tenantId)}">${esc(s.name)} (${esc(s.code)})</option>`).join('');
+  const dps = SCHOOLS.find((s) => s.code === 'DPS-SOC-01');
+  if (dps) $('school').value = dps.tenantId;
+  renderCampus();
+}
+function renderCampus() {
+  const school = SCHOOLS.find((s) => s.tenantId === $('school').value);
+  $('campus').innerHTML = (school?.campuses || []).map((c) => `<option value="${esc(c.branchId)}">${esc(c.name)} · ${esc(c.branchId)} (${esc(c.board || '')})</option>`).join('');
+  if (school?.campuses.some((c) => c.branchId === 'DPS-DELHI-NORTH')) $('campus').value = 'DPS-DELHI-NORTH';
+}
+const staffLabel = (u) => `${u.username} — ${u.name || u.email} · ${u.roles.join(', ')}${u.blocker ? ` (${u.blocker})` : ''}`;
+function renderSlots() {
+  const { branchId } = conf();
+  const here = STAFF.filter((u) => u.branchId === branchId), other = STAFF.filter((u) => u.branchId !== branchId);
+  const opts = (list) => list.map((u) => `<option value="${esc(u.username)}">${esc(staffLabel(u))}</option>`).join('');
+  $('slots').innerHTML = Object.entries(SLOTS).map(([slot, s]) => `
+    <tr><td>${s.label}<div class="muted small" style="font-weight:400">${[...new Set(STEPS.filter((st) => st.calls.some(([sl]) => sl === slot)).map((st) => st.n))].map((n) => `step ${n}`).join(', ')}</div></td>
+      <td><select data-slot="${slot}" aria-label="${s.label}"><option value="">— nobody —</option><optgroup label="This campus">${opts(here)}</optgroup>${other.length ? `<optgroup label="Other campuses">${opts(other)}</optgroup>` : ''}</select></td>
+      <td id="slot-${slot}"></td></tr>`).join('');
+  document.querySelectorAll('[data-slot]').forEach((sel) => {
+    sel.value = assigned[sel.dataset.slot] || '';
+    sel.onchange = () => { assigned[sel.dataset.slot] = sel.value; delete replaced[sel.dataset.slot]; resetRun(); renderSteps(); showSlotStatus(); };
+  });
+  showSlotStatus();
+}
+/** Before sign-in: from the roles in the database. After "Check permissions": from the roles in each sign-in token. */
+function showSlotStatus() {
+  for (const slot of Object.keys(SLOTS)) {
+    const u = user(slot), el = $(`slot-${slot}`);
+    if (!u) { el.innerHTML = '<span class="pill no">Nobody assigned</span><div class="muted small">No one at this school holds a role that allows every call of this workflow role.</div>'; continue; }
+    const live = signedIn[u.username];
+    const res = evaluate(slot, live?.roles || u.roles), bad = res.filter((c) => !c.ok);
+    el.innerHTML = (replaced[slot] ? `<div class="small" style="margin-bottom:3px"><span class="pill warn">${esc(replaced[slot])} could not sign in with this password: using ${esc(u.username)}</span></div>` : '')
+      + (live?.error ? `<span class="pill no">${esc(live.error)}</span>` : live?.token ? '<span class="pill ok">Signed in</span>' : u.blocker ? `<span class="pill warn">${esc(u.blocker)}</span>` : '')
+      + (bad.length ? `<span class="pill no">Missing permission for ${bad.length} of ${res.length} call(s)</span>` : `<span class="pill ok">Allowed: all ${res.length} call(s)</span>`)
+      + (!bad.length && superAdminOnly(slot, live?.roles || u.roles) ? '<span class="pill warn">Only as super administrator</span>' : '')
+      + bad.map((c) => `<div class="small" style="margin-top:3px"><code>${c.method} ${esc(c.path)}</code> needs ${(c.allowed || ['unknown endpoint']).map((r) => `<span class="pill role">${r}</span>`).join('')}</div>`).join('');
+  }
+}
+function renderSteps() {
+  let phase = '';
+  $('track').innerHTML = TRACK.map(([k, l]) => `<span data-s="${k}">${l}</span>`).join('');
+  $('steps').innerHTML = STEPS.map((s) => {
+    const slots = [...new Set(s.calls.map(([sl]) => sl))];
+    const head = s.phase !== phase ? `<div class="phase">${(phase = s.phase)}</div>` : '';
+    return `${head}<div class="step" id="step-${s.n}"><div class="num">${s.n}</div><div class="card">
+      <div class="shead"><div><h3>${s.title}</h3><p>${s.desc} <span class="muted">· ${s.story}</span></p></div>
+        <div class="actors">${slots.map((sl) => assigned[sl]
+          ? `<span class="actor"><i>${esc(assigned[sl].slice(0, 2).toUpperCase())}</i>${esc(assigned[sl])}<small>${SLOTS[sl].label}</small></span>`
+          : `<span class="actor none"><i>!</i>nobody<small>${SLOTS[sl].label}</small></span>`).join('')}</div></div>
+      <div class="perm"></div><div class="calls"></div></div></div>`;
+  }).join('');
+}
+/** Per step: each call, who makes it, and whether their signed-in roles allow it. */
+function showStepPermissions() {
+  for (const s of STEPS) {
+    let blocked = false;
+    document.querySelector(`#step-${s.n} .perm`).innerHTML = s.calls.map(([slot, method, path]) => {
+      const name = assigned[slot], live = signedIn[name];
+      const allowed = allowedRoles(method, path) || [];
+      const ok = !!live?.roles && allowed.some((r) => live.roles.includes(r));
+      if (!ok) blocked = true;
+      const why = !name ? 'nobody assigned' : live?.error ? 'cannot sign in' : !allowed.length ? 'endpoint unknown (restart the service?)' : ok ? `as ${live.roles.filter((r) => allowed.includes(r)).join(', ')}` : `needs one of ${allowed.join(', ')}`;
+      return `<div><span class="pill ${ok ? 'ok' : 'no'}">${ok ? '✔' : '✖'}</span><span class="svc">${SERVICE_OF(path)}</span><code>${method} ${esc(path)}</code><span class="muted">${esc(name || '—')} · ${esc(why)}</span></div>`;
+    }).join('');
+    document.getElementById(`step-${s.n}`).className = `step checked ${!s.calls.length ? 'skip' : blocked ? 'fail' : 'ok'}`;
+  }
+}
+function logCall(username, method, url, status, req, res) {
+  if (!current) return;
+  const d = document.createElement('details'); d.className = 'call';
+  d.innerHTML = `<summary><span class="m">${method}</span><span class="svc">${SERVICE_OF(url)}</span><span class="path">${esc(url.replace(/^\/api\/v1/, '…'))}</span><span class="who">${esc(username)}</span><span class="code ${status < 400 ? 'ok' : 'err'}">${status}</span></summary>
+    <pre>${req !== undefined ? 'Request\n' + esc(typeof req === 'string' ? req : JSON.stringify(req, null, 2)) + '\n\n' : ''}Response\n${esc(JSON.stringify(res, null, 2))}</pre>`;
+  current.querySelector('.calls').appendChild(d);
+}
+function show() {
+  if (ctx.kid) $('sName').textContent = `${ctx.kid.first} ${ctx.kid.last}`;
+  if (ctx.enquiry) $('sApp').textContent = `${ctx.enquiry.applicationNumber}`;
+  if (ctx.student && !ctx.after) $('sUid').textContent = `${ctx.student.studentUid} · ${ctx.className}-${ctx.sectionName}`;
+  const i = TRACK.findIndex(([k]) => k === ctx.stage);
+  document.querySelectorAll('#track span').forEach((el, j) => { el.className = j < i || (ctx.stage === 'promoted' && j === i) ? 'done' : j === i ? 'now' : ''; });
+}
+
+// ---------- actions ----------
+let next = 0, busy = false;
+function resetRun() {
+  next = 0; ctx = {}; current = null;
+  for (const id of ['sApp', 'sUid', 'sFees', 'sResult']) $(id).textContent = '—';
+  $('sName').textContent = 'Not created yet';
+  $('doneCard').classList.remove('show'); $('verdict').className = 'verdict';
+  window.__workflow = undefined; window.__permissions = undefined;
+  renderSteps(); setButtons();
+}
+/** GET with the directory administrator's token; returns `data` of the ApiResponse envelope. */
+async function adminGet(url) {
+  const { token } = await login($('admin').value.trim());
+  const r = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+  const j = await r.json().catch(() => null);
+  if (!r.ok || j?.success === false) throw new Error(`${url} → ${r.status}: ${j?.message || 'request failed'}`);
+  return j.data;
+}
+async function loadDirectory() {
+  $('dirStatus').textContent = 'Loading…';
+  try {
+    delete signedIn[$('admin').value.trim()];
+    const societies = await adminGet('/api/v1/tenants');
+    // Each service reports its own endpoints and roles; a service that is down or older leaves its steps "unknown"
+    const rules = await Promise.all(RULE_SOURCES.map(([base, name]) => adminGet(`${base}/access-rules`).then((r) => [name, r]).catch((e) => [name, null, e.message])));
+    SCHOOLS = societies.map((t) => ({ tenantId: t.tenantId, name: t.societyName, code: t.societyCode,
+      campuses: (t.campuses || []).map((c) => ({ branchId: c.branchCode, name: c.branchName, board: c.affiliationBoard })) }));
+    PERMS = rules.flatMap(([, r]) => r || []).map((r) => ({ method: r.method, path: r.path, roles: r.roles }));
+    renderSchool();
+    await loadStaff();
+    const missing = rules.filter(([, r]) => !r).map(([n]) => n);
+    $('dirStatus').innerHTML = `${SCHOOLS.length} societies and ${PERMS.length} endpoints (${rules.filter(([, r]) => r).map(([n, r]) => `${n} ${r.length}`).join(', ')}) loaded as ${esc($('admin').value.trim())}`
+      + (missing.length ? ` <span class="pill no">No access rules from ${missing.join(', ')}: restart ${missing.length === 1 ? 'that service' : 'those services'}</span>` : '');
+  } catch (e) {
+    $('dirStatus').innerHTML = `<span class="pill no">${esc(e.message)}</span> Enter a SUPER_ADMIN username whose password is the one above, then load again.`;
+  }
+}
+async function loadStaff() {
+  const list = await adminGet(`/api/v1/tenants/${encodeURIComponent(conf().tenantId)}/users`);
+  STAFF = list.map((u) => ({ username: u.username, name: `${u.firstName || ''} ${u.lastName || ''}`.trim(), email: u.email,
+    branchId: u.branchId, roles: u.roles || [],
+    blocker: !u.active ? 'inactive' : u.locked ? 'locked' : u.mustChangePassword ? 'must change password' : null }))
+    .map((u) => ({ ...u, canSignIn: !u.blocker }));
+  for (const k of Object.keys(signedIn)) if (k !== $('admin').value.trim()) delete signedIn[k];
+  for (const k of Object.keys(replaced)) delete replaced[k];
+  for (const slot of Object.keys(SLOTS)) assigned[slot] = defaultFor(slot);
+  renderSlots(); resetRun();
+}
+async function checkPermissions() {
+  for (const k of Object.keys(signedIn)) delete signedIn[k];
+  for (const k of Object.keys(replaced)) delete replaced[k];
+  for (const slot of Object.keys(SLOTS)) {
+    if (!assigned[slot]) continue;
+    try { await login(assigned[slot]); continue; } catch { /* try the next eligible staff member */ }
+    for (const alt of candidatesFor(slot).filter((n) => n !== assigned[slot] && !signedIn[n]?.error)) {
+      try { await login(alt); replaced[slot] = assigned[slot]; assigned[slot] = alt; break; } catch { /* keep looking */ }
+    }
+  }
+  const names = [...new Set(Object.values(assigned).filter(Boolean))];
+  document.querySelectorAll('[data-slot]').forEach((sel) => { sel.value = assigned[sel.dataset.slot] || ''; });
+  renderSteps(); showSlotStatus(); showStepPermissions();
+  const blocked = STEPS.filter((s) => document.getElementById(`step-${s.n}`).classList.contains('fail'));
+  const v = $('verdict');
+  v.className = `verdict show ${blocked.length ? 'no' : 'ok'}`;
+  v.textContent = blocked.length
+    ? `${blocked.length} step(s) can't be completed by the selected staff: ${blocked.map((s) => `${s.n} ${s.title}`).join(' · ')}`
+    : `The selected staff can complete every step of the school year (${names.length} staff members signed in).`;
+  const gaps = uncoveredByStaff();
+  if (gaps.length) {
+    v.textContent += ` Staffing gap: no staff member of this school other than a super administrator can act as ${gaps.map((g) => SLOTS[g].label).join(', ')}.`;
+    if (!blocked.length) v.className = 'verdict show no';
+  }
+  window.__permissions = { ok: !blocked.length, blocked: blocked.map((s) => s.n), staffingGaps: gaps, assigned: { ...assigned }, replaced: { ...replaced },
+    staff: Object.fromEntries(names.map((n) => [n, signedIn[n].error || signedIn[n].roles])) };
+}
+async function runStep() {
+  const s = STEPS[next];
+  if (!s) return;
+  if (next === 0) { Object.assign(ctx, conf()); renderSteps(); }
+  current = document.getElementById(`step-${s.n}`);
+  current.className = 'step active';
+  current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const note = document.createElement('div');
+  try {
+    const msg = await s.run();
+    current.className = `step ${s.skip ? 'skip' : 'ok'}`;
+    note.className = `note${s.skip ? ' skip' : ''}`; note.textContent = msg;
+    next++;
+  } catch (err) {
+    current.className = 'step fail';
+    note.className = 'note fail'; note.textContent = err.message;
+    current.querySelector('.card').appendChild(note);
+    throw err;
+  }
+  current.querySelector('.card').appendChild(note);
+  if (next === STEPS.length) finish();
+}
+function finish() {
+  $('doneCard').classList.add('show');
+  $('doneText').textContent = `${ctx.kid.first} ${ctx.kid.last} applied (${ctx.enquiry.applicationNumber}), joined ${ctx.className}-${ctx.sectionName} as ${ctx.student.studentUid}, `
+    + `paid the year's fees (${ctx.receipt}), scored ${ctx.card.percentage}% (${ctx.card.grade}) in ${ctx.term.termName} and moved up to ${ctx.after.gradeName}-${ctx.after.sectionName} for ${ctx.nextSession.sessionName}.`;
+  $('doneLinks').innerHTML = [
+    [`/students/${ctx.student.studentId}`, 'Student profile', 'class, fee status and academic progress'],
+    [`/students/${ctx.student.studentId}?tab=fees`, 'Fees & payments', 'installments and the receipt'],
+    [`/students/${ctx.student.studentId}?tab=academics`, 'Academics', `the ${ctx.term.termName} progress card`],
+    ['/students?tab=admissions', 'Students → Admissions', `application ${ctx.enquiry.applicationNumber}`],
+  ].map(([href, t, d]) => `<li><a href="${href}" target="_top">${t}</a> <span class="muted">— ${d}</span></li>`).join('');
+  $('doneCard').scrollIntoView({ behavior: 'smooth' });
+  window.__workflow = { done: true, ctx };
+}
+async function guard(fn) {
+  if (busy) return; busy = true; setButtons();
+  try { await fn(); } catch (e) { window.__workflow = { done: false, error: e.message, step: STEPS[next]?.n }; } finally { busy = false; setButtons(); }
+}
+function setButtons() {
+  const end = next >= STEPS.length;
+  for (const id of ['school', 'campus', 'year', 'grade', 'section', 'term', 'wholeSection', 'password', 'admin', 'loadBtn', 'checkBtn']) $(id).disabled = busy || (next > 0 && !end);
+  document.querySelectorAll('[data-slot]').forEach((el) => { el.disabled = busy || (next > 0 && !end); });
+  $('runBtn').disabled = busy || end; $('stepBtn').disabled = busy || end;
+  $('runBtn').textContent = next > 0 && !end ? 'Run remaining steps' : 'Run whole workflow';
+}
+$('checkBtn').onclick = () => guard(checkPermissions);
+$('stepBtn').onclick = () => guard(runStep);
+$('runBtn').onclick = () => guard(async () => {
+  const pause = Number($('speed').value);
+  while (next < STEPS.length) { await runStep(); if (pause) await sleep(pause); }
+});
+$('school').onchange = () => { renderCampus(); loadStaff(); };
+$('campus').onchange = () => loadStaff();
+$('loadBtn').onclick = () => guard(loadDirectory);
+$('year').onchange = $('grade').onchange = $('section').onchange = $('term').onchange = $('wholeSection').onchange = () => resetRun();
+$('password').oninput = () => { for (const k of Object.keys(signedIn)) delete signedIn[k]; showSlotStatus(); resetRun(); };
+
+(async function init() {
+  $('grade').innerHTML = CLASSES.map(([code, label]) => `<option value="${code}">${label} (${code})</option>`).join('');
+  $('grade').value = 'GRADE-07';
+  renderSteps();
+  await guard(loadDirectory);
+})();
+</script>
+</body>
+</html>
