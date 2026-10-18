@@ -44,7 +44,7 @@ Code: [`src/api/client.js`](../src/api/client.js) (fetch wrapper, JWT, error env
 | Edit role · **Save permissions** | `POST /api/v1/roles/{roleId}/permissions` `{permissions:[{screenName,canRead,canWrite,canDelete,canExport}]}` | US-00002 | TRUSTEE, SUPER_ADMIN | **Wired**. Upsert per screen, so the UI sends every row; unticking all four boxes removes access (there is no delete endpoint) |
 | Roles table · "Users" count column | — | — | — | **Gap**: no endpoint counts users per role; column removed |
 | **Invite user** | — | — | — | **Gap**: authservice has no user-provisioning / invitation endpoint (only super-admin self-registration). Button disabled with an explanation |
-| "Manage users →" | — | — | — | **Gap**: no user list endpoint |
+| "Manage users →" | `GET /api/v1/tenants/{tenantId}/users?branchId=` | – | SUPER_ADMIN | **API available, screen not built**: staff with roles and account state (active / locked / must change password), no credential data. Used today by the admission workflow checker (`/dev/admission-workflow.html`) |
 
 ## Settings → Security & audit tab (`/settings?tab=security`)
 
@@ -75,6 +75,7 @@ These endpoints exist but the prototype has no screen for them. Suggested homes 
 | MFA and session config **updates** | `PUT /api/v1/mfa/config`, `PUT /api/v1/security/session-config` | Settings · Security & audit tab ("Save changes") |
 | API tokens (US-00007) | `/api/v1/integrations/api-tokens` | Settings · Integrations tab |
 | Tenant isolation, SSL (US-00001/16), branch provisioning (US-00009) | `/api/v1/tenants/{tenantId}/…` | Super-admin console |
+| Society directory: all societies with campuses, staff with roles | `GET /api/v1/tenants`, `GET /api/v1/tenants/{tenantId}/users` | Super-admin console · Settings → Users & permissions ("Manage users") |
 | Privacy anonymization, field encryption (US-00008/19) | `/api/v1/compliance/…` | Settings · Security & audit |
 | Backups (US-00010), alert rules (US-00020), high-privilege audit (US-00015) | `/api/v1/disaster-recovery/backups`, `/api/v1/security/alert-rules`, `/api/v1/audit/high-privilege-logs` | Settings · Security & audit |
 
