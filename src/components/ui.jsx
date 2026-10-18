@@ -1,10 +1,31 @@
-import { Link } from 'react-router-dom';
-import { ArrowUpRight, FileText, Search, ChevronDown } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { ArrowUpRight, ArrowLeft, FileText, Search, ChevronDown } from 'lucide-react';
 import { useState } from 'react';
 
 export const Pill = ({ tone = '', children }) => <span className={`pill ${tone}`}>{children}</span>;
 
+/**
+ * Click handler for a link to another page that lets that page offer "Back to <this page>".
+ * The page is named after its heading, in title case ("Student profile" -> "Student Profile").
+ */
+export function useBackLink(to) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  return (e) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return; // new tab / window: plain link
+    e.preventDefault();
+    const heading = document.querySelector('.pagehead h1')?.textContent.trim() || '';
+    const fromTitle = heading.replace(/(^|\s)(\p{Ll})/gu, (m, sp, ch) => sp + ch.toUpperCase());
+    navigate(to, { state: { from: location.pathname + location.search, fromTitle } });
+  };
+}
+
 export function PageHeader({ title, desc, actions = [], context = true }) {
+  // Opened from a link on another page (see useBackLink): offer a way back unless the page already has one
+  const { state } = useLocation();
+  if (state?.from && !actions.some((a) => a.label.startsWith('Back'))) {
+    actions = [{ label: `Back to ${state.fromTitle || 'previous page'}`, icon: <ArrowLeft size={15} />, to: state.from }, ...actions];
+  }
   return (
     <>
       <div className="pagehead">
@@ -42,8 +63,9 @@ export const Metrics = ({ items }) => (
 );
 
 export const SectionHead = ({ title, sub, link, to, pad }) => {
+  const onBack = useBackLink(to);
   const L = link && (to
-    ? <Link to={to} className="link">{link}<ArrowUpRight size={13} /></Link>
+    ? <Link to={to} onClick={onBack} className="link">{link}<ArrowUpRight size={13} /></Link>
     : <span className="link">{link}<ArrowUpRight size={13} /></span>);
   return (
     <div className={'sh' + (pad ? ' pad' : '')}>
@@ -53,11 +75,14 @@ export const SectionHead = ({ title, sub, link, to, pad }) => {
   );
 };
 
-export function Tabs({ items, initial = 0 }) {
-  const [on, setOn] = useState(initial);
+/** Uncontrolled by default; pass `value` + `onChange` to control the selected tab. */
+export function Tabs({ items, initial = 0, value, onChange }) {
+  const [own, setOwn] = useState(initial);
+  const on = value ?? own;
+  const pick = (i) => { setOwn(i); onChange?.(i); };
   return (
-    <div className="tabs">
-      {items.map((t, i) => <button key={t} className={i === on ? 'on' : ''} onClick={() => setOn(i)}>{t}</button>)}
+    <div className="tabs" role="tablist">
+      {items.map((t, i) => <button type="button" role="tab" aria-selected={i === on} key={t} className={i === on ? 'on' : ''} onClick={() => pick(i)}>{t}</button>)}
     </div>
   );
 }
@@ -128,18 +153,27 @@ export const Card = ({ children, flush, className = '', style }) => (
 );
 
 /* form helpers */
-export function Field({ label, required, value, placeholder, select, options, type = 'text', box }) {
+export function Field({ label, required, value, placeholder, select, options, type = 'text', box, max, onChange, readOnly }) {
   const id = label.toLowerCase().replace(/[^a-z]+/g, '-');
   const lab = <label htmlFor={id}>{label.toUpperCase()}{required ? ' *' : ''}</label>;
   const control = select ? (
-    <select id={id} defaultValue={value || ''}>
+    <select id={id} name={id} defaultValue={value || ''} onChange={onChange}>
       {!value && <option value="" disabled>{placeholder}</option>}
       {(options || [value]).filter(Boolean).map((o) => <option key={o}>{o}</option>)}
     </select>
-  ) : <input id={id} type={type} defaultValue={value} placeholder={placeholder} />;
+  ) : <input id={id} name={id} type={type} defaultValue={value} placeholder={placeholder} max={max} onChange={onChange} readOnly={readOnly}
+    // required on an empty date makes it :invalid, which styles its dd/mm/yyyy hint grey (forms use noValidate)
+    required={type === 'date' && required ? true : undefined} />;
   return <div className={'field' + (box ? ' box' : '')}>{lab}{control}</div>;
 }
 
-export const FieldGrid = ({ cols }) => (
-  <div className="fieldgrid">{cols.map((col, i) => <div className="fieldcol" key={i}>{col.map((f) => <Field key={f.label} {...f} />)}</div>)}</div>
-);
+/**
+ * cols: one array of fields per column. Fields are laid out row by row (row 1 of every column, then row 2, …)
+ * so that when the columns stack on narrow screens the reading order stays First name, Last name, Preferred name, …
+ */
+export function FieldGrid({ cols }) {
+  const rows = Math.max(...cols.map((c) => c.length));
+  const cells = [];
+  for (let r = 0; r < rows; r++) cols.forEach((col, c) => cells.push(col[r] ? <Field key={col[r].key || col[r].label} {...col[r]} /> : <div key={`gap-${r}-${c}`} />));
+  return <div className="fieldgrid" style={{ '--cols': cols.length }}>{cells}</div>;
+}

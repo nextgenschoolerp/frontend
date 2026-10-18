@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Download, Plus, Upload, Check, ChevronLeft, ChevronRight, Search, FileText, Users, ClipboardCheck, Wallet,
   GraduationCap, FolderOpen, Settings as Cog, ShieldCheck, Folder, Bold, Italic, Underline, AlignLeft, Paperclip, Send,
@@ -7,6 +8,8 @@ import {
   PageHeader, Metrics, Card, SectionHead, Tabs, SearchBox, Select, DataTable, Pager, Pill, Footer, Field, FieldGrid, KV,
 } from '../components/ui.jsx';
 import { AttendanceChart } from './Overview.jsx';
+import { RolesCard, SecurityCard } from '../components/AuthSettings.jsx';
+import { useAuth } from '../auth.jsx';
 
 const act = (t) => <span className="act">{t}</span>;
 
@@ -311,28 +314,60 @@ export function Documents() {
 }
 
 /* ---------- Settings ---------- */
+// One section per tab; the tab is kept in the URL (/settings?tab=academic) so it survives reloads and can be linked to.
+const SETTINGS_TABS = [
+  ['general', 'General'], ['academic', 'Academic setup'], ['users', 'Users & permissions'],
+  ['notifications', 'Notifications'], ['security', 'Security & audit'], ['integrations', 'Integrations'],
+];
+// Tabs whose fields are saved with the page-level Save / Discard buttons (the others save inside their cards)
+const FORM_TABS = ['general', 'academic', 'notifications'];
+
 export function Settings() {
+  const [params, setParams] = useSearchParams();
+  const index = Math.max(0, SETTINGS_TABS.findIndex(([key]) => key === params.get('tab')));
+  const tab = SETTINGS_TABS[index][0];
+  const setTab = (i) => setParams(i === 0 ? {} : { tab: SETTINGS_TABS[i][0] }, { replace: true });
+
   return (
     <>
       <PageHeader
         title="Settings"
         desc="Manage your school profile, academic setup and workspace preferences."
-        actions={[{ label: 'Discard changes' }, { label: 'Save changes', icon: <Check size={15} />, primary: true }]}
+        actions={FORM_TABS.includes(tab) ? [{ label: 'Discard changes' }, { label: 'Save changes', icon: <Check size={15} />, primary: true }] : []}
       />
-      <Tabs items={['General', 'Academic setup', 'Users & permissions', 'Notifications', 'Security & audit', 'Integrations']} />
-      <div className="cols s404">
+      <Tabs items={SETTINGS_TABS.map(([, label]) => label)} value={index} onChange={setTab} />
+
+      {tab === 'general' && (
+        <div className="cols s404">
+          <div className="stack">
+            <Card>
+              <div className="cardhead"><h3>School profile</h3><p>Used across the parent portal, documents and communications.</p></div>
+              <div className="photo"><div className="bigavatar" style={{ borderRadius: 14 }}><Cog size={22} /></div>
+                <div><button className="btn"><Upload size={15} />Change school crest</button><small>SVG or PNG · Recommended 256 × 256 px</small></div></div>
+              <FieldGrid cols={[
+                [{ label: 'School name', required: true, value: 'Oakridge Academy' }, { label: 'School email', required: true, value: 'office@oakridge.ac.uk' }],
+                [{ label: 'Campus name', required: true, value: 'Main campus' }, { label: 'School phone', required: true, value: '+44 1865 555 100' }],
+                [{ label: 'School reference', value: 'OA-00482' }, { label: 'Website', value: 'www.oakridge.ac.uk' }],
+              ]} />
+              <Field box label="School address" required value="12 Oakridge Road, Oxford, OX2 7AA, United Kingdom" />
+            </Card>
+          </div>
+          <div className="stack">
+            <Card>
+              <h3 style={{ fontSize: 15, fontWeight: 600 }}>Regional preferences</h3>
+              <div className="fieldlist">
+                <Field box label="Time zone" select value="Europe/London (BST)" />
+                <Field box label="Currency" select value="GBP · British pound (£)" />
+                <Field box label="Date format" select value="DD MMM YYYY" />
+                <Field box label="Language" select value="English (United Kingdom)" />
+              </div>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {tab === 'academic' && (
         <div className="stack">
-          <Card>
-            <div className="cardhead"><h3>School profile</h3><p>Used across the parent portal, documents and communications.</p></div>
-            <div className="photo"><div className="bigavatar" style={{ borderRadius: 14 }}><Cog size={22} /></div>
-              <div><button className="btn"><Upload size={15} />Change school crest</button><small>SVG or PNG · Recommended 256 × 256 px</small></div></div>
-            <FieldGrid cols={[
-              [{ label: 'School name', required: true, value: 'Oakridge Academy' }, { label: 'School email', required: true, value: 'office@oakridge.ac.uk' }],
-              [{ label: 'Campus name', required: true, value: 'Main campus' }, { label: 'School phone', required: true, value: '+44 1865 555 100' }],
-              [{ label: 'School reference', value: 'OA-00482' }, { label: 'Website', value: 'www.oakridge.ac.uk' }],
-            ]} />
-            <Field box label="School address" required value="12 Oakridge Road, Oxford, OX2 7AA, United Kingdom" />
-          </Card>
           <Card>
             <SectionHead title="Academic year & term" sub="Current school calendar and operational dates." link="Manage term dates →" />
             <FieldGrid cols={[
@@ -342,29 +377,14 @@ export function Settings() {
             ]} />
             <Card className="notice" style={{ marginTop: 16, padding: 14 }}><h4>Half-term: 26–30 October</h4><p>School reopens Monday, 2 November. Attendance registers and recurring lessons pause during the break.</p></Card>
           </Card>
-          <Card>
-            <SectionHead title="User roles & permissions" sub="Role-based access protects student, staff and financial records." link="Manage users →" />
-            <div style={{ margin: '18px 0' }}>
-              <DataTable boxed cols={[
-                { label: 'Role', key: 0, className: 'num' }, { label: 'Users', key: 1 }, { label: 'Access level', key: 2 }, { label: 'Action', render: () => act('Edit role') },
-              ]} rows={[
-                ['Administrator', '4', 'Full school workspace'], ['Head of department', '8', 'Department & assigned classes'], ['Teacher', '60', 'Assigned students & classes'],
-                ['Finance officer', '3', 'Billing, payments & financial reports'], ['Support staff', '17', 'Role-specific school records'],
-              ]} />
-            </div>
-            <button className="btn"><Plus size={15} />Invite user</button>
-          </Card>
         </div>
+      )}
+
+      {/* authservice: GET /api/v1/roles, GET|POST /api/v1/roles/{roleId}/permissions */}
+      {tab === 'users' && <div className="stack"><RolesCard /></div>}
+
+      {tab === 'notifications' && (
         <div className="stack">
-          <Card>
-            <h3 style={{ fontSize: 15, fontWeight: 600 }}>Regional preferences</h3>
-            <div className="fieldlist">
-              <Field box label="Time zone" select value="Europe/London (BST)" />
-              <Field box label="Currency" select value="GBP · British pound (£)" />
-              <Field box label="Date format" select value="DD MMM YYYY" />
-              <Field box label="Language" select value="English (United Kingdom)" />
-            </div>
-          </Card>
           <Card>
             <div className="cardhead"><h3>Notifications</h3><p>Your administrator notification preferences.</p></div>
             {[['Attendance alerts', 'Unexcused absences and late registers'], ['Fee reminders', 'Overdue accounts and reconciliations'], ['Leave requests', 'New staff requests awaiting approval'], ['Daily school digest', 'A summary at 16:30 each school day']].map(([a, b]) => (
@@ -372,15 +392,20 @@ export function Settings() {
             ))}
             <span className="link" style={{ marginTop: 10 }}>Manage school-wide notifications →</span>
           </Card>
+        </div>
+      )}
+
+      {/* authservice: GET /api/v1/mfa/config, GET /api/v1/security/session-config, GET /api/v1/audit/logs */}
+      {tab === 'security' && <div className="stack"><SecurityCard /></div>}
+
+      {tab === 'integrations' && (
+        <div className="stack">
           <Card>
-            <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Security & audit</h3>
-            <Pill tone="green">Two-factor authentication enabled</Pill>
-            <KV rows={[['Session timeout', '30 minutes'], ['Record retention', 'School policy applied']]} />
-            <button className="btn" style={{ margin: '10px 0 14px' }}>View audit log</button>
-            <p className="xs muted">Last settings update: 12 October 2026 by Sarah Williams. All changes are logged.</p>
+            <div className="cardhead"><h3>Integrations</h3><p>Connect payment gateways, SMS providers and other systems.</p></div>
+            <p className="body-s muted" style={{ marginTop: 12 }}>No integrations are configured for this school yet. API tokens for third-party systems are issued by authservice (US-00007) and will be managed here.</p>
           </Card>
         </div>
-      </div>
+      )}
       <Footer />
     </>
   );
@@ -388,6 +413,7 @@ export function Settings() {
 
 /* ---------- Help ---------- */
 export function Help() {
+  const { user } = useAuth();
   const topics = [[GraduationCap, 'Students & admissions', 'Create records, enrol students and update guardians.', 12], [Users, 'Staff & faculty', 'Manage employment, teaching assignments and leave.', 9],
     [ClipboardCheck, 'Attendance', 'Complete registers and follow up on absences.', 8], [Wallet, 'Fees & payments', 'Record payments, reconcile invoices and send reminders.', 11],
     [FolderOpen, 'Academics & reports', 'Build timetables, enter grades and export reports.', 14], [Cog, 'Settings & security', 'Manage users, permissions and school preferences.', 7]];
@@ -398,7 +424,7 @@ export function Help() {
       <div className="cols s404">
         <div className="stack">
           <Card className="helphero">
-            <h2>How can we help you, Sarah?</h2>
+            <h2>How can we help you, {user.name.split(' ')[0]}?</h2>
             <p className="small muted">Search step-by-step guides for your Oakridge Academy workspace.</p>
             <SearchBox placeholder="Search help articles, workflows or a question..." />
             <p className="small muted">Popular: <span className="link">Add a student</span> · <span className="link">Record a payment</span> · <span className="link">Reset a user’s access</span></p>

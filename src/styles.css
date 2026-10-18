@@ -138,7 +138,10 @@ select.select{appearance:none;padding-right:26px;background:var(--card) url("dat
 .summary .side{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--mu)}
 .detail{display:flex;gap:10px;font-size:11px;color:var(--mu);padding:10px 0}
 .detail b{font-weight:500;color:var(--tx)}
-.kv{display:flex;flex-direction:column}
+/* label · value lists: one grid shared by all rows (subgrid) so the values line up in a single column */
+.kv{display:grid;grid-template-columns:max-content auto minmax(0,1fr);column-gap:10px}
+.kv .detail{display:grid;grid-column:1/-1;grid-template-columns:subgrid;align-items:baseline}
+.kv .detail b{overflow-wrap:anywhere}
 .kv .detail+.detail{border-top:1px solid var(--bd)}
 .docs{display:flex;flex-direction:column}
 .doc{display:flex;gap:12px;align-items:center;padding:10px 0;border-top:1px solid var(--bd)}
@@ -154,13 +157,17 @@ select.select{appearance:none;padding-right:26px;background:var(--card) url("dat
 /* forms */
 .cardhead h3{font-size:15px;font-weight:600}
 .cardhead p{font-size:11px;color:var(--mu);margin-top:4px}
-.fieldgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;padding:14px;border:1px solid var(--bd);border-radius:8px;margin-top:18px}
+.fieldgrid{display:grid;grid-template-columns:repeat(var(--cols,3),minmax(0,1fr));gap:16px 20px;padding:14px;border:1px solid var(--bd);border-radius:8px;margin-top:18px}
 .fieldcol{display:flex;flex-direction:column;gap:16px}
 .field label{display:block;font-size:9px;font-weight:600;letter-spacing:.04em;color:var(--mu);margin-bottom:6px}
 .field input,.field select,.field textarea{width:100%;height:36px;border:1px solid var(--bd);border-radius:8px;padding:0 12px;background:var(--card);font-size:11px;outline:0}
 .field select{appearance:none;background:var(--card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%239597a1' stroke-width='2' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center}
 .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--pr);box-shadow:0 0 0 3px var(--tint)}
 .field input::placeholder{color:var(--fa)}
+/* an unselected dropdown shows its placeholder in the same grey as text placeholders */
+.field select:has(option[value=""]:checked){color:var(--fa)}
+.field select option{color:var(--tx)}
+.field input[type=date]:invalid{color:var(--fa)}
 .field.box{border:1px solid var(--bd);border-radius:8px;padding:9px 12px 10px;margin-top:18px}
 .field.box label{margin-bottom:3px}
 .field.box input,.field.box select{border:0;padding:0;height:20px;border-radius:0;box-shadow:none}
@@ -290,6 +297,9 @@ select.select{appearance:none;padding-right:26px;background:var(--card) url("dat
 .login-submit{height:42px;justify-content:center;font-size:13px}
 .login-submit:disabled{opacity:.75;cursor:default}
 .login-error{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:var(--rdbg);color:var(--rd);font-weight:500}
+.login-success{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:var(--grbg);color:var(--gr);font-weight:500}
+.login-back{display:inline-flex;align-items:center;gap:6px;align-self:center;color:var(--mu);font-size:12px;font-weight:500}
+.login-back:hover{color:var(--pr)}
 .login-demo{text-align:center;color:var(--mu);font-size:11px;padding:10px;border:1px dashed var(--bd);border-radius:8px}
 .login-demo b{color:var(--tx);font-weight:500}
 .spin{animation:spin 1s linear infinite}
@@ -300,6 +310,20 @@ select.select{appearance:none;padding-right:26px;background:var(--card) url("dat
   .login-mobile-brand{display:flex}
 }
 @media (max-width:1200px){.toolbar .account div:not(.avatar-s){display:none}}
+
+/* modal (role permissions, audit log) */
+.modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.45);display:grid;grid-template-columns:minmax(0,1fr);place-items:center;padding:16px;z-index:60}
+.modal{background:var(--card);border-radius:12px;border:1px solid var(--bd);width:min(760px,calc(100vw - 32px));max-height:calc(100vh - 32px);display:flex;flex-direction:column;box-shadow:0 20px 50px rgba(0,0,0,.2)}
+.modal-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:18px 20px;border-bottom:1px solid var(--bd)}
+.modal-head h3{font-size:15px;font-weight:600}
+.modal-head p{font-size:11px;color:var(--mu);margin-top:3px}
+.modal-body{padding:16px 20px;overflow:auto}
+.modal-foot{display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid var(--bd)}
+.api-note{display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border-radius:8px;background:var(--ambg);color:var(--am);font-size:11px;line-height:1.45}
+.api-error{display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border-radius:8px;background:var(--rdbg);color:var(--rd);font-size:11px}
+.btn:disabled{opacity:.55;cursor:not-allowed}
+.campus{position:relative}
+.campus select{position:absolute;inset:0;opacity:0;cursor:pointer}
 
 /* theme picker */
 .themepick{position:relative;display:flex}

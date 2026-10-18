@@ -4,6 +4,8 @@ import {
   ArrowUpRight, Send, CalendarDays, ShieldCheck, ChevronDown,
 } from 'lucide-react';
 import { PageHeader, Metrics, SectionHead, Pill, Card, Footer } from '../components/ui.jsx';
+import { useAuth } from '../auth.jsx';
+import { useApplications } from '../components/Admissions.jsx';
 
 const POINTS = [94.1, 95.8, 94.7, 96.1, 95.2];
 const DAYS = ['Mon 12', 'Tue 13', 'Wed 14', 'Thu 15', 'Fri 16'];
@@ -43,12 +45,21 @@ const WORK = [
   ['Incomplete student records', 'Emergency contacts missing', 3, '', 'Needs update', 'School office', 'Update', '/students'],
 ];
 
+const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; };
+
 export default function Overview() {
+  const { user } = useAuth();
+  // "Admission applications" row: live count from GET /api/v1/admissions/enquiries (admissionservice)
+  const apps = useApplications();
+  const live = apps.canRead && !apps.missingBranch && !apps.error && apps.data;
+  const work = WORK.map((row) => (row[0] === 'Admission applications'
+    ? [row[0], row[1], live ? apps.open.length : (apps.loading ? '…' : '—'), row[3], row[4], row[5], row[6], '/students?tab=admissions']
+    : row));
   return (
     <>
       <PageHeader
         title="School overview"
-        desc="Good morning, Sarah. Here’s how your school is doing today."
+        desc={`${greeting()}, ${user.name.split(' ')[0]}. Here’s how your school is doing today.`}
         actions={[
           { label: '16 Oct 2026', icon: <CalIcon size={15} /> },
           { label: 'Export report', icon: <Download size={15} /> },
@@ -117,7 +128,7 @@ export default function Overview() {
             <table className="t">
               <thead><tr><th>Work item</th><th>Qty</th><th>Status</th><th>Assigned team</th><th>Action</th></tr></thead>
               <tbody>
-                {WORK.map(([n, s, q, tone, st, team, act, to]) => (
+                {work.map(([n, s, q, tone, st, team, act, to]) => (
                   <tr key={n}>
                     <td style={{ minWidth: 220 }}><b style={{ fontWeight: 500 }}>{n}</b><span className="sub">{s}</span></td>
                     <td className="num">{q}</td>

@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Admission workflow runner</title>
+<!--
+  Dev-only page (served by the Vite dev server at /dev/admission-workflow.html, not part of the production build).
+  Walks one applicant through the DPS enquiry → admission workflow
+  (admissionservice/wiki/workflows/DPS_Enquiry_to_Admission_Workflow.md) against the real services through the
+  Vite proxy, signing in as the DPS staff member who owns each step. It never touches the app's own session.
+  Created rows carry "[workflow-demo]" in the remarks; .agents/skills/test-ui/scripts/db/db.ps1 -Cleanup removes them.
+-->
+<style>
+  :root{--bg:#f6f6f4;--card:#fff;--bd:#e6e5e0;--tx:#24283b;--mu:#7b7f8c;--fa:#9597a1;--pr:#5f53a8;--tint:#efedf9;
+    --gr:#2f8a5b;--grt:#e7f4ec;--am:#a8730e;--amt:#fbf2df;--rd:#b8434a;--rdt:#f9e8e9;--bl:#2f6aa8;--blt:#e6eef8}
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--bg);color:var(--tx);font:400 13px/1.45 Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  button{font:inherit;cursor:pointer}
+  .wrap{max-width:1180px;margin:0 auto;padding:24px 16px 60px}
+  header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+  h1{font-size:24px;font-weight:700;letter-spacing:-.01em}
+  .sub{color:var(--mu);margin-top:4px;max-width:720px}
+  .ctrl{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .btn{height:36px;padding:0 14px;border-radius:8px;border:1px solid var(--bd);background:var(--card);font-weight:500;display:inline-flex;align-items:center;gap:6px}
+  .btn.primary{background:var(--pr);border-color:var(--pr);color:#fff}
+  .btn:disabled{opacity:.5;cursor:default}
+  select.btn{padding:0 10px}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px 18px}
+  .ctx{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:18px}
+  .ctx div{font-size:11px;color:var(--mu)} .ctx b{display:block;color:var(--tx);font-size:13px;font-weight:600;margin-top:2px}
+  .track{display:flex;gap:6px;margin-top:14px;flex-wrap:wrap}
+  .track span{flex:1;min-width:110px;text-align:center;padding:8px 6px;border-radius:8px;background:var(--card);border:1px solid var(--bd);color:var(--fa);font-size:11px;font-weight:600;transition:.3s}
+  .track span.done{color:var(--gr);background:var(--grt);border-color:transparent}
+  .track span.now{color:#fff;background:var(--pr);border-color:var(--pr);transform:translateY(-2px);box-shadow:0 6px 16px rgba(95,83,168,.25)}
+  .applicant{margin-top:14px;display:flex;gap:18px;flex-wrap:wrap;align-items:center}
+  .applicant .big{font-size:16px;font-weight:700} .muted{color:var(--mu)}
+  .steps{margin-top:18px;display:flex;flex-direction:column;gap:10px}
+  .step{display:grid;grid-template-columns:44px minmax(0,1fr);gap:14px;opacity:.55;transition:opacity .3s}
+  .step.active,.step.ok,.step.fail,.step.skip{opacity:1}
+  .num{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font-weight:700;background:var(--card);border:1px solid var(--bd);color:var(--mu)}
+  .step.active .num{background:var(--pr);border-color:var(--pr);color:#fff;animation:pulse 1.2s infinite}
+  .step.ok .num{background:var(--gr);border-color:var(--gr);color:#fff}
+  .step.fail .num{background:var(--rd);border-color:var(--rd);color:#fff}
+  .step.skip .num{background:var(--amt);border-color:transparent;color:var(--am)}
+  @keyframes pulse{50%{box-shadow:0 0 0 6px rgba(95,83,168,.18)}}
+  .step .card{padding:14px 16px}
+  .shead{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start}
+  .shead h3{font-size:14px;font-weight:600}
+  .shead p{color:var(--mu);font-size:12px;margin-top:2px}
+  .actors{display:flex;gap:6px;flex-wrap:wrap}
+  .actor{display:inline-flex;align-items:center;gap:6px;padding:3px 9px 3px 3px;border-radius:999px;background:var(--tint);color:var(--pr);font-size:11px;font-weight:600}
+  .actor i{width:20px;height:20px;border-radius:50%;background:var(--pr);color:#fff;display:grid;place-items:center;font-style:normal;font-size:9px}
+  .actor small{font-weight:500;color:var(--mu)}
+  .calls{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+  .call{border:1px solid var(--bd);border-radius:8px;overflow:hidden}
+  .call summary{list-style:none;display:flex;gap:10px;align-items:center;padding:7px 10px;cursor:pointer;font-size:12px}
+  .call summary::-webkit-details-marker{display:none}
+  .m{font:600 10px ui-monospace,monospace;padding:2px 6px;border-radius:4px;background:var(--blt);color:var(--bl);min-width:48px;text-align:center}
+  .path{font-family:ui-monospace,monospace;font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .who{font-size:11px;color:var(--mu)}
+  .code{font:600 11px ui-monospace,monospace;padding:2px 6px;border-radius:4px}
+  .code.ok{background:var(--grt);color:var(--gr)} .code.err{background:var(--rdt);color:var(--rd)}
+  .call pre{background:#1f2233;color:#d7d9e4;font:11px/1.5 ui-monospace,monospace;padding:10px 12px;overflow:auto;max-height:260px;white-space:pre-wrap;word-break:break-word}
+  .note{margin-top:8px;font-size:12px;padding:8px 10px;border-radius:8px;background:var(--grt);color:var(--gr)}
+  .note.fail{background:var(--rdt);color:var(--rd)} .note.skip{background:var(--amt);color:var(--am)}
+  .done-card{margin-top:18px;display:none} .done-card.show{display:block}
+  .done-card a{color:var(--pr);font-weight:600}
+  @media (max-width:640px){.step{grid-template-columns:32px minmax(0,1fr);gap:8px}.num{width:28px;height:28px;font-size:11px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Enquiry → admission, live</h1>
+      <p class="sub">Runs the DPS North workflow against the real admissionservice and authservice. Each step signs in as the staff member who owns it and calls the same API the product uses.</p>
+    </div>
+    <div class="ctrl">
+      <select class="btn" id="speed" title="Pause between steps">
+        <option value="1800">Presenter pace</option><option value="700" selected>Normal pace</option><option value="0">No pauses</option>
+      </select>
+      <button class="btn" id="stepBtn">Next step</button>
+      <button class="btn primary" id="runBtn">Run whole workflow</button>
+    </div>
+  </header>
+
+  <div class="card ctx" style="margin-top:18px">
+    <div>School<b>Delhi Public Education Society</b></div>
+    <div>Campus<b>DPS North Campus · DPS-DELHI-NORTH</b></div>
+    <div>Academic year<b>AY-2026-27</b></div>
+    <div>Class applied for<b>Class 6 (GRADE-06)</b></div>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <div class="applicant">
+      <div><div class="muted" style="font-size:11px">Applicant</div><div class="big" id="appName">Not created yet</div></div>
+      <div><div class="muted" style="font-size:11px">Application</div><div class="big" id="appNo">—</div></div>
+      <div><div class="muted" style="font-size:11px">Student</div><div class="big" id="stuNo">—</div></div>
+    </div>
+    <div class="track" id="track"></div>
+  </div>
+
+  <div class="steps" id="steps"></div>
+
+  <div class="card done-card" id="doneCard">
+    <h3 style="font-size:15px">Workflow complete</h3>
+    <p class="muted" style="margin-top:4px" id="doneText"></p>
+    <p style="margin-top:10px">See it in the product: <a href="/students?tab=admissions" target="_top">Students → Admissions</a>. Sign in as <b>admissions_deepak</b> and open <i>Review application</i> for the applicant above.</p>
+  </div>
+</div>
+
+<script>
+const PASSWORD = 'Password@123';
+const API = '/api/v1/admissions';
+const BRANCH = 'DPS-DELHI-NORTH', AY = 'AY-2026-27', GRADE = 'GRADE-06';
+const STATUSES = [['NEW_INQUIRY','New enquiry'],['CONTACTED','Contacted'],['EVALUATION_SCHEDULED','Assessment scheduled'],
+  ['EVALUATION_PASSED','Assessment passed'],['OFFER_ISSUED','Offer issued'],['ENROLLED','Enrolled']];
+const ROLE = { marketing_tanya:'Marketing manager', counselor_meera:'Front-office counselor', admissions_deepak:'Admission officer',
+  registrar_suresh:'Registrar', evaluator_kavya:'Entrance exam evaluator', cashier_ramesh:'Finance cashier', viceprincipal_kiran:'Vice principal' };
+const initials = (u) => u.split('_')[1].slice(0, 2).toUpperCase();
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const daysFromNow = (d) => new Date(Date.now() + d * 864e5);
+const isoDate = (d) => d.toISOString().slice(0, 10);
+
+// ---------- API helper: one token per staff member, every call is logged on the current step card ----------
+const tokens = {};
+let ctx = {}, current = null;
+async function login(username) {
+  if (tokens[username]) return tokens[username];
+  const r = await fetch('/api/v1/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password: PASSWORD }) });
+  const j = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(`Sign-in failed for ${username}: ${j?.message || r.status}`);
+  ctx.tenantId = j.data.tenantId;
+  return (tokens[username] = j.data.accessToken);
+}
+async function call(user, method, path, { query, body, form } = {}) {
+  const token = await login(user);
+  const url = API + path + (query ? '?' + new URLSearchParams(query) : '');
+  const headers = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  const r = await fetch(url, { method, headers, body: form || (body !== undefined ? JSON.stringify(body) : undefined) });
+  const j = await r.json().catch(() => null);
+  logCall(user, method, url, r.status, body ?? (form ? '(multipart file upload)' : undefined), j);
+  if (!r.ok || j?.success === false) {
+    const v = j?.validationErrors?.[0];
+    throw new Error(`${method} ${path} → ${r.status}: ${v ? `${v.field} ${v.message}` : j?.message || 'request failed'}`);
+  }
+  return j?.data ?? j;
+}
+function pdf(name) {
+  const body = `%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF`;
+  const fd = new FormData();
+  fd.append('file', new File([body], name, { type: 'application/pdf' }));
+  return fd;
+}
+
+// ---------- the workflow (mirrors the wiki page, step by step) ----------
+const STEPS = [
+  { n: 0, title: 'Run admission campaigns', story: 'US-02019', actors: ['marketing_tanya'],
+    desc: 'Pick the live campaign the enquiry will be attributed to.',
+    async run() {
+      const list = await call('marketing_tanya', 'GET', '/marketing-campaigns', { query: { tenantId: ctx.tenantId } });
+      const c = list.find((x) => x.status === 'ACTIVE') || list[0];
+      ctx.campaign = c?.campaignCode;
+      return `Lead source: ${ctx.campaign || 'none'} (${list.length} campaigns for DPS)`;
+    } },
+  { n: 1, title: 'Capture the enquiry', story: 'US-02001', actors: ['counselor_meera'],
+    desc: 'A walk-in family asks about Class 6; the counselor records the lead (Students → Add student in the UI).',
+    async run() {
+      const stamp = Date.now().toString().slice(-6);
+      const e = await call('counselor_meera', 'POST', '/enquiries', { body: {
+        tenantId: ctx.tenantId, branchId: BRANCH, candidateFirstName: 'Aditi', candidateLastName: 'Verma',
+        targetGradeId: GRADE, academicYearId: AY, guardianName: 'Sanjay Verma', guardianEmail: `sanjay.verma.${stamp}@example.com`,
+        guardianPhone: `+9198100${stamp.slice(-5)}`, referralSource: 'WALK_IN', campaignCode: ctx.campaign,
+        remarks: '[workflow-demo] Walk-in enquiry for Class 6; elder cousin studies at DPS North' } });
+      ctx.enquiry = e; setApplicant(e);
+      return `Application ${e.applicationNumber} created → ${e.enquiryStatus}`;
+    } },
+  { n: 2, title: 'Counselling call', story: 'US-02015', actors: ['counselor_meera'],
+    desc: 'The counselor calls the family; the call connects and they confirm interest.',
+    async run() {
+      const c = await call('counselor_meera', 'POST', `/enquiries/${ctx.enquiry.enquiryId}/calls`, { body: {
+        direction: 'OUTBOUND', outcome: 'CONNECTED', durationSeconds: 260, notes: 'Explained the admission process and entrance test syllabus.' } });
+      return refresh(`Call logged (${c.outcome})`);
+    } },
+  { n: 3, title: 'Collect documents', story: 'US-02004', actors: ['admissions_deepak', 'evaluator_kavya'],
+    desc: 'The officer uploads the two mandatory certificates; the evaluator adds the previous report card at the exam desk.',
+    async run() {
+      const id = ctx.enquiry.enquiryId; ctx.docs = {};
+      for (const t of ['BIRTH_CERTIFICATE', 'TRANSFER_CERTIFICATE']) {
+        const d = await call('admissions_deepak', 'POST', `/enquiries/${id}/documents`, { query: { documentType: t }, form: pdf(`aditi_${t.toLowerCase()}.pdf`) });
+        ctx.docs[t] = d.documentId;
+      }
+      await call('evaluator_kavya', 'POST', `/enquiries/${id}/documents`, { query: { documentType: 'PREVIOUS_REPORT_CARD' }, form: pdf('aditi_class5_report.pdf') });
+      return '3 documents in the vault, all PENDING verification';
+    } },
+  { n: 4, title: 'Verify documents and transfer certificate', story: 'US-02004 · US-02017', actors: ['registrar_suresh'],
+    desc: 'The registrar checks the birth certificate against the original and verifies the TC with the board, which marks the TC document verified.',
+    async run() {
+      await call('registrar_suresh', 'PATCH', `/documents/${ctx.docs.BIRTH_CERTIFICATE}/verification`, { body: { verificationStatus: 'VERIFIED', verificationNotes: 'Original birth certificate sighted at the front office.' } });
+      const tc = await call('registrar_suresh', 'POST', `/enquiries/${ctx.enquiry.enquiryId}/transfer-certificate/verifications`, { body: {
+        // Board registry format: BOARD/SCHOOLCODE/YEAR/SERIAL (serials ending in 000 are "not found")
+        board: 'CBSE', tcNumber: `CBSE/2730125/2026/${String(Date.now() % 900000 + 100001).slice(-6)}`, previousSchoolName: 'Kendriya Vidyalaya Sector 8, Noida' } });
+      if (tc.result !== 'VALID') throw new Error(`TC board check returned ${tc.result}: ${tc.remarks || tc.message || 'certificate not accepted'}`);
+      const docs = await call('registrar_suresh', 'GET', `/enquiries/${ctx.enquiry.enquiryId}/documents`);
+      const state = docs.filter((d) => d.mandatory).map((d) => `${d.documentType.replace('_', ' ').toLowerCase()} ${d.verificationStatus}`).join(', ');
+      return `TC board check VALID (${tc.boardReference}) · ${state}`;
+    } },
+  { n: 5, title: 'Schedule the entrance exam', story: 'US-02002 · US-02009', actors: ['admissions_deepak', 'counselor_meera'],
+    desc: 'The officer schedules the test and issues the admit card; the counselor sends the reminder.',
+    async run() {
+      const start = daysFromNow(3); start.setUTCHours(4, 30, 0, 0);
+      const ex = await call('admissions_deepak', 'POST', '/entrance-exams', { body: {
+        tenantId: ctx.tenantId, branchId: BRANCH, examTitle: 'Class 6 entrance test (workflow demo)', academicYearId: AY, targetGradeId: GRADE,
+        examStartAt: start.toISOString(), durationMinutes: 90, venue: 'Main block, Room 12', maxMarks: 100, passingMarks: 50,
+        reportingInstructions: 'Report 30 minutes early with the admit card and two pencils.', enquiryIds: [ctx.enquiry.enquiryId] } });
+      await call('counselor_meera', 'POST', '/reminders/entrance-evaluations', { body: { tenantId: ctx.tenantId, branchId: BRANCH, lookaheadHours: 96 } });
+      return refresh(`${ex.examCode}: admit card issued for ${start.toDateString()}`);
+    } },
+  { n: 6, title: 'Entrance test and interview', story: 'US-02003', actors: ['evaluator_kavya', 'registrar_suresh'],
+    desc: 'The evaluator conducts both rounds with the rubric; the registrar records the scores.',
+    async run() {
+      await call('evaluator_kavya', 'GET', '/evaluation-rubrics');
+      const base = { enquiryId: ctx.enquiry.enquiryId, evaluationDate: new Date().toISOString(), examinerId: 'kavya.evaluator@dps.edu.in', passingScore: 50 };
+      await call('registrar_suresh', 'POST', '/evaluations', { body: { ...base, evaluationType: 'ENTRANCE_TEST',
+        rubricScores: [{ criterion: 'MATHEMATICS', awardedScore: 34 }, { criterion: 'LANGUAGE', awardedScore: 25 }, { criterion: 'LOGICAL_REASONING', awardedScore: 26 }],
+        feedbackNotes: 'Strong in arithmetic and reasoning.' } });
+      await call('registrar_suresh', 'POST', '/evaluations', { body: { ...base, evaluationType: 'INTERVIEW',
+        rubricScores: [{ criterion: 'COMMUNICATION', awardedScore: 17 }, { criterion: 'ACADEMIC_APTITUDE', awardedScore: 25 }, { criterion: 'GENERAL_AWARENESS', awardedScore: 16 },
+          { criterion: 'CONFIDENCE_AND_CONDUCT', awardedScore: 13 }, { criterion: 'PARENT_INTERACTION', awardedScore: 13 }],
+        feedbackNotes: 'Confident, curious; parents supportive.' } });
+      return refresh('Entrance test 85/100 and interview 84/100, both PASSED');
+    } },
+  { n: 7, title: 'Merit list', story: 'US-02010 · US-02012', actors: ['admissions_deepak', 'viceprincipal_kiran'],
+    desc: 'The officer ranks the Class 6 candidates (70% test, 30% interview); the vice principal reviews the list.',
+    async run() {
+      const ml = await call('admissions_deepak', 'POST', '/merit-lists', { body: { tenantId: ctx.tenantId, branchId: BRANCH, academicYearId: AY, targetGradeId: GRADE, entranceTestWeight: 0.7, interviewWeight: 0.3 } });
+      ctx.meritListId = ml.meritListId;
+      await call('viceprincipal_kiran', 'GET', `/merit-lists/${ml.meritListId}`);
+      const me = (ml.entries || []).find((e) => e.enquiryId === ctx.enquiry.enquiryId);
+      return `${ml.meritListCode}: ${ml.rankedCandidates} ranked${me ? `, Aditi is rank ${me.rank ?? me.meritRank ?? '?'}` : ''}`;
+    } },
+  { n: 8, title: 'Waitlist', story: 'US-02014', actors: ['admissions_deepak'], skip: true,
+    desc: 'Only needed when Class 6 seats are full.',
+    async run() { return 'Skipped: a seat is available, so Aditi goes straight to an offer'; } },
+  { n: 9, title: 'Issue the offer and notify the family', story: 'US-02006 · US-02018', actors: ['admissions_deepak'],
+    desc: 'The officer issues the offer letter with the seat deposit, then sends the acceptance notices.',
+    async run() {
+      const o = await call('admissions_deepak', 'POST', '/offers', { body: { enquiryId: ctx.enquiry.enquiryId, offeredGradeId: GRADE, validUntilDate: isoDate(daysFromNow(14)), initialFeeAmount: 25000 } });
+      ctx.offer = o;
+      const n = await call('admissions_deepak', 'POST', '/acceptance-notifications', { body: { tenantId: ctx.tenantId, branchId: BRANCH, academicYearId: AY, gradeId: GRADE, meritListId: ctx.meritListId } });
+      return refresh(`${o.offerCode}: ${o.currency} ${o.initialFeeAmount} due by ${o.validUntilDate} · ${n.sent} notice(s) sent`);
+    } },
+  { n: 10, title: 'Fee waiver', story: 'US-02016', actors: ['admissions_deepak', 'viceprincipal_kiran'],
+    desc: 'A sibling concession of 20% is requested and approved by the vice principal.',
+    async run() {
+      const w = await call('admissions_deepak', 'POST', `/offers/${ctx.offer.offerId}/fee-waivers`, { body: { scholarshipCategory: 'SIBLING', waiverPercent: 20, justification: 'Elder cousin enrolled in Class 9; sibling concession policy.' } });
+      const d = await call('viceprincipal_kiran', 'PATCH', `/fee-waivers/${w.waiverId}/decision`, { body: { decision: 'APPROVED', decisionNotes: 'Approved under the sibling concession policy.' } });
+      ctx.payable = d.payableAmount;
+      return `Waiver ${d.status}: ${d.waivedAmount} waived, ${d.payableAmount} payable`;
+    } },
+  { n: 11, title: 'Collect the seat deposit', story: 'US-02008', actors: ['cashier_ramesh'],
+    desc: 'The cashier takes the reduced deposit by UPI and issues the receipt.',
+    async run() {
+      const r = await call('cashier_ramesh', 'POST', `/offers/${ctx.offer.offerId}/deposits`, { body: { amountPaid: ctx.payable, paymentMode: 'UPI', transactionReference: `UPI-DEMO-${Date.now()}`, remarks: 'Paid at the accounts counter' } });
+      ctx.receipt = r.receiptNumber;
+      return `Receipt ${r.receiptNumber}: ${ctx.payable} received, offer ACCEPTED`;
+    } },
+  { n: 12, title: 'Enrol the student', story: 'US-02005', actors: ['registrar_suresh'],
+    desc: 'The registrar converts the application into a Student Master record.',
+    async run() {
+      const s = await call('registrar_suresh', 'POST', `/enquiries/${ctx.enquiry.enquiryId}/student-conversion`, { body: { dateOfBirth: '2014-08-12', gender: 'FEMALE' } });
+      ctx.student = s; document.getElementById('stuNo').textContent = s.admissionNumber;
+      return refresh(`Student ${s.admissionNumber} created`);
+    } },
+  { n: 13, title: 'Section placement', story: 'US-02013', actors: ['registrar_suresh'],
+    desc: 'The registrar runs auto-placement into the Class 6 sections.',
+    async run() {
+      const q = { tenantId: ctx.tenantId, branchId: BRANCH, academicYearId: AY, gradeId: GRADE };
+      let sections = await call('registrar_suresh', 'GET', '/grade-sections', { query: q });
+      if (!sections.length) {
+        sections = await call('registrar_suresh', 'PUT', '/grade-sections', { body: { ...q, sections: ['A', 'B', 'C'].map((c) => ({ sectionCode: c, capacity: 40 })) } });
+      }
+      const p = await call('registrar_suresh', 'POST', '/grade-sections/auto-placement', { body: q });
+      const s = await call('registrar_suresh', 'GET', `/students/${ctx.student.studentId}`);
+      document.getElementById('stuNo').textContent = `${s.admissionNumber}${s.sectionCode ? ` · 6-${s.sectionCode}` : ''}`;
+      return s.sectionCode ? `Placed in Class 6-${s.sectionCode} (${p.placed} placed this run)` : `Auto-placement ran (${p.placed} placed, ${p.unplaced} unplaced) — no section assigned`;
+    } },
+];
+
+// ---------- rendering ----------
+const stepsEl = document.getElementById('steps');
+function render() {
+  document.getElementById('track').innerHTML = STATUSES.map(([k, l]) => `<span data-s="${k}">${l}</span>`).join('');
+  stepsEl.innerHTML = STEPS.map((s) => `
+    <div class="step" id="step-${s.n}">
+      <div class="num">${s.n}</div>
+      <div class="card">
+        <div class="shead">
+          <div><h3>${s.title}</h3><p>${s.desc} <span class="muted">· ${s.story}</span></p></div>
+          <div class="actors">${s.actors.map((a) => `<span class="actor"><i>${initials(a)}</i>${a}<small>${ROLE[a]}</small></span>`).join('')}</div>
+        </div>
+        <div class="calls"></div>
+      </div>
+    </div>`).join('');
+}
+function logCall(user, method, url, status, req, res) {
+  if (!current) return;
+  const d = document.createElement('details'); d.className = 'call';
+  d.innerHTML = `<summary><span class="m">${method}</span><span class="path">${url.replace(API, '…')}</span><span class="who">${user}</span><span class="code ${status < 400 ? 'ok' : 'err'}">${status}</span></summary>
+    <pre>${req !== undefined ? 'Request\n' + esc(typeof req === 'string' ? req : JSON.stringify(req, null, 2)) + '\n\n' : ''}Response\n${esc(JSON.stringify(res, null, 2))}</pre>`;
+  current.querySelector('.calls').appendChild(d);
+}
+const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+function setApplicant(e) {
+  document.getElementById('appName').textContent = `${e.candidateFirstName} ${e.candidateLastName}`;
+  document.getElementById('appNo').textContent = e.applicationNumber;
+  setStatus(e.enquiryStatus);
+}
+function setStatus(st) {
+  const i = STATUSES.findIndex(([k]) => k === st);
+  document.querySelectorAll('#track span').forEach((el, j) => { el.className = j < i ? 'done' : j === i ? 'now' : ''; });
+}
+async function refresh(msg) {
+  const e = await call('admissions_deepak', 'GET', `/enquiries/${ctx.enquiry.enquiryId}`);
+  ctx.enquiry = e; setApplicant(e);
+  return `${msg} · status ${e.enquiryStatus}`;
+}
+
+let next = 0, busy = false;
+async function runStep() {
+  const s = STEPS[next];
+  if (!s) return false;
+  current = document.getElementById(`step-${s.n}`);
+  current.className = 'step active';
+  if (!ctx.tenantId) await login(s.actors[0]);
+  current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const note = document.createElement('div');
+  try {
+    const msg = await s.run();
+    current.className = `step ${s.skip ? 'skip' : 'ok'}`;
+    note.className = `note${s.skip ? ' skip' : ''}`; note.textContent = msg;
+    next++;
+  } catch (err) {
+    current.className = 'step fail';
+    note.className = 'note fail'; note.textContent = err.message;
+    current.querySelector('.card').appendChild(note);
+    throw err;
+  }
+  current.querySelector('.card').appendChild(note);
+  if (next === STEPS.length) finish();
+  return true;
+}
+function finish() {
+  document.getElementById('doneCard').classList.add('show');
+  document.getElementById('doneText').textContent = `${ctx.enquiry.candidateFirstName} ${ctx.enquiry.candidateLastName} (${ctx.enquiry.applicationNumber}) is ENROLLED as ${ctx.student.admissionNumber}${ctx.receipt ? `; deposit receipt ${ctx.receipt}` : ''}.`;
+  document.getElementById('doneCard').scrollIntoView({ behavior: 'smooth' });
+  window.__workflow = { done: true, ctx };
+}
+async function guard(fn) {
+  if (busy) return; busy = true; setButtons();
+  try { await fn(); } catch (e) { window.__workflow = { done: false, error: e.message, step: STEPS[next]?.n }; } finally { busy = false; setButtons(); }
+}
+function setButtons() {
+  const end = next >= STEPS.length;
+  document.getElementById('runBtn').disabled = busy || end;
+  document.getElementById('stepBtn').disabled = busy || end;
+  document.getElementById('runBtn').textContent = next > 0 && !end ? 'Run remaining steps' : 'Run whole workflow';
+}
+document.getElementById('stepBtn').onclick = () => guard(runStep);
+document.getElementById('runBtn').onclick = () => guard(async () => {
+  const pause = Number(document.getElementById('speed').value);
+  while (next < STEPS.length) { await runStep(); if (pause) await sleep(pause); }
+});
+render(); setButtons();
+</script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout.jsx';
 import Login from './pages/Login.jsx';
+import { ForgotPassword, ResetPassword, ChangePassword } from './pages/PasswordPages.jsx';
 import { RequireAuth } from './auth.jsx';
 import Overview from './pages/Overview.jsx';
 import { StudentsDirectory, StudentForm, StudentProfile } from './pages/Students.jsx';
@@ -12,6 +13,9 @@ export default function App() {
   return (
     <Routes>
       <Route path="login" element={<Login />} />
+      <Route path="forgot-password" element={<ForgotPassword />} />
+      <Route path="reset-password" element={<ResetPassword />} />
+      <Route path="change-password" element={<RequireAuth allowPasswordChange><ChangePassword /></RequireAuth>} />
       <Route element={<RequireAuth><Layout /></RequireAuth>}>
         <Route index element={<Overview />} />
         <Route path="students" element={<StudentsDirectory />} />

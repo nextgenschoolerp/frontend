@@ -5,6 +5,7 @@ import {
   PageHeader, Metrics, Card, SectionHead, Tabs, SearchBox, Select, DataTable, Pager, Person, Actions,
   Pill, FieldGrid, Field, Footer, KV, Docs,
 } from '../components/ui.jsx';
+import { useRoleOptions } from '../components/AuthSettings.jsx';
 
 const STAFF = [
   ['Eleanor Hughes', 'SF-2018-014', 'Head of Mathematics', 'Mathematics', 'Teaching', 'On campus'],
@@ -180,6 +181,8 @@ export function StaffForm() {
   const nav = useNavigate();
   const isNew = useLocation().pathname.endsWith('/new');
   const v = (a) => (isNew ? '' : a);
+  // Role list comes from authservice GET /api/v1/roles (US-00002) when the user may read roles
+  const roleOptions = useRoleOptions(['Head of department', 'Teacher', 'Finance officer', 'Administrator']);
   const back = isNew ? '/staff' : '/staff/sf-2018-014';
   return (
     <form onSubmit={(e) => { e.preventDefault(); nav(back); }} style={{ display: 'contents' }}>
@@ -271,7 +274,7 @@ export function StaffForm() {
           <Card>
             <h3 style={{ fontSize: 15, fontWeight: 600 }}>Access & permissions</h3>
             <div className="fieldlist">
-              <Field box label="System role" select value={v('Head of department')} placeholder="Select role" options={['Head of department', 'Teacher', 'Finance officer', 'Administrator']} />
+              <Field key={roleOptions.join()} box label="System role" select value={v(roleOptions.includes('Head of department') ? 'Head of department' : 'Department Head')} placeholder="Select role" options={roleOptions} />
               <Field box label="Record visibility" select value={v('Assigned classes & department')} placeholder="Select visibility" options={['Assigned classes & department', 'Whole school']} />
             </div>
             <label className="check"><input type="checkbox" defaultChecked />Staff portal access enabled</label>

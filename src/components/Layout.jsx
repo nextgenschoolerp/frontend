@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../auth.jsx';
+import { listBranches } from '../api/authService.js';
+import { useApi } from '../api/useApi.js';
 import ThemePicker from './ThemePicker.jsx';
 
 const GROUPS = [
@@ -39,6 +41,28 @@ function crumbsFor(pathname) {
   if (id === 'new') out.push(seg === 'students' ? 'Add student' : 'Add staff member');
   else if (id && person) out.push(tail === 'edit' ? `${person} / Edit` : person);
   return out;
+}
+
+/** Campus switcher. Super admins pick from GET /api/v1/tenants/{tenantId}/branches (US-00009). */
+function CampusSwitcher() {
+  const { user, hasRole, pickedBranch, selectBranch } = useAuth();
+  const canList = hasRole('SUPER_ADMIN');
+  const { data: branches } = useApi(() => listBranches(user.tenantId), [user.tenantId], canList && !!user.tenantId);
+  const current = branches?.find((b) => b.branchCode === pickedBranch) || branches?.find((b) => b.branchCode === user.branchId) || branches?.[0];
+  // Make the shown campus the active one for branch-scoped screens (admissions)
+  useEffect(() => { if (current && current.branchCode !== pickedBranch) selectBranch(current.branchCode); }, [current?.branchCode]);
+  return (
+    <div className="campus" title={current ? `${current.branchCode} · ${current.affiliationBoard}` : user.branchId || undefined}>
+      <Building2 size={16} />
+      <div><b>{current?.branchName || user.branchId || 'Main campus'}</b><small>{current ? `${current.affiliationBoard} · ${current.status.toLowerCase()}` : 'School administration'}</small></div>
+      <ChevronsUpDown size={13} />
+      {branches?.length > 1 && (
+        <select aria-label="Switch campus" value={current?.branchCode} onChange={(e) => selectBranch(e.target.value)}>
+          {branches.map((b) => <option key={b.branchCode} value={b.branchCode}>{b.branchName}</option>)}
+        </select>
+      )}
+    </div>
+  );
 }
 
 export default function Layout() {
@@ -78,11 +102,7 @@ export default function Layout() {
           <div><b>Oakridge</b><small>ACADEMY</small></div>
           <button className="navclose" onClick={() => setNavOpen(false)} aria-label="Close menu"><X size={18} /></button>
         </div>
-        <div className="campus">
-          <Building2 size={16} />
-          <div><b>Main campus</b><small>School administration</small></div>
-          <ChevronsUpDown size={13} />
-        </div>
+        <CampusSwitcher />
         {GROUPS.map(([label, items]) => (
           <div className="navgroup" key={label}>
             <h6>{label}</h6>
@@ -120,7 +140,7 @@ export default function Layout() {
             <ThemePicker />
             <div className="bell"><Bell size={19} /></div>
             <div className="account">
-              <div className="avatar-s" title={`${user.name} · ${user.role}`}>{user.initials}</div>
+              <div className="avatar-s" title={`${user.name} · ${user.role} · ${user.email || user.username}`}>{user.initials}</div>
               <div><b>{user.name}</b><small>{user.role}</small></div>
               <button className="signout" onClick={logout} title="Sign out" aria-label="Sign out"><LogOut size={16} /></button>
             </div>
