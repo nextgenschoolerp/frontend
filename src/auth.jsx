@@ -10,7 +10,9 @@ const ROLE_LABELS = {
   DEPARTMENT_HEAD: 'Head of department', ADMIN_CLERK: 'Administrative clerk', COMPLIANCE_OFFICER: 'Compliance officer',
   ADMISSION_OFFICER: 'Admission officer', FRONT_OFFICE_COUNSELOR: 'Front-office counselor', REGISTRAR: 'Registrar',
   ENTRANCE_EXAM_EVALUATOR: 'Entrance exam evaluator', FINANCE_CASHIER: 'Finance cashier', MARKETING_MANAGER: 'Marketing manager',
-  APPLICANT_PARENT: 'Parent',
+  APPLICANT_PARENT: 'Parent', SUBJECT_TEACHER: 'Subject teacher', CLASS_TEACHER: 'Class teacher', VICE_PRINCIPAL: 'Vice principal',
+  EXAM_CONTROLLER: 'Exam controller', ACADEMIC_COORDINATOR: 'Academic coordinator', TIMETABLE_INCHARGE: 'Timetable in-charge',
+  SUBSTITUTION_INCHARGE: 'Substitution in-charge', ELEARNING_ADMIN: 'E-learning admin',
 };
 
 const AuthContext = createContext(null);

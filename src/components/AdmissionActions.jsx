@@ -142,13 +142,14 @@ function StepForm({ step, enquiry, offer, onDone }) {
       return `Deposit received: receipt ${r.receiptNumber}. The offer is accepted.`;
     },
     enrol: async (v) => {
-      if (!v.dob) throw Object.assign(new Error(), { detail: 'Enter the date of birth.' });
+      if (!v.dob || !v.gender) throw Object.assign(new Error(), { detail: 'Enter the date of birth and gender.' });
       if (!grade || !v.sectionId) throw Object.assign(new Error(), { detail: `Choose a section of ${className}.` });
       const s = await admissionApi.convertToStudent(id, { dateOfBirth: v.dob, gender: v.gender });
       try {
         const st = await studentApi.enrollStudent({ tenantId: enquiry.tenantId, branchId: enquiry.branchId,
           firstName: enquiry.candidateFirstName, lastName: enquiry.candidateLastName, dateOfBirth: v.dob, gender: v.gender,
           gradeId: grade.gradeId, sectionId: v.sectionId, guardianName: enquiry.guardianName || undefined,
+          guardianRelationship: enquiry.guardianRelationship || undefined,
           guardianPhone: enquiry.guardianPhone || undefined, guardianEmail: enquiry.guardianEmail || undefined });
         return <>Enrolled as {s.admissionNumber}: student {st.studentUid} in {className}-{sections.data?.find((x) => x.sectionId === v.sectionId)?.sectionName}.{' '}
           <Link className="link" to={`/students/${st.studentId}`}>Open student profile →</Link></>;
@@ -212,8 +213,16 @@ function StepForm({ step, enquiry, offer, onDone }) {
       <In label="Remarks" name="remarks" placeholder="Optional" />
     </>,
     enrol: <>
-      <In label="Date of birth" name="dob" type="date" required max={isoDate(new Date())} />
-      <Sel label="Gender" name="gender" defaultValue="FEMALE" options={[['FEMALE', 'Female'], ['MALE', 'Male'], ['OTHER', 'Other']]} />
+      {/* Date of birth and gender come from the application; asked for only when it did not record them */}
+      {enquiry.candidateDateOfBirth && enquiry.candidateGender ? <>
+        <p className="xs muted">From the application: born {new Date(enquiry.candidateDateOfBirth).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+          {' · '}{label(enquiry.candidateGender)}{enquiry.guardianRelationship ? ` · guardian ${enquiry.guardianName} (${enquiry.guardianRelationship})` : ''}</p>
+        <input type="hidden" name="dob" value={enquiry.candidateDateOfBirth} />
+        <input type="hidden" name="gender" value={enquiry.candidateGender} />
+      </> : <>
+        <In label="Date of birth" name="dob" type="date" required max={isoDate(new Date())} defaultValue={enquiry.candidateDateOfBirth || undefined} />
+        <Sel label="Gender" name="gender" defaultValue={enquiry.candidateGender || 'FEMALE'} options={[['FEMALE', 'Female'], ['MALE', 'Male'], ['OTHER', 'Other']]} />
+      </>}
       {grades.loading || sections.loading ? <p className="xs muted"><LoaderCircle size={12} className="spin" /> Loading sections…</p>
         : !grade ? <div className="api-note"><span>{grades.error ? 'Classes are not available for your role.' : `${className} is not set up in Academic setup.`}</span></div>
           : <Sel label={`Section of ${className}`} name="sectionId" defaultValue={sections.data?.[0]?.sectionId}

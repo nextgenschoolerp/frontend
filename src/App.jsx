@@ -6,7 +6,7 @@ import { RequireAuth } from './auth.jsx';
 import Overview from './pages/Overview.jsx';
 import { StudentsDirectory, StudentForm, StudentProfile } from './pages/Students.jsx';
 import { StaffDirectory, StaffForm, StaffProfile } from './pages/Staff.jsx';
-import { Academics, Attendance, Fees } from './pages/Operations.jsx';
+import { Academics, Teaching, Attendance, Fees } from './pages/Operations.jsx';
 import { Calendar, Communications, Reports, Documents, Settings, Help } from './pages/Admin.jsx';
 
 export default function App() {
@@ -27,6 +27,7 @@ export default function App() {
         <Route path="staff/:id" element={<StaffProfile />} />
         <Route path="staff/:id/edit" element={<StaffForm />} />
         <Route path="academics" element={<Academics />} />
+        <Route path="teaching" element={<Teaching />} />
         <Route path="attendance" element={<Attendance />} />
         <Route path="fees" element={<Fees />} />
         <Route path="calendar" element={<Calendar />} />

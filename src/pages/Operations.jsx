@@ -9,6 +9,8 @@ import { FeesLive } from '../components/FeesLive.jsx';
 import { AssessmentsLive } from '../components/AssessmentsLive.jsx';
 import { ROLES as examRoles } from '../api/examService.js';
 import { ApiNote } from '../components/Admissions.jsx';
+import { TeachingLive } from '../components/TeachingLive.jsx';
+import { ROLES as lmsRoles } from '../api/academicService.js';
 
 const act = (t) => <span className="act">{t}</span>;
 
@@ -22,7 +24,7 @@ export function Academics() {
       <PageHeader
         title="Academics"
         desc="Coordinate classes, curriculum, teaching schedules and assessment deadlines."
-        actions={[{ label: 'View timetable' }, { label: 'Add class', icon: <Plus size={15} />, primary: true }]}
+        actions={[{ label: 'View timetable', to: '/teaching' }, { label: 'Add class', icon: <Plus size={15} />, primary: true }]}
       />
       <Card><ApiNote>Sample data. Assessment terms, mark entry and results are shown to teachers, the exam controller, principals and registrars.</ApiNote></Card>
       <Metrics items={[
@@ -90,6 +92,20 @@ export function Academics() {
         <h4>Half-term planning</h4>
         <p>Half-term runs 26–30 October. Review cover and publish any timetable changes before school reopens on Monday, 2 November.</p>
       </Card>
+      <Footer />
+    </>
+  );
+}
+
+/* ---------- Teaching & learning ---------- */
+/** Live from academicservice (Module 06) for academic staff and principals; other roles see a note. */
+export function Teaching() {
+  const { hasRole } = useAuth();
+  if (hasRole(...lmsRoles.view)) return <TeachingLive />;
+  return (
+    <>
+      <PageHeader title="Teaching & learning" desc="Timetables, cover, syllabus progress, homework, lesson plans and lab bookings." />
+      <Card><ApiNote>Timetables, cover, syllabus progress, homework and lesson plans are shown to teachers, the academic coordinator, the timetable and substitution in-charges, e-learning admins and principals.</ApiNote></Card>
       <Footer />
     </>
   );

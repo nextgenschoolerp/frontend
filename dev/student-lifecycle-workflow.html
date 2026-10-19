@@ -226,7 +226,8 @@ const STEPS = [
       const e = await call('counselor', 'POST', `${ADM}/enquiries`, { body: {
         tenantId: ctx.tenantId, branchId: ctx.branchId, candidateFirstName: first, candidateLastName: last,
         targetGradeId: ctx.grade, academicYearId: ctx.ay, guardianName: `${parent} ${last}`, guardianEmail: ctx.kid.email,
-        guardianPhone: ctx.kid.phone, referralSource: 'WALK_IN', remarks: `[workflow-demo] Lifecycle run for ${ctx.className}-${ctx.sectionName}` } });
+        guardianPhone: ctx.kid.phone, candidateDateOfBirth: ctx.kid.dob, candidateGender: ctx.kid.gender, guardianRelationship: 'Father',
+        referralSource: 'WALK_IN', remarks: `[workflow-demo] Lifecycle run for ${ctx.className}-${ctx.sectionName}` } });
       ctx.enquiry = e; show();
       return refresh(`Application ${e.applicationNumber} created for ${first} ${last}`);
     } },
@@ -279,7 +280,8 @@ const STEPS = [
     calls: [['registrar', 'POST', `${ADM}/enquiries/{id}/student-conversion`], ['registrar', 'GET', `${ACAD}/grades`], ['registrar', 'GET', `${ACAD}/sections`], ['registrar', 'POST', STU]],
     desc: 'The registrar converts the application and creates the student record in the chosen section (Review application → Enrol student).',
     async run() {
-      const s = await call('registrar', 'POST', `${ADM}/enquiries/${ctx.enquiry.enquiryId}/student-conversion`, { body: { dateOfBirth: ctx.kid.dob, gender: ctx.kid.gender } });
+      // Date of birth and gender were recorded on the application, so the conversion needs no details
+      const s = await call('registrar', 'POST', `${ADM}/enquiries/${ctx.enquiry.enquiryId}/student-conversion`, { body: {} });
       const grades = await call('registrar', 'GET', `${ACAD}/grades`, { query: { tenantId: ctx.tenantId } });
       ctx.grades = grades.slice().sort((a, b) => a.sequenceOrder - b.sequenceOrder);
       ctx.gradeRow = ctx.grades.find((g) => g.gradeName === ctx.className);
@@ -289,9 +291,9 @@ const STEPS = [
       if (!ctx.sectionRow) throw new Error(`${ctx.className} has no section ${ctx.sectionName}`);
       const st = await call('registrar', 'POST', STU, { body: { tenantId: ctx.tenantId, branchId: ctx.branchId, firstName: ctx.kid.first, lastName: ctx.kid.last,
         dateOfBirth: ctx.kid.dob, gender: ctx.kid.gender, bloodGroup: 'B+', emergencyContactPhone: ctx.kid.phone, gradeId: ctx.gradeRow.gradeId, sectionId: ctx.sectionRow.sectionId,
-        guardianName: `${ctx.kid.parent} ${ctx.kid.last}`, guardianRelationship: 'Father', guardianPhone: ctx.kid.phone, guardianEmail: ctx.kid.email } });
+        guardianName: `${ctx.kid.parent} ${ctx.kid.last}`, guardianRelationship: ctx.enquiry.guardianRelationship || 'Father', guardianPhone: ctx.kid.phone, guardianEmail: ctx.kid.email } });
       ctx.admission = s; ctx.student = st; ctx.stage = 'enrolled'; show();
-      return refresh(`Admission ${s.admissionNumber} · student ${st.studentUid} in ${ctx.className}-${ctx.sectionName}`);
+      return refresh(`Admission ${s.admissionNumber} (born ${s.dateOfBirth}, from the application) · student ${st.studentUid} in ${ctx.className}-${ctx.sectionName}`);
     } },
   // ---- Fees (financeservice) ----
   { n: 7, phase: 'Fees', title: 'Raise the year\'s fees', story: 'US-04000',

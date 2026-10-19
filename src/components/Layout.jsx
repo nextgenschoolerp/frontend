@@ -2,7 +2,7 @@ import { NavLink, Outlet, useLocation, useNavigate, Link } from 'react-router-do
 import {
   School, Building2, ChevronsUpDown, LayoutDashboard, GraduationCap, Users, BookOpen,
   ClipboardCheck, Wallet, CalendarDays, Megaphone, ChartNoAxesCombined, FolderOpen,
-  Settings as SettingsIcon, CircleHelp, ChevronRight, ChevronDown, Search, CalendarRange, Bell, LogOut, Menu, X, Check,
+  Settings as SettingsIcon, CircleHelp, CalendarClock, ChevronRight, ChevronDown, Search, CalendarRange, Bell, LogOut, Menu, X, Check,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth.jsx';
@@ -16,6 +16,7 @@ const GROUPS = [
     ['/students', 'Students', GraduationCap],
     ['/staff', 'Staff & faculty', Users],
     ['/academics', 'Academics', BookOpen],
+    ['/teaching', 'Teaching & learning', CalendarClock],
     ['/attendance', 'Attendance', ClipboardCheck],
     ['/fees', 'Fees & payments', Wallet],
   ]],
@@ -28,7 +29,7 @@ const GROUPS = [
 ];
 
 const SECTION = {
-  students: 'Students', staff: 'Staff & faculty', academics: 'Academics', attendance: 'Attendance',
+  students: 'Students', staff: 'Staff & faculty', academics: 'Academics', teaching: 'Teaching & learning', attendance: 'Attendance',
   fees: 'Fees & payments', calendar: 'Calendar', communications: 'Communications', reports: 'Reports',
   documents: 'Documents', settings: 'Settings', help: 'Help & support',
 };

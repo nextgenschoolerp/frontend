@@ -515,3 +515,8 @@ body.noscroll{overflow:hidden}
 .acctmenu>button.on{color:var(--pr);font-weight:600}
 .acctmenu>button.danger{color:var(--rd)}
 .acctmenu hr{border:0;border-top:1px solid var(--bd);margin:4px 0}
+/* Teaching & learning: weekly timetable grid (periods × working days) */
+.ttgrid td{vertical-align:top;min-width:96px}
+.ttgrid td .cell-id b{font-weight:500}
+.ttgrid tr.ttbreak td{background:var(--gl);color:var(--mu);font-size:11px;text-align:center;padding-top:6px;padding-bottom:6px}
+.ttgrid tr.ttbreak td:first-child{text-align:left}

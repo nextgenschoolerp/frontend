@@ -3,6 +3,7 @@ import { Upload, LoaderCircle } from 'lucide-react';
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as admissionApi from '../api/admissionService.js';
+import { GENDERS } from '../api/studentService.js';
 import { Card, Pill, DataTable } from './ui.jsx';
 import { ApiErr, ApiNote, statusPill } from './Admissions.jsx';
 
@@ -48,9 +49,12 @@ export function buildEnquiry(form, tenantId, branchId) {
       guardianName: get('primary-guardian'),
       guardianEmail: get('email-address'),
       guardianPhone: phone,
+      // Kept on the application so enrolment does not ask for them again
+      candidateDateOfBirth: get('date-of-birth') || undefined,
+      candidateGender: GENDERS[get('gender')] || undefined,
+      guardianRelationship: relationship || undefined,
       referralSource: 'WALK_IN',
-      remarks: ['Entered from Add student', get('section') && `section ${get('section')}`, get('year-group'),
-        relationship && `guardian relationship: ${relationship}`].filter(Boolean).join('; '),
+      remarks: ['Entered from Add student', get('section') && `section ${get('section')}`, get('year-group')].filter(Boolean).join('; '),
     },
   };
 }

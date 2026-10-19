@@ -127,7 +127,8 @@ export function ApplicationModal({ enquiry, onClose, onChanged }) {
     <Modal title={`${enquiry.candidateFirstName} ${enquiry.candidateLastName}`} sub={`${enquiry.applicationNumber} · ${gradeLabel(enquiry.targetGradeId)} · ${enquiry.academicYearId}`} onClose={onClose}>
       <div className="pills">{statusPill(enquiry.enquiryStatus)}{enquiry.campaignCode && <Pill>{enquiry.campaignCode}</Pill>}</div>
       <KV rows={[
-        ['Guardian', `${enquiry.guardianName} · ${enquiry.guardianPhone}`],
+        ['Date of birth', enquiry.candidateDateOfBirth ? `${fmtDate(enquiry.candidateDateOfBirth)}${enquiry.candidateGender ? ` · ${label(enquiry.candidateGender)}` : ''}` : 'Not recorded'],
+        ['Guardian', `${enquiry.guardianName}${enquiry.guardianRelationship ? ` (${enquiry.guardianRelationship})` : ''} · ${enquiry.guardianPhone}`],
         ['Email', enquiry.guardianEmail],
         ['Source', label(enquiry.referralSource)],
         ['Received', fmtDate(enquiry.createdAt)],
