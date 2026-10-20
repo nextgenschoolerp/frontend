@@ -8,6 +8,7 @@ import {
   PageHeader, Metrics, Card, SectionHead, Tabs, SearchBox, Select, DataTable, Pager, Pill, Footer, Field, FieldGrid, KV, downloadFile, downloadCsv, schoolDay, todayIso,
 } from '../components/ui.jsx';
 import { AttendanceChart } from './Overview.jsx';
+import { useAttendanceWeek } from '../components/AttendanceLive.jsx';
 import { RolesCard, SecurityCard } from '../components/AuthSettings.jsx';
 import { useAuth } from '../auth.jsx';
 
@@ -196,6 +197,19 @@ export function Communications() {
 export function Reports() {
   const cats = [[GraduationCap, 'Student reports', 'Enrolment, admissions & demographics', 8], [ClipboardCheck, 'Attendance', 'Daily registers, trends & persistent absence', 6],
     [Wallet, 'Finance', 'Fee collection, outstanding balances & billing', 5], [Users, 'Staff & academics', 'Staffing, class performance & assessments', 7]];
+  // Weekly attendance report: GET /api/v1/attendance/summary and /trend (studentservice); the sample week for other roles
+  const att = useAttendanceWeek();
+  const t = att.live ? att.today : null;
+  const share = (n) => (t && t.totalStudents ? `${((n / t.totalStudents) * 100).toFixed(1)}%` : '—');
+  const week = att.live
+    ? { period: att.period || 'This week', avg: att.weekAvg === null ? '—' : `${att.weekAvg.toFixed(1)}%`,
+      change: att.change === null ? '—' : `${att.change >= 0 ? '+' : ''}${att.change.toFixed(1)} pp`, up: att.change === null || att.change >= 0,
+      onTarget: att.weekAvg !== null && att.weekAvg >= 95,
+      rows: [['Present', t.present.toLocaleString('en-IN'), share(t.present)], ['Excused', String(t.excused), share(t.excused)], ['Unexcused', String(t.unexcused), share(t.unexcused)],
+        ['Not yet marked', String(t.unmarked), share(t.unmarked)]],
+      updated: new Date().toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) }
+    : { period: '12–16 October 2026', avg: '95.2%', change: '+0.5 pp', up: true, onTarget: true,
+      rows: [['Present', '1,188', '95.2%'], ['Excused', '42', '3.4%'], ['Unexcused', '18', '1.4%']], updated: '16 Oct 2026 · 09:42' };
   return (
     <>
       <PageHeader
@@ -213,27 +227,27 @@ export function Reports() {
       </div>
       <div className="cols s404">
         <Card>
-          <SectionHead title="Weekly attendance report" sub="Preview · 12–16 October 2026 · Main campus" link="Open full report →" />
-          <div className="row" style={{ justifyContent: 'flex-start', gap: 50, margin: '18px 0 20px', alignItems: 'flex-end' }}>
-            <div><div className="bignum">95.2%</div><span className="small muted">Weekly average</span></div>
-            <div><div style={{ fontSize: 24, fontWeight: 600, color: 'var(--gr)' }}>+0.5 pp</div><span className="small muted">Compared with last week</span></div>
-            <Pill tone="green">Above 95% target</Pill>
+          <SectionHead title="Weekly attendance report" sub={`Preview · ${week.period} · Main campus`} link="Open full report →" to="/attendance" />
+          <div className="row" style={{ justifyContent: 'flex-start', gap: 50, margin: '18px 0 20px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div><div className="bignum">{week.avg}</div><span className="small muted">Weekly average</span></div>
+            <div><div style={{ fontSize: 24, fontWeight: 600, color: week.up ? 'var(--gr)' : 'var(--rd)' }}>{week.change}</div><span className="small muted">Compared with last week</span></div>
+            <Pill tone={week.onTarget ? 'green' : 'amber'}>{week.onTarget ? 'Above 95% target' : 'Below 95% target'}</Pill>
           </div>
-          <AttendanceChart />
+          {att.live ? <AttendanceChart points={att.points} /> : <AttendanceChart />}
           <div style={{ marginTop: 18 }}>
-            <DataTable boxed cols={[{ label: 'Today’s status', key: 0 }, { label: 'Students', key: 1 }, { label: 'Proportion', key: 2 }]}
-              rows={[['Present', '1,188', '95.2%'], ['Excused', '42', '3.4%'], ['Unexcused', '18', '1.4%']]} />
+            <DataTable boxed cols={[{ label: 'Today’s status', key: 0 }, { label: 'Students', key: 1 }, { label: 'Proportion', key: 2 }]} rows={week.rows} />
           </div>
         </Card>
         <div className="stack">
           <Card>
             <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Report options</h3>
-            <KV rows={[['Period', '12–16 October 2026'], ['Audience', 'All year groups'], ['Data source', 'Daily attendance registers'], ['Updated', '16 Oct 2026 · 09:42']]} />
+            <KV rows={[['Period', week.period], ['Audience', 'All year groups'], ['Data source', 'Daily attendance registers'], ['Updated', week.updated]]} />
             <div className="actions" style={{ margin: '12px 0' }}>
               {/* PDF: the browser's print dialog ("Save as PDF"); CSV: the preview figures */}
               <button className="btn primary" onClick={() => window.print()}><Download size={14} />Export PDF</button>
-              <button className="btn" onClick={() => downloadCsv('weekly-attendance-12-16-oct-2026', ['Status', 'Students', 'Proportion'],
-                [['Present', '1188', '95.2%'], ['Excused', '42', '3.4%'], ['Unexcused', '18', '1.4%'], ['Weekly average', '', '95.2%'], ['Change vs last week', '', '+0.5 pp']])}>
+              <button className="btn" onClick={() => downloadCsv('weekly-attendance', ['Status', 'Students', 'Proportion'],
+                [...week.rows.map(([a, b, c]) => [a, b.replace(/,/g, ''), c]), ...(att.live ? att.week.map((d) => [`Present ${d.date}`, String(d.present), `${Number(d.presentRate || 0).toFixed(1)}%`]) : []),
+                  ['Weekly average', '', week.avg], ['Change vs last week', '', week.change]])}>
                 <Download size={14} />CSV</button>
             </div>
             <button className="btn">Schedule weekly email</button>

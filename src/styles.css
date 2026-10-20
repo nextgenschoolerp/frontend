@@ -264,6 +264,7 @@ select.select{appearance:none;padding-right:26px;background:var(--card) url("dat
 .mark.excused{background-color:var(--grbg);color:var(--gr)}
 .mark.unexcused{background-color:var(--rdbg);color:var(--rd)}
 .mark.unmarked{background-color:var(--ambg);color:var(--am)}
+.mark.late{background-color:var(--tint);color:var(--pr)}
 .editor{border:1px solid var(--bd);border-radius:8px}
 .editor .tb{display:flex;gap:16px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--bd);font-weight:600}
 .editor textarea{width:100%;border:0;outline:0;padding:12px;resize:vertical;min-height:140px;font-size:11px;line-height:1.5;color:var(--mu)}

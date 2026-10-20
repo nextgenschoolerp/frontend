@@ -14,6 +14,7 @@ import { useAuth } from '../auth.jsx';
 import { useFeeAccount, FeeStatusCard, FeeAccountDetail } from '../components/FeeRecords.jsx';
 import { PromoteClassModal } from '../components/Promotion.jsx';
 import { useProgressTrend, AcademicProgressCard } from '../components/ExamRecords.jsx';
+import { StudentAttendanceCard } from '../components/AttendanceLive.jsx';
 import { useApi } from '../api/useApi.js';
 import { captureEnquiry } from '../api/admissionService.js';
 import * as studentApi from '../api/studentService.js';
@@ -500,7 +501,6 @@ const age = (dob) => {
   const d = new Date(dob); const now = new Date();
   return now.getFullYear() - d.getFullYear() - (now < new Date(now.getFullYear(), d.getMonth(), d.getDate()) ? 1 : 0);
 };
-const notConnected = (what) => <ApiNote>{what} come{what.endsWith('s') ? '' : 's'} from a module that is not connected yet.</ApiNote>;
 
 export function StudentProfile() {
   const { id } = useParams();
@@ -552,14 +552,15 @@ export function StudentProfile() {
       <p className="xs muted">Mid-term progress reports due Friday, 23 October at 16:00.</p></>
     </Card>
   );
-  const attendanceCard = (
+  // Attendance: GET /api/v1/attendance/students/{id} (studentservice AM / PM registers)
+  const attendanceCard = s ? <StudentAttendanceCard student={s} detailed={tab === 'attendance'} /> : (
     <Card>
       <SectionHead title="Attendance" sub="Term 1 to date" link="Register →" to="/attendance" />
-      {s ? <div style={{ marginTop: 14 }}>{notConnected('Attendance records')}</div> : (<>
+      <>
       <div className="bignum" style={{ marginTop: 18 }}>97.8%</div>
       <div className="bar" style={{ margin: '14px 0 12px' }}><i style={{ width: '85%' }} /></div>
       <p className="xs muted" style={{ marginBottom: 14 }}>44 present · 1 excused · 0 unexcused</p>
-      <Pill tone="green">Present today</Pill></>)}
+      <Pill tone="green">Present today</Pill></>
     </Card>
   );
   const feesCard = s ? <FeeStatusCard student={s} fees={fees} onOpenTab={tab === 'fees' ? undefined : () => setTab(3)} /> : (

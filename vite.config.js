@@ -26,6 +26,7 @@ export default defineConfig({
       '/api/v1/students': { target: student, changeOrigin: true },
       '/api/v1/academic': { target: student, changeOrigin: true },
       '/api/v1/alumni': { target: student, changeOrigin: true },
+      '/api/v1/attendance': { target: student, changeOrigin: true },
       '/api/v1/finance': { target: finance, changeOrigin: true },
       '/api/v1/exams': { target: exams, changeOrigin: true },
       '/api/v1/lms': { target: academic, changeOrigin: true },

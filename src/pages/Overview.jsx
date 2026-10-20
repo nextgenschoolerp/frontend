@@ -7,31 +7,40 @@ import { PageHeader, Metrics, SectionHead, Pill, Card, Footer, downloadCsv, Toda
 import { useAuth } from '../auth.jsx';
 import { useApplications } from '../components/Admissions.jsx';
 import { useStudents } from '../components/StudentRecords.jsx';
+import { useAttendanceWeek } from '../components/AttendanceLive.jsx';
 
-const POINTS = [94.1, 95.8, 94.7, 96.1, 95.2];
-const DAYS = ['Mon 12', 'Tue 13', 'Wed 14', 'Thu 15', 'Fri 16'];
+const SAMPLE = [94.1, 95.8, 94.7, 96.1, 95.2].map((value, i) => ({ value, label: ['Mon 12', 'Tue 13', 'Wed 14', 'Thu 15', 'Fri 16'][i] }));
 
-export function AttendanceChart() {
+/** Daily present % with the 95% target line. `points`: [{ label, value }] (live from useAttendanceWeek); the sample week without. */
+export function AttendanceChart({ points = SAMPLE }) {
   const W = 675;
-  const x = (i) => (i * W) / 4;
-  const y = (v) => 4 + ((98 - v) / 6) * 102;
-  const line = POINTS.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${y(v)}`).join('');
-  const anchor = (i) => (i === 0 ? 'start' : i === 4 ? 'end' : 'middle');
+  if (!points.length) return <p className="xs muted" style={{ height: 133, display: 'grid', placeItems: 'center' }}>No registers submitted yet this week.</p>;
+  const values = points.map((p) => p.value);
+  // y range: 6 points around the data and the target, in steps of 2
+  const top = Math.min(100, Math.ceil((Math.max(...values, 95) + 1) / 2) * 2);
+  const bottom = Math.min(top - 6, Math.floor((Math.min(...values, 95) - 1) / 2) * 2);
+  const span = top - bottom;
+  const n = points.length;
+  const x = (i) => (n === 1 ? W / 2 : (i * W) / (n - 1));
+  const y = (v) => 4 + ((top - v) / span) * 102;
+  const line = points.map((p, i) => `${i ? 'L' : 'M'}${x(i)},${y(p.value)}`).join('');
+  const anchor = (i) => (n === 1 ? 'middle' : i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle');
+  const ticks = [0, 1, 2, 3].map((k) => top - (span * k) / 3);
   return (
     <div style={{ display: 'flex', gap: 12 }}>
       <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: 113, fontSize: 9, color: 'var(--fa)' }}>
-        <span>98%</span><span>96%</span><span>94%</span><span>92%</span>
+        {ticks.map((t) => <span key={t}>{Math.round(t)}%</span>)}
       </div>
-      <svg viewBox={`-6 0 ${W + 12} 133`} style={{ flex: 1, minWidth: 0, height: 133, overflow: 'visible' }} preserveAspectRatio="none">
+      <svg viewBox={`-6 0 ${W + 12} 133`} style={{ flex: 1, minWidth: 0, height: 133, overflow: 'visible' }} preserveAspectRatio="none" role="img" aria-label="Daily attendance">
         {[4, 38, 72, 106].map((t) => <line key={t} x1="0" x2={W} y1={t} y2={t} style={{ stroke: 'var(--gl)' }} />)}
-        <path d={`${line}L${W},106L0,106Z`} style={{ fill: 'var(--pr)' }} opacity=".08" />
+        {n > 1 && <path d={`${line}L${W},106L0,106Z`} style={{ fill: 'var(--pr)' }} opacity=".08" />}
         <line x1="0" x2={W} y1={y(95)} y2={y(95)} style={{ stroke: 'var(--fa)' }} strokeDasharray="3 3" />
         <path d={line} fill="none" style={{ stroke: 'var(--pr)' }} strokeWidth="1.5" />
-        {POINTS.map((v, i) => (
-          <g key={i}>
-            <circle cx={x(i)} cy={y(v)} r="3" style={{ fill: 'var(--card)', stroke: 'var(--pr)' }} />
-            <text x={x(i)} y={y(v) - 8} fontSize="9" style={{ fill: 'var(--pr)' }} textAnchor={anchor(i)}>{v}%</text>
-            <text x={x(i)} y="128" fontSize="9" style={{ fill: 'var(--mu)' }} textAnchor={anchor(i)}>{DAYS[i]}</text>
+        {points.map((p, i) => (
+          <g key={p.label}>
+            <circle cx={x(i)} cy={y(p.value)} r="3" style={{ fill: 'var(--card)', stroke: 'var(--pr)' }} />
+            <text x={x(i)} y={y(p.value) - 8} fontSize="9" style={{ fill: 'var(--pr)' }} textAnchor={anchor(i)}>{p.value.toFixed(1)}%</text>
+            <text x={x(i)} y="128" fontSize="9" style={{ fill: 'var(--mu)' }} textAnchor={anchor(i)}>{p.label}</text>
           </g>
         ))}
       </svg>
@@ -55,6 +64,10 @@ export default function Overview() {
   const live = apps.canRead && !apps.missingBranch && !apps.error && apps.data;
   // "Total students" and "Incomplete student records": GET /api/v1/students (studentservice); static for other roles
   const students = useStudents();
+  // "Student attendance" and "Attendance trends": GET /api/v1/attendance/summary and /trend (studentservice)
+  const att = useAttendanceWeek();
+  const t = att.today;
+  const pp = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)} pp vs last week`;
   const work = WORK.map((row) => (row[0] === 'Admission applications'
     ? [row[0], row[1], live ? apps.open.length : (apps.loading ? '…' : '—'), row[3], row[4], row[5], row[6], '/students?tab=admissions']
     : row[0] === 'Incomplete student records' && students.live
@@ -64,7 +77,10 @@ export default function Overview() {
     students.live
       ? ['Total students', students.current.length.toLocaleString('en-GB'), `Across ${students.classCount} class sections`, `+${students.newThisYear.length} this year`, true, GraduationCap]
       : ['Total students', '1,248', 'Across 44 classes', '+24 this term', true, GraduationCap],
-    ['Student attendance', '95.2%', '1,188 of 1,248 present', '+0.5 pp vs last week', true, ClipboardCheck],
+    att.live
+      ? ['Student attendance', t.presentRate === null ? '—' : `${Number(t.presentRate).toFixed(1)}%`, `${t.present.toLocaleString('en-IN')} of ${(t.totalStudents - t.unmarked).toLocaleString('en-IN')} marked present`,
+        att.change !== null ? pp(att.change) : `${t.amRegistersSubmitted} / ${t.registersExpected} registers in`, att.change === null || att.change >= 0, ClipboardCheck]
+      : ['Student attendance', att.allowed ? '…' : '95.2%', att.allowed ? '' : '1,188 of 1,248 present', att.allowed ? '' : '+0.5 pp vs last week', true, ClipboardCheck],
     ['Staff on campus', '86 / 92', 'All lessons covered', '6 on approved leave', false, Users],
     ['Term fees collected', '£846,000', '£114,000 outstanding', '88.1% of term billing', true, Wallet],
   ];
@@ -90,19 +106,19 @@ export default function Overview() {
       <div className="cols ov">
         <Card>
           <div className="sh">
-            <div><h3>Attendance trends</h3><p>Student attendance · 12–16 October</p></div>
+            <div><h3>Attendance trends</h3><p>Student attendance · {att.live ? (att.period || 'this week') : '12–16 October'}</p></div>
             <span className="select" style={{ height: 27, fontSize: 11 }}>This week<ChevronDown size={13} /></span>
           </div>
           <div className="sumline">
-            <b>95.2%</b><span className="muted small">weekly average</span>
+            <b>{att.live ? (att.weekAvg === null ? '—' : `${att.weekAvg.toFixed(1)}%`) : '95.2%'}</b><span className="muted small">weekly average</span>
             <span className="xs muted" style={{ marginLeft: 'auto' }}>— — Target 95%</span>
           </div>
-          <AttendanceChart />
+          {att.live ? <AttendanceChart points={att.points} /> : <AttendanceChart />}
           <div className="legendrow">
             <span>TODAY</span>
-            <span className="i"><i style={{ background: 'var(--gr)' }} />1,188 present</span>
-            <span className="i"><i style={{ background: 'var(--chart-am)' }} />42 excused</span>
-            <span className="i"><i style={{ background: 'var(--rd)' }} />18 unexcused</span>
+            <span className="i"><i style={{ background: 'var(--gr)' }} />{att.live ? t.present.toLocaleString('en-IN') : '1,188'} present</span>
+            <span className="i"><i style={{ background: 'var(--chart-am)' }} />{att.live ? t.excused : 42} excused</span>
+            <span className="i"><i style={{ background: 'var(--rd)' }} />{att.live ? t.unexcused : 18} unexcused</span>
             <Link to="/attendance" className="link"><ArrowUpRight size={14} /></Link>
           </div>
         </Card>

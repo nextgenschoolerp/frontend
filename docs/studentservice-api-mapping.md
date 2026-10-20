@@ -46,7 +46,7 @@ Student ids are UUIDs, so `/students/<uuid>` opens a live record. The old static
 | Documents → **Issue transfer certificate** | `POST /api/v1/students/{studentId}/certificates/transfer` | US-03006 | SCHOOL_PRINCIPAL, VICE_PRINCIPAL, REGISTRAR, SUPER_ADMIN | **Wired / Role-gated**. The signed-in user signs first and names a different second signatory; the student becomes Transferred and moves to Archived |
 | Tab **Conduct** (new) | `GET /api/v1/students/{studentId}/disciplinary` | US-03008 | CLASS_TEACHER, SCHOOL_PRINCIPAL, VICE_PRINCIPAL, SUPER_ADMIN | **Wired / Role-gated** |
 | Conduct → **Record incident** | `POST /api/v1/students/{studentId}/disciplinary` | US-03008 | same | **Wired / Role-gated** |
-| Attendance | – | – | – | **Gap**: no story module covers daily attendance yet; live profiles say so |
+| **Attendance** card (Overview tab) and **Attendance** tab | `GET /api/v1/attendance/students/{studentId}` (default: active academic session to date) | US-03018 | CLASS_TEACHER, ACADEMIC_HEAD, VICE_PRINCIPAL, SCHOOL_PRINCIPAL, REGISTRAR, OFFICE_CLERK, SUPER_ADMIN | **Wired / Role-gated** (new endpoint). Rate = (present + late) ÷ sessions marked (AM and PM each count); counts by status; today's mark; the tab adds the late arrivals and absences with reasons and follow-up. Other roles see a note |
 | Academic progress card, Academics tab | examservice `GET /api/v1/exams/students/{id}/progress-trend` | US-05013 | teaching staff, registrar | **Wired**, see `examservice-api-mapping.md` |
 | Fee status card, Fees & payments tab | financeservice `GET /api/v1/finance/students/{id}/fee-account` | US-04004 | finance staff, principal, registrar | **Wired**, see `financeservice-api-mapping.md` |
 | Summary photo | `GET /api/v1/students/{studentId}/photo/file` (fetched with the token) | US-03014 | as for the profile | **Wired**: initials when there is no photo |
@@ -59,7 +59,7 @@ Student ids are UUIDs, so `/students/<uuid>` opens a live record. The old static
 | Screen · action | Method & endpoint | Story | Roles | Status |
 |---|---|---|---|---|
 | **Enrol student** (registrar, office clerk) / **Enrol directly** (super administrator) | `POST /api/v1/students` | US-03000 | REGISTRAR, OFFICE_CLERK, SUPER_ADMIN | **Wired / Role-gated**. Form → `EnrollStudentRequest`: names, date of birth, gender (Non-binary / Prefer not to say → OTHER), blood group, medical conditions + allergies → `medicalAlerts`, emergency phone, class and section → `gradeId` / `sectionId`, house → `houseId`, primary guardian, relationship, mobile and email. Required: names, date of birth, gender, class, section. Opens the new profile with its permanent UID |
-| Class, Section, House options | `GET /api/v1/academic/grades?tenantId=`, `GET /api/v1/academic/sections?gradeId=`, `GET /api/v1/academic/houses?tenantId=` | US-03003 | grades: REGISTRAR, OFFICE_CLERK, SCHOOL_PRINCIPAL, CLASS_TEACHER, SUPER_ADMIN; houses: also HOUSE_MASTER | **Wired**. Class names match the school's grades (Nursery … Class 12); the house list comes from the API when the role can read it |
+| Class, Section, House options | `GET /api/v1/academic/grades?tenantId=`, `GET /api/v1/academic/sections?gradeId=`, `GET /api/v1/academic/houses?tenantId=` | US-03003 | grades and sections: REGISTRAR, OFFICE_CLERK, SCHOOL_PRINCIPAL, CLASS_TEACHER, SUPER_ADMIN, and for the Academics pickers SUBJECT_TEACHER, EXAM_CONTROLLER, VICE_PRINCIPAL, ACADEMIC_AUDITOR; houses: REGISTRAR, OFFICE_CLERK, SCHOOL_PRINCIPAL, CLASS_TEACHER, HOUSE_MASTER, SUPER_ADMIN | **Wired**. Class names match the school's grades (Nursery … Class 12); the house list comes from the API when the role can read it |
 | Save draft / **Add student** (application) | admissionservice | US-02001 | – | Unchanged; see `admissionservice-api-mapping.md` |
 
 ## Students → Edit student (`/students/:studentId/edit`)
@@ -73,12 +73,34 @@ Student ids are UUIDs, so `/students/<uuid>` opens a live record. The old static
 | **Upload documents** (type + file) | `POST /api/v1/students/{studentId}/documents?documentType=` (multipart `file`, PDF/JPEG/PNG, 10 MB) | – | REGISTRAR, OFFICE_CLERK, SCHOOL_NURSE, SUPER_ADMIN | **Wired / Role-gated** (new endpoint). Types: BIRTH_CERTIFICATE, PROOF_OF_ADDRESS, TRANSFER_CERTIFICATE, REPORT_CARD, MEDICAL_CARE_PLAN, IDENTITY_DOCUMENT, OTHER. The list reloads after the upload |
 | Names, date of birth, gender, guardians, address | – | – | – | **Gap**: no update endpoint after enrolment |
 
+## Attendance (`/attendance`) — new, studentservice `/api/v1/attendance`
+
+Daily student attendance is a studentservice feature built on the class roll list (US-03018): two registers a day per section (AM and PM),
+one mark per student per register: **Present**, **Late**, **Excused** (reason required) or **Unexcused** (opens a guardian follow-up).
+Staff attendance belongs to Module 07 (HR & payroll), which has no service yet: the **Staff attendance** tab says so.
+
+| Screen · action | Method & endpoint | Roles | Status |
+|---|---|---|---|
+| Metrics **Present today**, **Excused**, **Unexcused**, **Class registers** | `GET /api/v1/attendance/summary?date=&branchId=` | CLASS_TEACHER, ACADEMIC_HEAD, VICE_PRINCIPAL, SCHOOL_PRINCIPAL, REGISTRAR, OFFICE_CLERK, SUPER_ADMIN | **Wired**. From the morning registers: present (incl. late), rate = present ÷ students marked (open registers don't pull it down), "n not yet marked", AM / PM registers in of the sections with students, open follow-ups |
+| Class register filters: date, class, section | `GET /api/v1/academic/grades`, `GET /api/v1/academic/sections` | as for grades / sections (ACADEMIC_HEAD added) | **Wired**. Future dates can't be picked; the last class opened is remembered on the browser |
+| **Daily register** table (AM, PM, absence reason, follow-up) | `GET /api/v1/attendance/sections/{sectionId}/register?date=` | view roles above | **Wired**. Students on roll in roll-number order; the session being edited (Morning / Afternoon) shows selects, the other its saved marks; status filter; counts and who submitted / changed each register |
+| **Mark all present**, **Submit AM / PM register**, **Save changes (n)** | `PUT /api/v1/attendance/sections/{sectionId}/register` `{date, session, entries[{studentId, status, reason}]}` | CLASS_TEACHER, ACADEMIC_HEAD, VICE_PRINCIPAL, SCHOOL_PRINCIPAL, SUPER_ADMIN | **Wired / Role-gated**. 400: future date, excused without a reason (also checked in the browser), student not on the section's roll, a student twice. 403: a register older than 7 days unless principal / vice principal. Unexcused → follow-up OPEN; changing it to another status clears the follow-up |
+| **Class summary** card | same register | view roles | **Wired** (AM register, or PM once only PM is in) |
+| **Needs follow-up** card, **View all** | `GET /api/v1/attendance/follow-ups?from=&to=&includeResolved=` (default last 7 days, open and contacted) | view roles | **Wired**: student, class, session, follow-up state, last note, emergency phone |
+| **Contact guardian / Update follow-up** dialog | `PATCH /api/v1/attendance/records/{attendanceId}/follow-up` `{followUpStatus: GUARDIAN_CONTACTED or RESOLVED, note}` | CLASS_TEACHER, OFFICE_CLERK, VICE_PRINCIPAL, SCHOOL_PRINCIPAL, SUPER_ADMIN | **Wired / Role-gated**. Note required; 409 for a mark that is not an unexcused absence |
+| **Absence history** tab (scope class / whole school, from–to, status), **Export** | `GET /api/v1/attendance/absences?from=&to=&sectionId=&gradeId=&status=` (default last 30 days) | view roles | **Wired**; CSV built in the browser |
+| **Export attendance** (header) | the loaded register | – | **Wired**: CSV of the class register |
+| **Staff attendance** tab | – | – | **Gap**: Module 07 HR (biometric attendance, leave) has no service yet |
+| Other roles | – | – | Page shows a role note instead of sample data |
+
 ## Overview
 
 | Screen · action | Method & endpoint | Story | Roles | Status |
 |---|---|---|---|---|
 | Metric **Total students** ("+n this year") | `GET /api/v1/students?tenantId=&branchId=` | US-03000 | as for the list | **Wired**; the static figure is shown for other roles |
 | Needs your attention · **Incomplete student records** | same | US-03001 | same | **Wired** |
+| Metric **Student attendance**, card **Attendance trends** (weekly average, daily line, today's present / excused / unexcused) | `GET /api/v1/attendance/summary`, `GET /api/v1/attendance/trend?from=&to=` (school days = days with an AM register) | attendance view roles | **Wired**; change vs last week when last week has registers; sample figures for other roles |
+| Reports → **Weekly attendance report** (preview, options, CSV) | same | same | **Wired**: this week's average and change, chart, today's status with "Not yet marked"; CSV adds each day |
 
 ## Verified (built-in browser and `api-regression.mjs`, Vite → studentservice through the proxy)
 

@@ -38,6 +38,27 @@ export const listSessions = (tenantId) => api.get(`${ACADEMIC}/sessions`, { quer
 export const createSession = (body) => api.post(`${ACADEMIC}/sessions`, body);
 export const promoteBatch = (body) => api.post(`${ACADEMIC}/batch-promotion`, body); // US-03005
 
+// --- Daily attendance: AM / PM registers, absences, guardian follow-up, school figures ---------------
+const ATTENDANCE = '/api/v1/attendance';
+export const getRegister = (sectionId, date) => api.get(`${ATTENDANCE}/sections/${sectionId}/register`, { query: { date } });
+/** body: { date, session: 'AM' | 'PM', entries: [{ studentId, status, reason }] } */
+export const saveRegister = (sectionId, body) => api.put(`${ATTENDANCE}/sections/${sectionId}/register`, body);
+export const attendanceSummary = (date, branchId) => api.get(`${ATTENDANCE}/summary`, { query: { date, branchId } });
+export const attendanceTrend = (from, to, branchId) => api.get(`${ATTENDANCE}/trend`, { query: { from, to, branchId } });
+export const listAbsences = (query) => api.get(`${ATTENDANCE}/absences`, { query });
+export const listFollowUps = (query) => api.get(`${ATTENDANCE}/follow-ups`, { query });
+export const updateFollowUp = (attendanceId, body) => api.patch(`${ATTENDANCE}/records/${attendanceId}/follow-up`, body);
+export const studentAttendance = (studentId, from, to) => api.get(`${ATTENDANCE}/students/${studentId}`, { query: { from, to } });
+
+/** Attendance marks: [label, pill tone]. A student without a mark is "Unmarked". */
+export const ATTENDANCE_STATUS = {
+  PRESENT: ['Present', 'green'],
+  LATE: ['Late', 'amber'],
+  EXCUSED: ['Excused', ''],
+  UNEXCUSED: ['Unexcused', 'red'],
+};
+export const FOLLOW_UP_STATUS = { OPEN: ['Guardian not yet reached', 'red'], GUARDIAN_CONTACTED: ['Guardian contacted', 'amber'], RESOLVED: ['Resolved', 'green'] };
+
 /** Roles each action allows (the @PreAuthorize of the studentservice endpoint; SUPER_ADMIN everywhere). */
 export const ROLES = {
   list: ['REGISTRAR', 'OFFICE_CLERK', 'CLASS_TEACHER', 'SCHOOL_PRINCIPAL', 'SCHOOL_NURSE', 'SUPER_ADMIN'],
@@ -55,6 +76,13 @@ export const ROLES = {
   houses: ['REGISTRAR', 'OFFICE_CLERK', 'SCHOOL_PRINCIPAL', 'CLASS_TEACHER', 'HOUSE_MASTER', 'SUPER_ADMIN'],
   photo: ['REGISTRAR', 'OFFICE_CLERK', 'SUPER_ADMIN'],
   uploadDocument: ['REGISTRAR', 'OFFICE_CLERK', 'SCHOOL_NURSE', 'SUPER_ADMIN'],
+  /** GET /academic/grades and /sections (class pickers) */
+  classes: ['REGISTRAR', 'OFFICE_CLERK', 'SCHOOL_PRINCIPAL', 'CLASS_TEACHER', 'SUBJECT_TEACHER', 'EXAM_CONTROLLER', 'VICE_PRINCIPAL', 'ACADEMIC_AUDITOR', 'ACADEMIC_HEAD', 'SUPER_ADMIN'],
+  attendanceView: ['CLASS_TEACHER', 'ACADEMIC_HEAD', 'VICE_PRINCIPAL', 'SCHOOL_PRINCIPAL', 'REGISTRAR', 'OFFICE_CLERK', 'SUPER_ADMIN'],
+  attendanceMark: ['CLASS_TEACHER', 'ACADEMIC_HEAD', 'VICE_PRINCIPAL', 'SCHOOL_PRINCIPAL', 'SUPER_ADMIN'],
+  attendanceFollowUp: ['CLASS_TEACHER', 'OFFICE_CLERK', 'VICE_PRINCIPAL', 'SCHOOL_PRINCIPAL', 'SUPER_ADMIN'],
+  /** Registers older than 7 days */
+  attendanceLateCorrection: ['SCHOOL_PRINCIPAL', 'VICE_PRINCIPAL', 'SUPER_ADMIN'],
 };
 
 /** student_status values: [label, pill tone]. */

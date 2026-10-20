@@ -11,6 +11,7 @@ import { ROLES as examRoles } from '../api/examService.js';
 import { ApiNote } from '../components/Admissions.jsx';
 import { TeachingLive } from '../components/TeachingLive.jsx';
 import { ROLES as lmsRoles } from '../api/academicService.js';
+import { AttendanceLive, useAttendanceAllowed } from '../components/AttendanceLive.jsx';
 
 const act = (t) => <span className="act">{t}</span>;
 
@@ -112,86 +113,14 @@ export function Teaching() {
 }
 
 /* ---------- Attendance ---------- */
-const REGISTER = [
-  ['Amara Thompson', 'ST-2024-106', 'Present', 'Present', '—'],
-  ['Oliver Bennett', 'ST-2024-107', 'Present', 'Present', '—'],
-  ['Noah Williams', 'ST-2024-118', 'Excused', 'Excused', 'Medical appointment'],
-  ['Leo Ahmed', 'ST-2024-129', 'Present', 'Present', '—'],
-  ['Mia Robinson', 'ST-2024-131', 'Unexcused', 'Unmarked', 'Guardian not yet reached'],
-  ['George Lewis', 'ST-2024-134', 'Present', 'Present', '—'],
-  ['Ava Walker', 'ST-2024-137', 'Present', 'Present', '—'],
-  ['Henry Scott', 'ST-2024-139', 'Present', 'Present', '—'],
-];
-
-const Mark = ({ value }) => (
-  <select className={`mark ${value.toLowerCase()}`} defaultValue={value}>
-    {['Present', 'Excused', 'Unexcused', 'Unmarked'].map((o) => <option key={o}>{o}</option>)}
-  </select>
-);
-
+// Live from studentservice (/api/v1/attendance): registers, absences and follow-ups; other roles see a note
 export function Attendance() {
+  const allowed = useAttendanceAllowed();
+  if (allowed) return <AttendanceLive />;
   return (
     <>
-      <PageHeader
-        title="Attendance"
-        desc="Monitor daily attendance, complete registers and follow up on student absences."
-        actions={[{ label: 'Export attendance', icon: <Download size={15} />, onClick: () => downloadCsv('attendance-10A',
-          ['Student', 'Student ID', 'AM', 'PM', 'Absence reason'], REGISTER) }, { label: 'Save register', icon: <Check size={15} />, primary: true }]}
-      />
-      <Metrics items={[
-        ['Present today', '1,188', '95.2% of 1,248 students'],
-        ['Excused absences', '42', 'All supporting reasons recorded'],
-        ['Unexcused absences', '18', 'Guardian follow-up required'],
-        ['Class registers', '44 / 44', 'Morning registers submitted'],
-      ]} />
-      <div className="cols s354">
-        <Card style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <div className="sh"><div><h3>Class register</h3><p>Year 10A · 28 students · Form tutor Eleanor Hughes</p></div></div>
-          <div className="filters"><Select>16 Oct 2026</Select><Select>Year 10</Select><Select>Class 10A</Select><Select>All statuses</Select></div>
-          <Tabs items={['Daily register', 'Absence history', 'Staff attendance']} />
-          <div className="tablebox">
-            <DataTable cols={[
-              { label: 'Student', render: (r) => <Person name={r[0]} sub={r[1]} /> },
-              { label: 'AM', render: (r) => <Mark value={r[2]} /> },
-              { label: 'PM', render: (r) => <Mark value={r[3]} /> },
-              { label: 'Absence reason', render: (r) => <span className="muted">{r[4]}</span> },
-              { label: 'Action', render: () => act('Edit') },
-            ]} rows={REGISTER} />
-            <Pager text="Showing 1–8 of 28 students · 26 present · 1 excused · 1 unexcused" />
-          </div>
-          <div className="row"><span className="xs muted">AM submitted at 08:52 by Eleanor Hughes</span><span className="link strong">Mark all present</span></div>
-        </Card>
-        <div className="stack">
-          <Card>
-            <h3 style={{ fontSize: 15, fontWeight: 600 }}>Class summary</h3>
-            <p className="small muted" style={{ margin: '4px 0 8px' }}>Year 10A · Today</p>
-            {[['Present', '26 students'], ['Excused', '1 student'], ['Unexcused', '1 student']].map(([a, b]) => (
-              <div className="attrow" key={a}><span>{a}</span><span className="muted small">{b}</span></div>
-            ))}
-            <p className="xs muted" style={{ marginTop: 8 }}>92.9% present · School target 95%</p>
-          </Card>
-          <Card>
-            <SectionHead title="Needs follow-up" sub="18 unexcused absences school-wide" link="View all →" />
-            {[['MR', 'Mia Robinson', 'Year 10A · Absent AM', 'red', 'Guardian not reached', 'Call attempted at 09:10. Please contact the primary guardian and record the reason.', 'Contact guardian'],
-              ['EB', 'Ethan Brown', 'Year 8B · Absent AM', 'amber', 'Awaiting response', 'Absence message sent at 09:05.', null]].map(([ini, n, s, tone, st, note, btn]) => (
-              <div key={n} style={{ marginTop: 18 }}>
-                <div className="row" style={{ justifyContent: 'flex-start' }}><span className="avatar-sm">{ini}</span><span className="cell-id"><b>{n}</b><small>{s}</small></span></div>
-                <div style={{ margin: '10px 0 8px' }}><Pill tone={tone}>{st}</Pill></div>
-                <p className="body-s">{note}</p>
-                {btn ? <button className="btn" style={{ marginTop: 12 }}>{btn}</button> : <span className="link" style={{ marginTop: 10 }}>View follow-up log →</span>}
-              </div>
-            ))}
-          </Card>
-        </div>
-      </div>
-      <Card className="notice">
-        <h4>Attendance notes</h4>
-        <p>Changes are recorded against the student and included in attendance reports.</p>
-        <div className="row" style={{ marginTop: 10 }}>
-          <span className="xs muted">Use “Excused” only when an absence reason is confirmed. Unmarked PM sessions remain open until the afternoon register.</span>
-          <span className="link strong">Attendance policy →</span>
-        </div>
-      </Card>
+      <PageHeader title="Attendance" desc="Monitor daily attendance, complete registers and follow up on student absences." />
+      <Card><ApiNote>Attendance registers are shown to class teachers, the academic head, principals, the registrar and the school office.</ApiNote></Card>
       <Footer />
     </>
   );
