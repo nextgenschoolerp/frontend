@@ -5,6 +5,12 @@
 import { TRACE_HEADER, traceHeaders } from './tracing.js';
 
 const SESSION_KEY = 'oakridge.session';
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+
+function apiUrl(path) {
+  const baseUrl = API_BASE_URL ? new URL(API_BASE_URL, window.location.origin) : window.location.origin;
+  return new URL(path, baseUrl);
+}
 
 export class ApiError extends Error {
   constructor(status, body, traceId) {
@@ -39,7 +45,7 @@ function storedToken() {
 }
 
 export async function request(method, path, { body, query, auth = true, token } = {}) {
-  const url = new URL(path, window.location.origin);
+  const url = apiUrl(path);
   Object.entries(query || {}).forEach(([k, v]) => v !== undefined && v !== null && v !== '' && url.searchParams.set(k, v));
   const trace = traceHeaders();
   const headers = { Accept: 'application/json', ...trace };
@@ -49,7 +55,7 @@ export async function request(method, path, { body, query, auth = true, token } 
 
   let res;
   try {
-    res = await fetch(url.pathname + url.search, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
+    res = await fetch(url.href, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
   } catch {
     throw new ApiError(0, null, trace[TRACE_HEADER]);
   }
@@ -71,7 +77,7 @@ export async function fetchBlob(path) {
   const trace = traceHeaders();
   let res;
   try {
-    res = await fetch(path, { headers: bearer ? { ...trace, Authorization: `Bearer ${bearer}` } : trace });
+    res = await fetch(apiUrl(path).href, { headers: bearer ? { ...trace, Authorization: `Bearer ${bearer}` } : trace });
   } catch {
     throw new ApiError(0, null, trace[TRACE_HEADER]);
   }
@@ -87,7 +93,7 @@ export async function fetchBlob(path) {
 
 /** multipart/form-data upload (the browser sets the boundary header). */
 export async function upload(path, formData, { query } = {}) {
-  const url = new URL(path, window.location.origin);
+  const url = apiUrl(path);
   Object.entries(query || {}).forEach(([k, v]) => v !== undefined && v !== null && v !== '' && url.searchParams.set(k, v));
   const trace = traceHeaders();
   const headers = { Accept: 'application/json', ...trace };
@@ -95,7 +101,7 @@ export async function upload(path, formData, { query } = {}) {
   if (bearer) headers.Authorization = `Bearer ${bearer}`;
   let res;
   try {
-    res = await fetch(url.pathname + url.search, { method: 'POST', headers, body: formData });
+    res = await fetch(url.href, { method: 'POST', headers, body: formData });
   } catch {
     throw new ApiError(0, null, trace[TRACE_HEADER]);
   }

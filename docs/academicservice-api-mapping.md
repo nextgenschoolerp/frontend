@@ -3,7 +3,7 @@
 This lists every UI action that belongs to **academicservice** (Module 06, academics and LMS: timetables, cover, syllabus, homework, lesson plans, labs): the endpoint it calls, who may use it, and its status.
 In development, the Vite dev server proxies `/api/v1/lms/*` to academicservice at `http://localhost:8087/academicservice` (its context path); set `ACADEMIC_SERVICE_URL` to point elsewhere.
 The prefix is `/api/v1/lms`, not `/api/v1/academics`: the proxy matches by prefix and `/api/v1/academic` already goes to studentservice.
-Class pickers come from academicservice's own subject allocations (`GET /api/v1/lms/allocations`), so the Module 06 roles need no studentservice access.
+Class pickers come from academicservice's `GET /api/v1/lms/classes`: every class section of the school in grade order (read from the shared grades and sections tables), with its allocated subjects, allocated periods and timetabled periods. Every Module 06 staff role can read it, so no role needs studentservice access. The **Classes** metric and the *Generate timetables* dialog use only sections with allocations.
 
 Code:
 - [`src/api/academicService.js`](../src/api/academicService.js): one function per endpoint, the roles each action allows, labels.
@@ -26,7 +26,11 @@ Roles (BRD actor → role): Academic Coordinator `ACADEMIC_COORDINATOR`, Timetab
 | Page (live) | – | – | academic staff | **Role-gated**: other roles see a note |
 | Metric **Bell schedule** | `GET /api/v1/lms/bell-schedules` | US-06000 | academic staff | **Wired**; the active schedule |
 | Metric **Teachers**, tab **Workload** | `GET /api/v1/lms/workloads` | US-06001 | academic staff | **Wired**: caps, allocated / timetabled periods, load %, classes |
-| Metric **Classes**, class pickers | `GET /api/v1/lms/allocations` | US-06001 | academic staff | **Wired** |
+| Metric **Classes** ("allocated of all"), class pickers | `GET /api/v1/lms/classes` | US-06001 | academic staff | **Wired**; opens on the first timetabled class; a class without allocations shows "No subject teachers are allocated" |
+| Tab **Allocations**: class picker, subject / teacher / periods table, "n of 48 periods a week allocated" | `GET /api/v1/lms/allocations?sectionId=`, `GET /api/v1/lms/classes` | US-06001 | academic staff | **Wired**; warns when a class has more periods than the bell schedule's week |
+| Allocations · **Allocate subject** / **Change** (dialog: subject, teacher, periods a week 1–12) | `GET /api/v1/lms/subjects`, `POST /api/v1/lms/allocations` | US-06001 | TIMETABLE_INCHARGE, ACADEMIC_COORDINATOR, SUPER_ADMIN | **Role-gated**. The subject list leaves out subjects the class already has; the teacher list shows only teachers qualified for the subject, with their free periods. POST is an upsert per class and subject, so Change re-posts it. 409 `TEACHER_NOT_QUALIFIED` / `WORKLOAD_CAP_EXCEEDED` show in the dialog |
+| Allocations · **Remove** (confirm) | `DELETE /api/v1/lms/allocations/{allocationId}` | US-06001 | same | **Role-gated**. The class's current timetable keeps the periods until it is generated again; the success note says so |
+| Homework and lesson-plan subject choices | `GET /api/v1/lms/allocations` | US-06001 | academic staff | **Wired** |
 | Metric **Cover** (today, or Monday on a Sunday) | `GET /api/v1/lms/substitutions?date=` | US-06003 | academic staff | **Wired** |
 | Header **Faculty timetable PDF** | `GET /api/v1/lms/timetables/faculty/pdf?bellScheduleId=` | US-06015 | principal, vice principal, timetable / substitution in-charge, coordinator | **Role-gated**; downloads `faculty-timetable.pdf` (one page per teacher) |
 | Header **Generate timetables** (dialog: pick classes, result with unplaced periods) | `POST /api/v1/lms/timetables/generate` | US-06002 | timetable in-charge, coordinator | **Role-gated**; replaces the classes' timetables and clears their upcoming cover (`substitutionsCleared`) |

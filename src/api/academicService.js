@@ -8,7 +8,12 @@ const LMS = '/api/v1/lms';
 export const listBellSchedules = () => api.get(`${LMS}/bell-schedules`);
 export const getBellSchedule = (id) => api.get(`${LMS}/bell-schedules/${id}`);
 export const listWorkloads = () => api.get(`${LMS}/workloads`);
+export const listClasses = () => api.get(`${LMS}/classes`);
+export const listSubjects = () => api.get(`${LMS}/subjects`);
 export const listAllocations = (sectionId) => api.get(`${LMS}/allocations`, { query: { sectionId } });
+/** Creates the class's allocation for the subject, or replaces its teacher and periods when there is one. */
+export const allocate = (body) => api.post(`${LMS}/allocations`, body);
+export const deleteAllocation = (allocationId) => api.del(`${LMS}/allocations/${allocationId}`);
 
 // --- Timetables (US-06002, US-06015) ----------------------------------------------------------------
 export const generateTimetables = (body) => api.post(`${LMS}/timetables/generate`, body);
@@ -54,6 +59,7 @@ const STAFF = ['ACADEMIC_COORDINATOR', 'TIMETABLE_INCHARGE', 'SUBSTITUTION_INCHA
 export const ROLES = {
   view: STAFF,
   generate: ['TIMETABLE_INCHARGE', 'ACADEMIC_COORDINATOR', 'SUPER_ADMIN'],
+  allocate: ['TIMETABLE_INCHARGE', 'ACADEMIC_COORDINATOR', 'SUPER_ADMIN'],
   exportPdf: ['SCHOOL_PRINCIPAL', 'VICE_PRINCIPAL', 'TIMETABLE_INCHARGE', 'ACADEMIC_COORDINATOR', 'SUBSTITUTION_INCHARGE', 'SUPER_ADMIN'],
   substitution: ['SUBSTITUTION_INCHARGE', 'TIMETABLE_INCHARGE', 'VICE_PRINCIPAL', 'SUPER_ADMIN'],
   coverage: ['SUBJECT_TEACHER', 'CLASS_TEACHER', 'ACADEMIC_COORDINATOR', 'SUPER_ADMIN'],

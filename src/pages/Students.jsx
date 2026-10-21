@@ -115,7 +115,8 @@ const DOCS_EDIT = [
 ];
 
 const YEAR_GROUPS = Array.from({ length: 13 }, (_, i) => `Year ${i + 4}`);
-// Class = the grade the student is admitted to (targetGradeId / gradeId); Section is chosen separately
+// Class = the grade the student is admitted to (targetGradeId / gradeId); Section is chosen separately.
+// Both lists come from studentservice; these are the fallback for roles that cannot read grades
 export const CLASSES = ['Nursery', 'LKG', 'UKG', ...Array.from({ length: 12 }, (_, i) => `Class ${i + 1}`)];
 const SECTIONS = ['A', 'B', 'C', 'D', 'E'];
 const HOUSES = ['Tagore', 'Raman', 'Shivaji', 'Ashoka'];
@@ -211,7 +212,14 @@ function StudentFormBody({ mode, student: loaded }) {
   const today = new Date().toISOString().slice(0, 10);
   const [klass, setKlass] = useState(v('klass'));
   const [section, setSection] = useState(v('section'));
-  const tutor = CLASS_TUTORS[`${klass}-${section}`];
+  // Class and section choices come from the school's grades and the chosen grade's sections
+  const gradeList = grades.data?.length ? grades.data.slice().sort((a, b) => (a.sequenceOrder ?? 0) - (b.sequenceOrder ?? 0)) : null;
+  const pickedGrade = gradeList?.find((g) => g.gradeName === klass);
+  const gradeSections = useApi(() => studentApi.listSections(pickedGrade.gradeId), [pickedGrade?.gradeId], !!pickedGrade);
+  const classOptions = gradeList ? gradeList.map((g) => g.gradeName) : CLASSES;
+  const sectionOptions = !gradeList ? SECTIONS
+    : (gradeSections.data || []).map((s) => s.sectionName).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const tutor =CLASS_TUTORS[`${klass}-${section}`];
   const [docs, setDocs] = useState([]);
   // Re-evaluate the checklist whenever any field changes (change/input events bubble to the form)
   const [, setTick] = useState(0);
@@ -374,12 +382,13 @@ function StudentFormBody({ mode, student: loaded }) {
             <FieldGrid cols={[
               [
                 { label: 'Academic year', required: true, select: true, value: '2026–2027' },
-                { label: 'Class', required: true, select: true, value: klass, placeholder: 'Select class', options: CLASSES, onChange: (e) => setKlass(e.target.value) },
+                { label: 'Class', required: true, select: true, value: klass, placeholder: grades.loading ? 'Loading classes…' : 'Select class', options: classOptions, onChange: (e) => { setKlass(e.target.value); setSection(''); } },
                 { label: 'House', select: true, value: v('house'), placeholder: 'Select house', options: houseNames },
               ],
               [
                 { label: 'Year group', required: true, select: true, value: v('yearGroup'), placeholder: 'Select year group', options: YEAR_GROUPS },
-                { label: 'Section', required: true, select: true, value: section, placeholder: 'Select section', options: SECTIONS, onChange: (e) => setSection(e.target.value) },
+                // Remount when the class or its section list changes: the select is uncontrolled (defaultValue)
+                { label: 'Section', key: `section-${klass}-${gradeSections.data ? 'loaded' : 'pending'}`, required: true, select: true, value: section, placeholder: gradeList && !klass ? 'Select a class first' : gradeSections.loading ? 'Loading sections…' : 'Select section', options: sectionOptions, onChange: (e) => setSection(e.target.value) },
               ],
               [
                 { label: 'Enrolment status', select: true, value: edit ? 'Active' : 'Pending admission', options: ['Active', 'Pending admission'] },

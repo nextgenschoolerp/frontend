@@ -256,6 +256,12 @@ export function Field({ label, required, value, placeholder, select, options, ty
 export function FieldGrid({ cols }) {
   const rows = Math.max(...cols.map((c) => c.length));
   const cells = [];
-  for (let r = 0; r < rows; r++) cols.forEach((col, c) => cells.push(col[r] ? <Field key={col[r].key || col[r].label} {...col[r]} /> : <div key={`gap-${r}-${c}`} />));
+  for (let r = 0; r < rows; r++) {
+    cols.forEach((col, c) => {
+      if (!col[r]) { cells.push(<div key={`gap-${r}-${c}`} />); return; }
+      const { key, ...field } = col[r];
+      cells.push(<Field key={key || field.label} {...field} />);
+    });
+  }
   return <div className="fieldgrid" style={{ '--cols': cols.length }}>{cells}</div>;
 }
