@@ -12,6 +12,9 @@ import { ApiNote } from '../components/Admissions.jsx';
 import { TeachingLive } from '../components/TeachingLive.jsx';
 import { ROLES as lmsRoles } from '../api/academicService.js';
 import { AttendanceLive, useAttendanceAllowed } from '../components/AttendanceLive.jsx';
+import { formatMoney } from '../regional.js';
+
+const cur = (text) => text.replace(/£([\d,]+(?:\.\d+)?)/g, (_, n) => formatMoney(Number(n.replace(/,/g, ''))));
 
 const act = (t) => <span className="act">{t}</span>;
 
@@ -126,25 +129,26 @@ export function Attendance() {
   );
 }
 
-const TRANSACTIONS = [
-  ['Oliver Bennett', 'PAY-261016-04', '16 Oct 2026', 'Bank transfer', '£800.00'],
-  ['Isla Patel', 'PAY-261016-03', '16 Oct 2026', 'Card', '£1,200.00'],
-  ['Leo Ahmed', 'PAY-261015-12', '15 Oct 2026', 'Bank transfer', '£600.00'],
-  ['Freya Clarke', 'PAY-261015-11', '15 Oct 2026', 'Direct debit', '£800.00'],
-  ['Amara Thompson', 'PAY-260905-06', '05 Sep 2026', 'Bank transfer', '£2,400.00'],
+// Sample amounts are written in pounds and shown in the school currency (Settings → Regional preferences)
+const TRANSACTIONS = () => [
+  ['Oliver Bennett', 'PAY-261016-04', '16 Oct 2026', 'Bank transfer', cur('£800.00')],
+  ['Isla Patel', 'PAY-261016-03', '16 Oct 2026', 'Card', cur('£1,200.00')],
+  ['Leo Ahmed', 'PAY-261015-12', '15 Oct 2026', 'Bank transfer', cur('£600.00')],
+  ['Freya Clarke', 'PAY-261015-11', '15 Oct 2026', 'Direct debit', cur('£800.00')],
+  ['Amara Thompson', 'PAY-260905-06', '05 Sep 2026', 'Bank transfer', cur('£2,400.00')],
 ];
-const OUTSTANDING = [
-  ['Noah Williams · 10B', 'INV-26-0418', '16 days', '£1,200.00', '14 Oct'],
-  ['Theo Martin · 9A', 'INV-26-0364', '16 days', '£800.00', '14 Oct'],
-  ['Emily Harris · 8B', 'INV-26-0281', '9 days', '£1,000.00', '14 Oct'],
-  ['Archie Green · 7A', 'INV-26-0142', '9 days', '£600.00', '14 Oct'],
+const OUTSTANDING = () => [
+  ['Noah Williams · 10B', 'INV-26-0418', '16 days', cur('£1,200.00'), '14 Oct'],
+  ['Theo Martin · 9A', 'INV-26-0364', '16 days', cur('£800.00'), '14 Oct'],
+  ['Emily Harris · 8B', 'INV-26-0281', '9 days', cur('£1,000.00'), '14 Oct'],
+  ['Archie Green · 7A', 'INV-26-0142', '9 days', cur('£600.00'), '14 Oct'],
 ];
 /** "Export statement": term summary, transactions and overdue accounts in one CSV. */
 const exportStatement = () => downloadCsv('fee-statement-term1', ['Section', 'Student / account', 'Reference', 'Date / overdue', 'Detail', 'Amount'], [
-  ['Summary', 'Term 1 billing', '', '', '', '£960,000'], ['Summary', 'Collected', '', '', '88.1%', '£846,000'],
-  ['Summary', 'Not yet due', '', '02 Nov 2026', '', '£76,000'], ['Summary', 'Overdue', '', '', '38 accounts', '£38,000'],
-  ...TRANSACTIONS.map(([n, ref, d, m, a]) => ['Payment', n, ref, d, m, a]),
-  ...OUTSTANDING.map(([n, inv, od, bal, rem]) => ['Overdue', n, inv, od, `Last reminder ${rem}`, bal]),
+  ['Summary', 'Term 1 billing', '', '', '', cur('£960,000')], ['Summary', 'Collected', '', '', '88.1%', cur('£846,000')],
+  ['Summary', 'Not yet due', '', '02 Nov 2026', '', cur('£76,000')], ['Summary', 'Overdue', '', '', '38 accounts', cur('£38,000')],
+  ...TRANSACTIONS().map(([n, ref, d, m, a]) => ['Payment', n, ref, d, m, a]),
+  ...OUTSTANDING().map(([n, inv, od, bal, rem]) => ['Overdue', n, inv, od, `Last reminder ${rem}`, bal]),
 ]);
 
 /* ---------- Fees ---------- */
@@ -161,10 +165,10 @@ export function Fees() {
       />
       <Card><ApiNote>Sample data. Live fee accounts, receipts and defaulter lists are shown to finance staff, principals and super administrators.</ApiNote></Card>
       <Metrics items={[
-        ['Term billing', '£960,000', 'Term 1 · September–December'],
-        ['Collected', '£846,000', '88.1% of term billing'],
-        ['Not yet due', '£76,000', 'Next due date 02 November'],
-        ['Overdue', '£38,000', '38 accounts require follow-up'],
+        ['Term billing', cur('£960,000'), 'Term 1 · September–December'],
+        ['Collected', cur('£846,000'), '88.1% of term billing'],
+        ['Not yet due', cur('£76,000'), 'Next due date 02 November'],
+        ['Overdue', cur('£38,000'), '38 accounts require follow-up'],
       ]} />
       <div className="cols s404">
         <div className="stack">
@@ -175,24 +179,24 @@ export function Fees() {
               { label: 'Student / reference', render: (r) => <span className="cell-id"><b>{r[0]}</b><small>{r[1]}</small></span> },
               { label: 'Date', key: '2' }, { label: 'Method', key: '3' }, { label: 'Amount', key: '4', className: 'num' },
               { label: 'Status', render: () => <Pill tone="green">Reconciled</Pill> }, { label: 'Action', render: () => act('Receipt') },
-            ].map((c) => (c.key ? { ...c, key: Number(c.key) } : c))} rows={TRANSACTIONS} />
+            ].map((c) => (c.key ? { ...c, key: Number(c.key) } : c))} rows={TRANSACTIONS()} />
           </Card>
           <Card>
-            <SectionHead title="Outstanding accounts" sub="38 overdue accounts · £38,000 total" link="Send reminders →" />
+            <SectionHead title="Outstanding accounts" sub={`38 overdue accounts · ${cur('£38,000')} total`} link="Send reminders →" />
             <div className="filters" style={{ margin: '18px 0' }}><Select>Overdue accounts</Select><Select>All year groups</Select></div>
             <DataTable boxed cols={[
               { label: 'Student', key: 0 }, { label: 'Invoice', key: 1 }, { label: 'Overdue', key: 2 },
               { label: 'Balance', key: 3, className: 'num' }, { label: 'Last reminder', key: 4 }, { label: 'Action', render: () => act('Record payment') },
-            ]} rows={OUTSTANDING} />
+            ]} rows={OUTSTANDING()} />
           </Card>
         </div>
         <div className="stack">
           <Card>
             <h3 style={{ fontSize: 15, fontWeight: 600 }}>Collection overview</h3>
             <p className="small muted" style={{ margin: '4px 0 14px' }}>Term 1 · 2026–2027</p>
-            <div className="bignum">£846,000</div>
+            <div className="bignum">{cur('£846,000')}</div>
             <div style={{ margin: '14px 0' }}><Pill tone="green">88.1% collected</Pill></div>
-            {[['Billed', '£960,000'], ['Outstanding', '£114,000'], ['Not yet due', '£76,000'], ['Overdue', '£38,000 · 38 accounts']].map(([a, b]) => (
+            {[['Billed', cur('£960,000')], ['Outstanding', cur('£114,000')], ['Not yet due', cur('£76,000')], ['Overdue', `${cur('£38,000')} · 38 accounts`]].map(([a, b]) => (
               <div className="detail" key={a}>{a}<span>·</span><b>{b}</b></div>
             ))}
           </Card>

@@ -386,6 +386,15 @@ select.select{appearance:none;padding-right:26px;background:var(--card) url("dat
 .menubtn:hover,.navclose:hover{background:var(--gl)}
 .backdrop{position:fixed;inset:0;z-index:40;background:rgba(15,17,30,.45);animation:fadeIn .2s both}
 @keyframes fadeIn{from{opacity:0}}
+/* modal open: backdrop fades, the dialog rises in; content that arrives after the dialog fades in */
+.modal-backdrop{animation:fadeIn .18s ease-out both}
+.modal{animation:modalIn .26s cubic-bezier(.16,1,.3,1) both}
+@keyframes modalIn{from{opacity:0;transform:translateY(14px) scale(.985)}}
+.fade-in{animation:fadeIn .2s ease-out both}
+/* loading placeholder shaped like the content it stands in for */
+.skel{display:block;height:12px;border-radius:6px;background:linear-gradient(90deg,var(--gl,#eef0f4) 25%,var(--bd) 50%,var(--gl,#eef0f4) 75%);background-size:200% 100%;animation:skel 1.2s ease-in-out infinite}
+@keyframes skel{from{background-position:100% 0}to{background-position:-100% 0}}
+@media (prefers-reduced-motion:reduce){.modal-backdrop,.modal,.fade-in,.skel{animation:none}}
 body.noscroll{overflow:hidden}
 .page{width:100%;max-width:1680px;margin:0 auto}
 .crumbs{min-width:0}
@@ -521,3 +530,5 @@ body.noscroll{overflow:hidden}
 .ttgrid td .cell-id b{font-weight:500}
 .ttgrid tr.ttbreak td{background:var(--gl);color:var(--mu);font-size:11px;text-align:center;padding-top:6px;padding-bottom:6px}
 .ttgrid tr.ttbreak td:first-child{text-align:left}
+/* Trace id under an API error, for looking the request up in the service logs */
+.api-error .trace-ref{display:block;margin-top:2px;opacity:.75;font-family:ui-monospace,Consolas,monospace;font-size:10px;user-select:all}

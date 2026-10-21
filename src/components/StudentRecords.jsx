@@ -7,10 +7,11 @@ import * as studentApi from '../api/studentService.js';
 import { DataTable, Person, Pill, KV, Actions, Pager, SearchBox, Card, SectionHead, downloadCsv, downloadFile } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
+import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
 
 const { ROLES, STUDENT_STATUS, LEFT_STATUSES, fullName, classLabel } = studentApi;
 export const Loading = () => <p className="xs muted"><LoaderCircle size={12} className="spin" /> Loading…</p>;
-export const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
+export const fmtDate = (d) => formatDate(d);
 const label = (code) => (code || '').toLowerCase().split('_').map((w) => (w ? w[0].toUpperCase() + w.slice(1) : '')).join(' ');
 export const statusPill = (status) => {
   const [text, tone] = STUDENT_STATUS[status] || [label(status), ''];

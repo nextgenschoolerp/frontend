@@ -7,14 +7,18 @@ import { PageHeader, Metrics, SectionHead, Pill, Card, Footer, downloadCsv, Toda
 import { useAuth } from '../auth.jsx';
 import { useApplications } from '../components/Admissions.jsx';
 import { useStudents } from '../components/StudentRecords.jsx';
-import { useAttendanceWeek } from '../components/AttendanceLive.jsx';
+import { useState } from 'react';
+import { useAttendanceWeek, ATTENDANCE_RANGES } from '../components/AttendanceLive.jsx';
+import { useFeeOverview } from '../components/FeesLive.jsx';
+import { money, moneyShort } from '../api/financeService.js';
+import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
 
 const SAMPLE = [94.1, 95.8, 94.7, 96.1, 95.2].map((value, i) => ({ value, label: ['Mon 12', 'Tue 13', 'Wed 14', 'Thu 15', 'Fri 16'][i] }));
 
 /** Daily present % with the 95% target line. `points`: [{ label, value }] (live from useAttendanceWeek); the sample week without. */
-export function AttendanceChart({ points = SAMPLE }) {
+export function AttendanceChart({ points = SAMPLE, empty = 'No registers submitted yet this week.' }) {
   const W = 675;
-  if (!points.length) return <p className="xs muted" style={{ height: 133, display: 'grid', placeItems: 'center' }}>No registers submitted yet this week.</p>;
+  if (!points.length) return <p className="xs muted" style={{ height: 133, display: 'grid', placeItems: 'center' }}>{empty}</p>;
   const values = points.map((p) => p.value);
   // y range: 6 points around the data and the target, in steps of 2
   const top = Math.min(100, Math.ceil((Math.max(...values, 95) + 1) / 2) * 2);
@@ -26,6 +30,9 @@ export function AttendanceChart({ points = SAMPLE }) {
   const line = points.map((p, i) => `${i ? 'L' : 'M'}${x(i)},${y(p.value)}`).join('');
   const anchor = (i) => (n === 1 ? 'middle' : i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle');
   const ticks = [0, 1, 2, 3].map((k) => top - (span * k) / 3);
+  // Longer ranges: every point keeps its hover title, but only about 7 day labels and the first / last values are written
+  const every = Math.ceil(n / 7);
+  const labelled = (i) => n <= 7 || i % every === 0 || i === n - 1;
   return (
     <div style={{ display: 'flex', gap: 12 }}>
       <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: 113, fontSize: 9, color: 'var(--fa)' }}>
@@ -38,9 +45,10 @@ export function AttendanceChart({ points = SAMPLE }) {
         <path d={line} fill="none" style={{ stroke: 'var(--pr)' }} strokeWidth="1.5" />
         {points.map((p, i) => (
           <g key={p.label}>
+            <title>{`${p.label}: ${p.value.toFixed(1)}% present`}</title>
             <circle cx={x(i)} cy={y(p.value)} r="3" style={{ fill: 'var(--card)', stroke: 'var(--pr)' }} />
-            <text x={x(i)} y={y(p.value) - 8} fontSize="9" style={{ fill: 'var(--pr)' }} textAnchor={anchor(i)}>{p.value.toFixed(1)}%</text>
-            <text x={x(i)} y="128" fontSize="9" style={{ fill: 'var(--mu)' }} textAnchor={anchor(i)}>{p.label}</text>
+            {(n <= 7 || i === 0 || i === n - 1) && <text x={x(i)} y={y(p.value) - 8} fontSize="9" style={{ fill: 'var(--pr)' }} textAnchor={anchor(i)}>{p.value.toFixed(1)}%</text>}
+            {labelled(i) && <text x={x(i)} y="128" fontSize="9" style={{ fill: 'var(--mu)' }} textAnchor={anchor(i)}>{p.label}</text>}
           </g>
         ))}
       </svg>
@@ -51,7 +59,7 @@ export function AttendanceChart({ points = SAMPLE }) {
 const WORK = [
   ['Admission applications', '2026–27 intake', 12, 'purple', 'Awaiting review', 'Admissions', 'Review', '/students'],
   ['Staff leave requests', 'For next week', 4, 'amber', 'Approval needed', 'Human resources', 'Approve', '/staff'],
-  ['Overdue fee accounts', '£38,000 outstanding', 38, 'amber', 'Follow up', 'Finance', 'View', '/fees'],
+  ['Overdue fee accounts', 'Overdue balances', 38, 'amber', 'Follow up', 'Finance', 'View', '/fees'],
   ['Incomplete student records', 'Emergency contacts missing', 3, '', 'Needs update', 'School office', 'Update', '/students'],
 ];
 
@@ -67,22 +75,34 @@ export default function Overview() {
   // "Student attendance" and "Attendance trends": GET /api/v1/attendance/summary and /trend (studentservice)
   const att = useAttendanceWeek();
   const t = att.today;
+  // "Attendance trends" range: This week / Last week / Last 4 weeks
+  const [rangeKey, setRangeKey] = useState('week');
+  const r = att.live ? att.range(rangeKey) : null;
+  // "Term fees collected", "Fee collection" and "Overdue fee accounts": financeservice reports (academic year to date);
+  // a rupee sample for roles outside finance staff
+  const fees = useFeeOverview();
+  const fee = fees.live ? fees : { billed: 9600000, collected: 8460000, outstanding: 1140000, notYetDue: 760000, overdue: 380000, accounts: 38,
+    collectedPct: 88.1, notYetDuePct: 7.9, overduePct: 4.0 };
   const pp = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)} pp vs last week`;
   const work = WORK.map((row) => (row[0] === 'Admission applications'
     ? [row[0], row[1], live ? apps.open.length : (apps.loading ? '…' : '—'), row[3], row[4], row[5], row[6], '/students?tab=admissions']
+    : row[0] === 'Overdue fee accounts'
+      ? [row[0], `${moneyShort(fee.overdue)} overdue`, fees.allowed && !fees.live ? '…' : fee.accounts, row[3], row[4], row[5], row[6], row[7]]
     : row[0] === 'Incomplete student records' && students.live
       ? [row[0], 'Guardian, emergency phone or blood group missing', students.incomplete.length, row[3], row[4], row[5], row[6], row[7]]
       : row));
   const metrics = [
     students.live
-      ? ['Total students', students.current.length.toLocaleString('en-GB'), `Across ${students.classCount} class sections`, `+${students.newThisYear.length} this year`, true, GraduationCap]
+      ? ['Total students', formatNumber(students.current.length), `Across ${students.classCount} class sections`, `+${students.newThisYear.length} this year`, true, GraduationCap]
       : ['Total students', '1,248', 'Across 44 classes', '+24 this term', true, GraduationCap],
     att.live
-      ? ['Student attendance', t.presentRate === null ? '—' : `${Number(t.presentRate).toFixed(1)}%`, `${t.present.toLocaleString('en-IN')} of ${(t.totalStudents - t.unmarked).toLocaleString('en-IN')} marked present`,
+      ? ['Student attendance', t.presentRate === null ? '—' : `${Number(t.presentRate).toFixed(1)}%`, `${formatNumber(t.present)} of ${formatNumber(t.totalStudents - t.unmarked)} marked present`,
         att.change !== null ? pp(att.change) : `${t.amRegistersSubmitted} / ${t.registersExpected} registers in`, att.change === null || att.change >= 0, ClipboardCheck]
       : ['Student attendance', att.allowed ? '…' : '95.2%', att.allowed ? '' : '1,188 of 1,248 present', att.allowed ? '' : '+0.5 pp vs last week', true, ClipboardCheck],
     ['Staff on campus', '86 / 92', 'All lessons covered', '6 on approved leave', false, Users],
-    ['Term fees collected', '£846,000', '£114,000 outstanding', '88.1% of term billing', true, Wallet],
+    fees.allowed && !fees.live
+      ? ['Fees collected', fees.error ? '—' : '…', fees.error ? 'Could not load fee figures' : '', '', true, Wallet]
+      : ['Fees collected', moneyShort(fee.collected), `${moneyShort(fee.outstanding)} outstanding`, `${fee.collectedPct.toFixed(1)}% of billing`, fee.collectedPct >= 85, Wallet],
   ];
   // "Export report": the figures and the attention list shown on this page, as CSV
   const exportReport = () => downloadCsv('school-overview', ['Section', 'Item', 'Value', 'Detail'], [
@@ -106,17 +126,23 @@ export default function Overview() {
       <div className="cols ov">
         <Card>
           <div className="sh">
-            <div><h3>Attendance trends</h3><p>Student attendance · {att.live ? (att.period || 'this week') : '12–16 October'}</p></div>
-            <span className="select" style={{ height: 27, fontSize: 11 }}>This week<ChevronDown size={13} /></span>
+            <div><h3>Attendance trends</h3><p>Student attendance · {r ? (r.period || r.label.toLowerCase()) : '12–16 October'}</p></div>
+            {r ? (
+              <select className="select" aria-label="Attendance period" style={{ height: 27, fontSize: 11 }} value={rangeKey} onChange={(e) => setRangeKey(e.target.value)}>
+                {ATTENDANCE_RANGES.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+              </select>
+            ) : <span className="select" style={{ height: 27, fontSize: 11 }}>This week<ChevronDown size={13} /></span>}
           </div>
           <div className="sumline">
-            <b>{att.live ? (att.weekAvg === null ? '—' : `${att.weekAvg.toFixed(1)}%`) : '95.2%'}</b><span className="muted small">weekly average</span>
+            <b>{r ? (r.avg === null ? '—' : `${r.avg.toFixed(1)}%`) : '95.2%'}</b>
+            <span className="muted small">{rangeKey === 'month' && r ? 'average' : 'weekly average'}</span>
+            {r && r.change !== null && <span className="xs" style={{ color: r.change >= 0 ? 'var(--gr)' : 'var(--rd)' }}>{`${r.change >= 0 ? '+' : ''}${r.change.toFixed(1)} pp vs ${r.versus}`}</span>}
             <span className="xs muted" style={{ marginLeft: 'auto' }}>— — Target 95%</span>
           </div>
-          {att.live ? <AttendanceChart points={att.points} /> : <AttendanceChart />}
+          {r ? <AttendanceChart points={r.points} empty={`No registers submitted ${r.label.toLowerCase() === 'this week' ? 'yet this week' : `in ${r.label.toLowerCase()}`}.`} /> : <AttendanceChart />}
           <div className="legendrow">
             <span>TODAY</span>
-            <span className="i"><i style={{ background: 'var(--gr)' }} />{att.live ? t.present.toLocaleString('en-IN') : '1,188'} present</span>
+            <span className="i"><i style={{ background: 'var(--gr)' }} />{att.live ? formatNumber(t.present) : '1,188'} present</span>
             <span className="i"><i style={{ background: 'var(--chart-am)' }} />{att.live ? t.excused : 42} excused</span>
             <span className="i"><i style={{ background: 'var(--rd)' }} />{att.live ? t.unexcused : 18} unexcused</span>
             <Link to="/attendance" className="link"><ArrowUpRight size={14} /></Link>
@@ -124,29 +150,29 @@ export default function Overview() {
         </Card>
 
         <Card style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <SectionHead title="Fee collection" sub="Term 1 · September–December" link="View finance" to="/fees" />
+          <SectionHead title="Fee collection" sub={fees.live ? 'Academic year to date' : 'Academic year to date · sample'} link="View finance" to="/fees" />
           <div className="row" style={{ alignItems: 'flex-end' }}>
             <div>
-              <div style={{ fontSize: 29, fontWeight: 600 }}>£846,000</div>
-              <div className="small muted">of £960,000 billed this term</div>
+              <div style={{ fontSize: 29, fontWeight: 600 }}>{money(fee.collected)}</div>
+              <div className="small muted">of {money(fee.billed)} billed</div>
             </div>
-            <Pill tone="green">88.1% collected</Pill>
+            <Pill tone={fee.collectedPct >= 85 ? 'green' : 'amber'}>{fee.collectedPct.toFixed(1)}% collected</Pill>
           </div>
           <div>
             <div className="collbar">
-              <i style={{ width: '88.1%', background: 'var(--gr)' }} />
-              <i style={{ width: '7.9%', background: 'var(--tint2)' }} />
-              <i style={{ flex: 1, background: 'var(--chart-am)' }} />
+              <i style={{ width: `${fee.collectedPct}%`, background: 'var(--gr)' }} />
+              <i style={{ width: `${fee.notYetDuePct}%`, background: 'var(--tint2)' }} />
+              <i style={{ width: `${fee.overduePct}%`, background: 'var(--chart-am)' }} />
             </div>
-            <div className="row xs muted" style={{ marginTop: 8 }}><span>Collected</span><span>Outstanding £114,000</span></div>
+            <div className="row xs muted" style={{ marginTop: 8 }}><span>Collected</span><span>Outstanding {money(fee.outstanding)}</span></div>
           </div>
           <div className="two">
-            <div><small>Not yet due</small><b>£76,000</b></div>
-            <div><small>Overdue · 38 accounts</small><b style={{ color: 'var(--am)' }}>£38,000</b></div>
+            <div><small>Not yet due</small><b>{money(fee.notYetDue)}</b></div>
+            <div><small>Overdue · {fee.accounts} account{fee.accounts === 1 ? '' : 's'}</small><b style={{ color: 'var(--am)' }}>{money(fee.overdue)}</b></div>
           </div>
           <div className="legendrow" style={{ marginTop: 0 }}>
-            <span>Last reminder sent 14 Oct</span>
-            <span className="link"><Send size={13} />Send reminders</span>
+            <span>{fees.live ? `${fees.receipts} receipts this academic year` : 'Last reminder sent 14 Oct'}</span>
+            <Link to="/fees" className="link"><Send size={13} />Follow up overdue accounts</Link>
           </div>
         </Card>
       </div>

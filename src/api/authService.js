@@ -22,3 +22,7 @@ export const queryAuditLogs = (filters = {}) => api.get('/api/v1/audit/logs', { 
 
 // --- Campus / branches (US-00009) --------------------------------------------------------------------
 export const listBranches = (tenantId) => api.get(`/api/v1/tenants/${tenantId}/branches`);
+
+// --- Regional preferences (Settings → General) -------------------------------------------------------
+export const getRegionalSettings = (tenantId) => api.get(`/api/v1/tenants/${tenantId}/regional-settings`);
+export const saveRegionalSettings = (tenantId, settings) => api.put(`/api/v1/tenants/${tenantId}/regional-settings`, settings);

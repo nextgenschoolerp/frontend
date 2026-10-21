@@ -7,10 +7,11 @@ import * as studentApi from '../api/studentService.js';
 import { PageHeader, Metrics, Card, SectionHead, Tabs, DataTable, Pill, Footer, downloadCsv } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
+import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
 
 const { ROLES, RESULT, pct } = exam;
 const Loading = () => <p className="xs muted"><LoaderCircle size={12} className="spin" /> Loading…</p>;
-const when = (t) => (t ? new Date(t).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
+const when = (t) => formatDateTime(t);
 const TABS = ['Mark entry', 'Broadsheet', 'Rank list', 'Incomplete entries', 'Unlock tickets'];
 const resultPill = (code) => { const [t, c] = RESULT[code] || [code, '']; return <Pill tone={c}>{t}</Pill>; };
 const Picker = ({ label, value, onChange, options, empty }) => (

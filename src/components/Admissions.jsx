@@ -6,6 +6,7 @@ import * as admissionApi from '../api/admissionService.js';
 import { DataTable, Person, Pill, KV, Actions, downloadCsv } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { NextStep } from './AdmissionActions.jsx';
+import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
 
 // Everyone who moves an application forward can read the list (GET /enquiries)
 const READ_ROLES = ['FRONT_OFFICE_COUNSELOR', 'ADMISSION_OFFICER', 'REGISTRAR', 'ENTRANCE_EXAM_EVALUATOR', 'FINANCE_CASHIER', 'SCHOOL_PRINCIPAL', 'SUPER_ADMIN'];
@@ -14,7 +15,8 @@ export const ApiNote = ({ children }) => <div className="api-note"><Info size={1
 export const ApiErr = ({ error }) => (
   <div className={error.status === 403 ? 'api-note' : 'api-error'}>
     <ShieldAlert size={14} style={{ flex: 'none' }} />
-    <span>{error.status === 403 ? 'Not available for your role.' : error.detail}</span>
+    <span>{error.status === 403 ? 'Not available for your role.' : error.detail}
+      {error.status !== 403 && error.traceId && <small className="trace-ref" title="Trace id of this request in the service logs"> Ref {error.traceId}</small>}</span>
   </div>
 );
 const Loading = () => <p className="xs muted"><LoaderCircle size={12} className="spin" /> Loading…</p>;
@@ -23,7 +25,7 @@ export const statusPill = (status) => {
   const [text, tone] = admissionApi.STATUS[status] || [status, ''];
   return <Pill tone={tone}>{text}</Pill>;
 };
-const fmtDate = (t) => (t ? new Date(t).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
+const fmtDate = (t) => formatDate(t);
 const label = (code) => (code || '').toLowerCase().split('_').map((w) => (w ? w[0].toUpperCase() + w.slice(1) : '')).join(' ');
 /** "GRADE-07" -> "Class 7"; "GRADE-NURSERY" -> "Nursery"; "GRADE-LKG" -> "LKG". */
 export const gradeLabel = (g) => {

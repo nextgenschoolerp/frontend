@@ -18,6 +18,7 @@ import { StudentAttendanceCard } from '../components/AttendanceLive.jsx';
 import { useApi } from '../api/useApi.js';
 import { captureEnquiry } from '../api/admissionService.js';
 import * as studentApi from '../api/studentService.js';
+import { formatDate, formatDateTime, formatTime, formatNumber, formatMoney } from '../regional.js';
 
 const { ROLES, isStudentId, fullName, classLabel } = studentApi;
 const TABS = [null, 'admissions', 'archived'];
@@ -32,7 +33,7 @@ export function StudentsDirectory() {
   const setTab = (i) => setParams(TABS[i] ? { tab: TABS[i] } : {}, { replace: true });
   const live = apps.canRead && !apps.missingBranch && !apps.error;
   const openCount = live && apps.data ? apps.open.length : null;
-  const n = (v) => (list.live ? v.toLocaleString('en-GB') : list.loading ? '…' : '—');
+  const n = (v) => (list.live ? formatNumber(v) : list.loading ? '…' : '—');
   const noAccess = 'Not available for your role';
   const { hasRole } = useAuth();
   const [promoting, setPromoting] = useState(false);
@@ -566,10 +567,10 @@ export function StudentProfile() {
   const feesCard = s ? <FeeStatusCard student={s} fees={fees} onOpenTab={tab === 'fees' ? undefined : () => setTab(3)} /> : (
     <Card>
       <SectionHead title="Fee status" sub="Term 1 · 2026–2027" link="View account →" to="/fees" />
-      <><div className="bignum" style={{ marginTop: 18 }}>£0.00</div>
+      <><div className="bignum" style={{ marginTop: 18 }}>{formatMoney(0, { decimals: 2 })}</div>
       <p className="xs muted" style={{ margin: '14px 0 12px' }}>Outstanding balance</p>
       <Pill tone="green">Paid in full</Pill>
-      <p className="xs muted" style={{ marginTop: 12 }}>£2,400 received · 05 September 2026</p></>
+      <p className="xs muted" style={{ marginTop: 12 }}>{formatMoney(2400)} received · {formatDate('2026-09-05')}</p></>
     </Card>
   );
   const guardiansCard = (

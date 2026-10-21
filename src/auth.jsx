@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import { Navigate, useLocation } from 'react-router-dom';
 import { SESSION_KEY, setUnauthorizedHandler } from './api/client.js';
 import * as authApi from './api/authService.js';
+import { startSpan, endSpan } from './api/tracing.js';
 
 // Display labels for authservice role codes (user_type / role_code).
 const ROLE_LABELS = {
@@ -84,6 +85,7 @@ export function AuthProvider({ children }) {
   const signOut = useCallback((message = '') => {
     // authservice has no logout endpoint: the JWT is discarded client-side and expires on its own.
     persist(null);
+    endSpan(); // the next sign-in starts a new span
     setUser(null);
     setNotice(message);
     setPickedBranch('');
@@ -103,8 +105,10 @@ export function AuthProvider({ children }) {
   }, [user, signOut]);
 
   async function signIn(identifier, password, remember) {
+    // One span per signed-in session (X-Span-Id), starting with the sign-in call itself
+    const span = startSpan();
     const res = await authApi.login(identifier.trim(), password);
-    const session = sessionFrom(res);
+    const session = { ...sessionFrom(res), spanId: span };
     persist(session, remember);
     setNotice('');
     // A new sign-in starts on the user's own campus, even if an earlier session ended without signing out

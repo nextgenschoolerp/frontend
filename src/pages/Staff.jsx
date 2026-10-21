@@ -1,78 +1,154 @@
-import { useState } from 'react';
-import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { Download, Plus, ArrowLeft, Pencil, Upload } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Download, Plus, ArrowLeft, Pencil, Check, X, LoaderCircle } from 'lucide-react';
 import {
-  PageHeader, Metrics, Card, SectionHead, Tabs, SearchBox, Select, DataTable, Pager, Person, Actions,
-  Pill, FieldGrid, Field, Footer, KV, Docs, downloadCsv,
+  PageHeader, Metrics, Card, SectionHead, Tabs, SearchBox, DataTable, Pager, Person, Actions,
+  Pill, FieldGrid, Field, Footer, KV, downloadCsv, todayIso,
 } from '../components/ui.jsx';
-import { useRoleOptions, Modal } from '../components/AuthSettings.jsx';
+import { Modal } from '../components/AuthSettings.jsx';
+import { ApiErr, ApiNote } from '../components/Admissions.jsx';
+import { TimetableGrid } from '../components/TeachingLive.jsx';
+import { useAuth } from '../auth.jsx';
+import { useApi } from '../api/useApi.js';
+import * as hr from '../api/hrService.js';
+import * as lms from '../api/academicService.js';
+import { formatDate, formatNumber, formatMoney } from '../regional.js';
 
-const STAFF = [
-  ['Eleanor Hughes', 'SF-2018-014', 'Head of Mathematics', 'Mathematics', 'Teaching', 'On campus'],
-  ['James Carter', 'SF-2020-028', 'English teacher', 'English', 'Teaching', 'On campus'],
-  ['Aisha Rahman', 'SF-2019-021', 'Science teacher', 'Science', 'Teaching', 'On campus'],
-  ['Charlotte Evans', 'SF-2021-037', 'History teacher', 'Humanities', 'Teaching', 'Approved leave'],
-  ['Michael Brooks', 'SF-2017-009', 'Head of year 10', 'Pastoral', 'Teaching', 'On campus'],
-  ['Grace Taylor', 'SF-2022-043', 'School nurse', 'Student wellbeing', 'Support', 'On campus'],
-  ['Daniel Foster', 'SF-2020-031', 'Finance officer', 'Administration', 'Support', 'On campus'],
-  ['Lucy Morgan', 'SF-2023-056', 'Learning support assistant', 'Learning support', 'Support', 'On campus'],
-].map(([name, id, role, dept, type, avail]) => ({ name, id, role, dept, type, avail }));
+const Loading = () => <p className="xs muted"><LoaderCircle size={12} className="spin" /> Loading…</p>;
+const fullName = (s) => `${s.firstName} ${s.lastName}`;
+const staffType = (s) => (hr.TEACHING_DEPARTMENTS.includes(s.department) ? 'Teaching' : 'Support');
+const isCurrent = (s) => s.isActive !== false && !['RESIGNED', 'RETIRED', 'TERMINATED'].includes(s.employmentStatus);
+/** Approved leave that covers `day` (yyyy-mm-dd) */
+const onLeave = (leaves, staffId, day) => (leaves || []).find((l) => l.staffId === staffId && l.status === 'APPROVED' && l.startDate <= day && l.endDate >= day);
+const dateRange = (l) => (l.startDate === l.endDate ? formatDate(l.startDate) : `${formatDate(l.startDate)} – ${formatDate(l.endDate)}`);
+const days = (n) => `${formatNumber(Number(n))} ${Number(n) === 1 ? 'day' : 'days'}`;
+
+/** Availability shown in the directory and on the profile: leave today, else the employment status. */
+function availability(s, leaves, today) {
+  if (!isCurrent(s)) return hr.EMPLOYMENT_STATUS[s.employmentStatus] || [s.employmentStatus, ''];
+  const l = onLeave(leaves, s.staffId, today);
+  if (l) return [`On ${hr.LEAVE_LABEL[l.leaveType]?.toLowerCase() || 'leave'}`, 'amber'];
+  return s.employmentStatus === 'NOTICE_PERIOD' ? hr.EMPLOYMENT_STATUS.NOTICE_PERIOD : ['Available', 'green'];
+}
+
+/* ---------- directory (GET /api/v1/hr/employees, GET /api/v1/hr/leaves) ---------- */
+
+const DIR_TABS = ['all', 'teaching', 'support', 'archived'];
+const PAGE_SIZE = 10;
 
 export function StaffDirectory() {
+  const { branchId, hasRole } = useAuth();
+  const today = todayIso();
+  const staff = useApi(() => hr.listEmployees(branchId ? { branchId } : {}), [branchId]);
+  const leaves = useApi(() => hr.listLeaves(), []);
+  const canSummary = hasRole(...hr.HR_ROLES.attendance);
+  const summary = useApi(() => hr.attendanceSummary(today), [today], canSummary);
   const [q, setQ] = useState('');
-  const rows = STAFF.filter((s) => `${s.name} ${s.id} ${s.role}`.toLowerCase().includes(q.toLowerCase()));
+  const [tab, setTab] = useState(0);
+  const [dept, setDept] = useState('');
+  const [avail, setAvail] = useState('');
+  const [page, setPage] = useState(1);
+
+  const all = staff.data || [];
+  const current = all.filter(isCurrent);
+  const teaching = current.filter((s) => staffType(s) === 'Teaching');
+  const leaveToday = current.filter((s) => onLeave(leaves.data, s.staffId, today));
+  const pending = (leaves.data || []).filter((l) => l.status === 'PENDING' && all.some((s) => s.staffId === l.staffId));
+  const departments = [...new Set(all.map((s) => s.department))].sort();
+  const reviewsDue = current.filter((s) => s.probationStatus !== 'CONFIRMED' && s.probationEndDate);
+
+  const inTab = { all: current, teaching, support: current.filter((s) => staffType(s) === 'Support'), archived: all.filter((s) => !isCurrent(s)) }[DIR_TABS[tab]];
+  const rows = inTab
+    .filter((s) => `${fullName(s)} ${s.employeeCode} ${s.designation} ${s.email || ''}`.toLowerCase().includes(q.toLowerCase()))
+    .filter((s) => !dept || s.department === dept)
+    .filter((s) => !avail || (avail === 'leave' ? !!onLeave(leaves.data, s.staffId, today) : !onLeave(leaves.data, s.staffId, today)))
+    .map((s) => ({ ...s, name: fullName(s), type: staffType(s), avail: availability(s, leaves.data, today) }));
+  const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const shown = rows.slice((Math.min(page, pages) - 1) * PAGE_SIZE, Math.min(page, pages) * PAGE_SIZE);
+  const n = (v) => (staff.data ? formatNumber(v) : staff.loading ? '…' : '—');
+  const reset = (fn) => (v) => { fn(v); setPage(1); };
+
   return (
     <>
       <PageHeader
         title="Staff & faculty"
-        desc="Manage your teaching and support teams, assignments and employment records."
+        desc="Manage your teaching and support teams, leave and employment records."
         actions={[
-          { label: 'Export list', icon: <Download size={15} />, onClick: () => downloadCsv('staff', ['Name', 'Staff ID', 'Role', 'Department', 'Type', 'Availability'],
-            rows.map((r) => [r.name, r.id, r.role, r.dept, r.type, r.avail])) },
-          { label: 'Add staff member', icon: <Plus size={15} />, primary: true, to: '/staff/new' },
-        ]}
+          { label: 'Export list', icon: <Download size={15} />, disabled: !rows.length, onClick: () => downloadCsv('staff', ['Name', 'Employee code', 'Role', 'Department', 'Type', 'Availability', 'Email', 'Phone'],
+            rows.map((r) => [r.name, r.employeeCode, r.designation, r.department, r.type, r.avail[0], r.email || '', r.phone || ''])) },
+          hasRole(...hr.HR_ROLES.manage) && { label: 'Add staff member', icon: <Plus size={15} />, primary: true, to: '/staff/new' },
+        ].filter(Boolean)}
       />
       <Metrics items={[
-        ['Total staff', '92', '68 teaching · 24 support'],
-        ['On campus today', '86', 'All lessons covered'],
-        ['Approved leave', '6', 'Cover arrangements confirmed'],
-        ['Leave requests', '4', 'Awaiting approval for next week'],
+        ['Total staff', n(current.length), `${n(teaching.length)} teaching · ${n(current.length - teaching.length)} support`],
+        ['On campus today', summary.data ? formatNumber(summary.data.presentCount) : canSummary && summary.loading ? '…' : '—',
+          summary.data ? `${formatNumber(summary.data.attendancePercentage)}% punched in` : 'Biometric attendance · principal and HR'],
+        ['On leave today', leaves.data ? formatNumber(leaveToday.length) : '…', 'Approved leave'],
+        ['Leave requests', leaves.data ? formatNumber(pending.length) : '…', 'Awaiting approval'],
       ]} />
       <Card style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-        <div className="sh"><div><h3>Staff directory</h3><p>Main campus · Active employees</p></div><span className="link">Manage columns</span></div>
-        <Tabs items={['All staff (92)', 'Teaching (68)', 'Support (24)', 'Archived']} />
+        <div className="sh"><div><h3>Staff directory</h3><p>{branchId || 'All campuses'} · from HR records</p></div></div>
+        <Tabs items={[`All staff (${n(current.length)})`, `Teaching (${n(teaching.length)})`, `Support (${n(current.length - teaching.length)})`, `Archived (${n(all.length - current.length)})`]}
+          value={tab} onChange={reset(setTab)} />
         <div className="filters">
-          <SearchBox placeholder="Search name, staff ID or email" value={q} onChange={setQ} />
-          <Select>All roles</Select><Select>All departments</Select><Select>All availability</Select>
-          <button className="btn">More filters</button>
+          <SearchBox placeholder="Search name, employee code, role or email" value={q} onChange={reset(setQ)} />
+          <label className="select"><select aria-label="Department" value={dept} onChange={(e) => reset(setDept)(e.target.value)}>
+            <option value="">All departments</option>{departments.map((d) => <option key={d}>{d}</option>)}
+          </select></label>
+          <label className="select"><select aria-label="Availability" value={avail} onChange={(e) => reset(setAvail)(e.target.value)}>
+            <option value="">All availability</option><option value="available">Available</option><option value="leave">On leave today</option>
+          </select></label>
         </div>
-        <div className="tablebox">
-          <DataTable
-            cols={[
-              { label: 'Staff member', render: (s) => <Person name={s.name} sub={s.id} /> },
-              { label: 'Role', key: 'role' },
-              { label: 'Department', key: 'dept' },
-              { label: 'Type', key: 'type' },
-              { label: 'Availability', render: (s) => <Pill tone={s.avail === 'On campus' ? 'green' : 'amber'}>{s.avail}</Pill> },
-              { label: 'Actions', render: (s) => (
-                <Actions><Link to={`/staff/${s.id.toLowerCase()}`}>View profile</Link><Link to={`/staff/${s.id.toLowerCase()}/edit`}>Edit</Link></Actions>
-              ) },
-            ]}
-            rows={rows}
-          />
-          <Pager text={`Showing 1–${rows.length} of 92 staff members`} />
-        </div>
+        {staff.error ? <ApiErr error={staff.error} /> : staff.loading ? <Loading /> : (
+          <div className="tablebox">
+            <DataTable
+              cols={[
+                { label: 'Staff member', render: (s) => <Person name={s.name} sub={s.employeeCode} /> },
+                { label: 'Role', key: 'designation' },
+                { label: 'Department', key: 'department' },
+                { label: 'Type', key: 'type' },
+                { label: 'Availability', render: (s) => <Pill tone={s.avail[1]}>{s.avail[0]}</Pill> },
+                { label: 'Actions', render: (s) => (
+                  <Actions>
+                    <Link to={`/staff/${s.staffId}`}>View profile</Link>
+                    {hasRole(...hr.HR_ROLES.manage) && <Link to={`/staff/${s.staffId}/edit`}>Edit</Link>}
+                  </Actions>
+                ) },
+              ]}
+              rows={shown}
+            />
+            {!rows.length && <p className="small muted" style={{ padding: 16 }}>No staff match these filters.</p>}
+            <Pager text={rows.length ? `Showing ${(Math.min(page, pages) - 1) * PAGE_SIZE + 1}–${(Math.min(page, pages) - 1) * PAGE_SIZE + shown.length} of ${rows.length} staff members` : 'No staff members'}
+              page={Math.min(page, pages)} pages={pages} onPage={setPage} />
+          </div>
+        )}
       </Card>
       <div className="cols eq">
         <Card>
-          <SectionHead title="Leave & cover" link="Manage cover →" />
-          <p className="body-s" style={{ marginTop: -6 }}>6 staff on approved leave today. All timetabled lessons have cover.</p>
-          <div className="pills" style={{ marginTop: 14 }}><Pill tone="green">100% lessons covered</Pill><Pill tone="amber">4 requests pending</Pill></div>
+          <SectionHead title="Leave & cover" link="Manage cover →" to="/teaching" />
+          {leaves.error ? <ApiErr error={leaves.error} /> : !leaves.data ? <Loading /> : (<>
+            <p className="body-s" style={{ marginTop: -6 }}>
+              {leaveToday.length ? `${leaveToday.length} staff on approved leave today.` : 'Nobody is on leave today.'}
+            </p>
+            {leaveToday.map((s) => {
+              const l = onLeave(leaves.data, s.staffId, today);
+              return <p className="small" key={s.staffId} style={{ marginTop: 8 }}><b>{fullName(s)}</b> · {hr.LEAVE_LABEL[l.leaveType]} · {dateRange(l)}{l.proxyNotes ? ` · ${l.proxyNotes}` : ''}</p>;
+            })}
+            <div className="pills" style={{ marginTop: 14 }}>
+              <Pill tone={pending.length ? 'amber' : 'green'}>{pending.length ? `${pending.length} requests pending` : 'No requests pending'}</Pill>
+            </div>
+          </>)}
         </Card>
         <Card>
-          <SectionHead title="Staff compliance" link="View compliance →" />
-          <p className="body-s" style={{ marginTop: -6 }}>Safeguarding refresher training is due Friday, 23 October.</p>
-          <p className="small muted" style={{ marginTop: 14 }}>84 of 92 staff complete · 8 reminders scheduled</p>
+          <SectionHead title="Probation & reviews" />
+          {staff.data && (<>
+            <p className="body-s" style={{ marginTop: -6 }}>{reviewsDue.length ? `${reviewsDue.length} staff on probation.` : 'All current staff are confirmed.'}</p>
+            {reviewsDue.map((s) => (
+              <p className="small" key={s.staffId} style={{ marginTop: 8 }}>
+                <Link to={`/staff/${s.staffId}`}>{fullName(s)}</Link> · {hr.PROBATION[s.probationStatus]} · review due {formatDate(s.probationEndDate)}
+              </p>
+            ))}
+          </>)}
         </Card>
       </div>
       <Footer />
@@ -80,93 +156,156 @@ export function StaffDirectory() {
   );
 }
 
-/* ---------- profile ---------- */
+/* ---------- profile (GET /employees/{id} or /employees/me, leaves, quotas, CPD; timetable from academicservice) ---------- */
 
-const LEAVE_TYPES = ['Annual leave', 'Sick leave', 'Training / CPD', 'Compassionate leave', 'Unpaid leave'];
-const fmtDay = (d) => new Date(`${d}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-/** School days (Mon–Fri) from `from` to `to`, inclusive; a half day counts 0.5. */
-function leaveDays(from, to, half) {
-  let n = 0;
-  for (let d = new Date(`${from}T00:00:00`); d <= new Date(`${to}T00:00:00`); d.setDate(d.getDate() + 1)) if (d.getDay() % 6) n += 1;
-  return half && n === 1 ? 0.5 : n;
-}
-
-/** Record leave dialog. There is no staff / HR service yet, so requests live in the page until it is reloaded. */
-function RecordLeaveModal({ name, onClose, onSave }) {
-  const today = new Date().toISOString().slice(0, 10);
+/** Record leave dialog: POST /api/v1/hr/leaves. Staff apply for themselves; HR, principals and heads for anyone. */
+function RecordLeaveModal({ staff, onClose, onSaved }) {
+  const today = todayIso();
   const [error, setError] = useState('');
-  const submit = (e) => {
+  const [busy, setBusy] = useState(false);
+  const submit = async (e) => {
     e.preventDefault();
     const v = Object.fromEntries(new FormData(e.currentTarget));
     if (!v.type || !v.from || !v.to) { setError('Choose the leave type and both dates.'); return; }
     if (v.to < v.from) { setError('The last day cannot be before the first day.'); return; }
-    const days = leaveDays(v.from, v.to, v.half === 'on');
-    if (!days) { setError('The dates fall on a weekend; choose at least one school day.'); return; }
-    onSave({ type: v.type, from: v.from, to: v.to, days, reason: v.reason.trim(), status: 'Pending approval' });
-    onClose();
+    if (!v.reason.trim()) { setError('Give a reason for the leave.'); return; }
+    setBusy(true);
+    setError('');
+    try {
+      await hr.applyLeave({ staffId: staff.staffId, leaveType: v.type, startDate: v.from, endDate: v.to, reason: v.reason.trim(), proxyNotes: v.proxy.trim() || undefined });
+      onSaved();
+      onClose();
+    } catch (err) {
+      setError(err.status === 403 ? 'You can only apply for leave on your own profile.' : err.detail);
+      setBusy(false);
+    }
   };
   return (
-    <Modal title="Record leave" sub={name} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" form="leave-form">Record leave</button></>}>
+    <Modal title="Record leave" sub={fullName(staff)} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" form="leave-form" disabled={busy}>{busy ? 'Saving…' : 'Record leave'}</button></>}>
       <form id="leave-form" className="fieldlist" noValidate onSubmit={submit}>
         <div className="field box"><label htmlFor="leave-type">LEAVE TYPE *</label>
-          <select id="leave-type" name="type" defaultValue=""><option value="" disabled>Select leave type</option>{LEAVE_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
+          <select id="leave-type" name="type" defaultValue=""><option value="" disabled>Select leave type</option>{hr.LEAVE_TYPES.map(([k, t]) => <option key={k} value={k}>{t}</option>)}</select></div>
         <div className="field box"><label htmlFor="leave-from">FIRST DAY *</label><input id="leave-from" name="from" type="date" defaultValue={today} /></div>
         <div className="field box"><label htmlFor="leave-to">LAST DAY *</label><input id="leave-to" name="to" type="date" defaultValue={today} /></div>
-        <label className="check"><input type="checkbox" name="half" />Half day (single-day leave only)</label>
-        <div className="field box"><label htmlFor="leave-reason">REASON / COVER NOTES</label><input id="leave-reason" name="reason" placeholder="Optional" /></div>
-        {error && <div className="api-error"><span>{error}</span></div>}
-        <p className="xs muted">Requests are kept on this page only until the staff service is connected.</p>
+        <div className="field box"><label htmlFor="leave-reason">REASON *</label><input id="leave-reason" name="reason" placeholder="Why the leave is needed" /></div>
+        <div className="field box"><label htmlFor="leave-proxy">COVER NOTES</label><input id="leave-proxy" name="proxy" placeholder="Optional: who covers the lessons" /></div>
+        {error && <div className="api-error" role="alert"><span>{error}</span></div>}
+        <p className="xs muted">The request goes to HR for approval. Days are counted from the first to the last day, inclusive.</p>
       </form>
     </Modal>
   );
 }
 
-// One section per tab, kept in the URL (/staff/:id?tab=timetable); Overview shows the whole summary
 const STAFF_TABS = [
   ['overview', 'Overview'], ['teaching', 'Teaching assignments'], ['timetable', 'Timetable'],
   ['leave', 'Leave & attendance'], ['documents', 'Documents'],
 ];
 
 export function StaffProfile() {
+  const { id } = useParams();
+  const { user, hasRole } = useAuth();
   const [params, setParams] = useSearchParams();
   const index = Math.max(0, STAFF_TABS.findIndex(([key]) => key === params.get('tab')));
   const tab = STAFF_TABS[index][0];
   const setTab = (i) => setParams(i === 0 ? {} : { tab: STAFF_TABS[i][0] }, { replace: true });
-  const [leaves, setLeaves] = useState([]);
+  const today = todayIso();
+
+  const emp = useApi(() => (id === 'me' ? hr.getMyProfile() : hr.getEmployee(id)), [id]);
+  const s = emp.data;
+  const staffId = s?.staffId;
+  const leaves = useApi(() => hr.listLeaves({ staffId }), [staffId], !!staffId);
+  const quotas = useApi(() => hr.listQuotas(staffId), [staffId], !!staffId);
+  const cpd = useApi(() => hr.listCpd(staffId), [staffId], !!staffId);
+  const teaches = s && staffType(s) === 'Teaching' && !!s.userId;
+  const tt = useApi(() => lms.teacherTimetable(s.userId), [s?.userId], !!teaches);
+  // The teacher timetable does not name its bell schedule: use the school's active one (as Teaching & learning does)
+  const schedules = useApi(() => lms.listBellSchedules(), [], !!teaches && !!tt.data && !tt.data.bellScheduleId);
+  const bellId = tt.data?.bellScheduleId || ((schedules.data || []).find((b) => b.active) || schedules.data?.[0])?.bellScheduleId;
+  const bell = useApi(() => lms.getBellSchedule(bellId), [bellId], !!bellId);
   const [recording, setRecording] = useState(false);
-  const upcoming = leaves.filter((l) => l.to >= new Date().toISOString().slice(0, 10)).sort((a, b) => a.from.localeCompare(b.from));
+  const [reviewing, setReviewing] = useState('');
+  const [reviewError, setReviewError] = useState('');
+
+  const self = !!s?.userId && s.userId === user.userId;
+  const canRecord = s && isCurrent(s) && (self || hasRole(...hr.HR_ROLES.hrOfficer));
+  const canApprove = hasRole(...hr.HR_ROLES.approveLeave) && !self;
+  const review = async (l, status) => {
+    setReviewing(l.applicationId);
+    setReviewError('');
+    try {
+      await hr.reviewLeave(l.applicationId, { status, reviewComments: `${status === 'APPROVED' ? 'Approved' : 'Rejected'} from the staff profile` });
+      leaves.reload(); quotas.reload();
+    } catch (err) { setReviewError(err.detail); }
+    setReviewing('');
+  };
+
+  const assignments = useMemo(() => {
+    const by = {};
+    for (const e of tt.data?.entries || []) {
+      const k = `${e.className}|${e.subjectName}`;
+      by[k] = by[k] || { cls: e.className, subject: e.subjectName, periods: 0 };
+      by[k].periods += 1;
+    }
+    return Object.values(by).sort((a, b) => a.cls.localeCompare(b.cls) || a.subject.localeCompare(b.subject));
+  }, [tt.data]);
+  const isoDay = ((new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7) + 1; // Monday = 1
+  const todayLessons = (tt.data?.entries || []).filter((e) => e.dayOfWeek === isoDay).sort((a, b) => a.periodNumber - b.periodNumber);
+  const slotOf = (p) => bell.data?.slots.find((x) => x.slotType === 'PERIOD' && x.periodNumber === p);
+
+  if (emp.error) {
+    return (<>
+      <PageHeader title="Staff profile" desc="Employment details, teaching responsibilities and staff records in one place." actions={[{ label: 'Back to staff', icon: <ArrowLeft size={15} />, to: '/staff' }]} />
+      {emp.error.status === 404 ? <ApiNote>{id === 'me' ? 'There is no HR record linked to your account yet. Ask HR to add one.' : 'This staff member was not found.'}</ApiNote> : <ApiErr error={emp.error} />}
+      <Footer />
+    </>);
+  }
+  if (!s) return (<><PageHeader title="Staff profile" desc="Employment details, teaching responsibilities and staff records in one place." /><Loading /></>);
+
+  const name = fullName(s);
+  const [availText, availTone] = availability(s, leaves.data, today);
+  const approved = (leaves.data || []).filter((l) => l.status === 'APPROVED');
+  const pendingLeave = (leaves.data || []).filter((l) => l.status === 'PENDING');
+  const upcoming = (leaves.data || []).filter((l) => l.status !== 'REJECTED' && l.status !== 'CANCELLED' && l.endDate >= today).sort((a, b) => a.startDate.localeCompare(b.startDate));
+  const latestCpd = [...(cpd.data || [])].sort((a, b) => b.completionDate.localeCompare(a.completionDate))[0];
+
+  const timetableNote = !teaches
+    ? <ApiNote>{s.userId ? 'Support staff have no teaching timetable.' : 'No sign-in account is linked to this record, so the timetable cannot be looked up.'}</ApiNote>
+    : tt.error ? (tt.error.status === 404 ? <ApiNote>No timetable has been generated for this teacher yet.</ApiNote> : <ApiErr error={tt.error} />)
+      : tt.loading ? <Loading /> : null;
 
   const assignmentsCard = (
     <Card>
-      <SectionHead title="Teaching assignments" sub="2026–2027 · Term 1" link="Manage assignments →" />
-      <div style={{ margin: '18px 0 14px' }}>
-        <DataTable boxed cols={[
-          { label: 'Class', key: 'a' }, { label: 'Subject', key: 'b' }, { label: 'Students', key: 'c' },
-          { label: 'Lessons / week', key: 'd' }, { label: 'Room', key: 'e' },
-        ]} rows={[
-          { a: 'Year 10A', b: 'Mathematics', c: 28, d: 4, e: 'M02' },
-          { a: 'Year 10B', b: 'Mathematics', c: 29, d: 4, e: 'M02' },
-          { a: 'Year 11A', b: 'Further mathematics', c: 22, d: 4, e: 'M02' },
-          { a: 'Year 9C', b: 'Mathematics', c: 27, d: 4, e: 'M03' },
-        ]} />
-      </div>
-      <p className="xs muted">Form tutor: Year 10A · 16 teaching periods per week</p>
+      <SectionHead title="Teaching assignments" sub="From the generated timetable (Teaching & learning)" link="Full timetable →" to="/teaching" />
+      {timetableNote || (!assignments.length ? <ApiNote>No lessons are timetabled for this teacher.</ApiNote> : (<>
+        <div style={{ margin: '18px 0 14px' }}>
+          <DataTable boxed cols={[{ label: 'Class', key: 'cls' }, { label: 'Subject', key: 'subject' }, { label: 'Lessons / week', key: 'periods', className: 'num' }]}
+            rows={assignments} />
+        </div>
+        <p className="xs muted">{tt.data.periodsPerWeek} of {tt.data.weeklyMaxPeriods ?? '—'} teaching periods per week</p>
+      </>))}
     </Card>
   );
   const timetableCard = (
     <Card>
-      <SectionHead title="Today’s timetable" sub="Friday, 16 October · Week A" link="Full timetable →" to="/academics" />
+      <SectionHead title="Today’s timetable" sub={formatDate(today, { weekday: 'long', year: false })} link="Full timetable →" to="/teaching" />
       <div style={{ marginTop: 18 }}>
-        <DataTable boxed cols={[
-          { label: 'Time', key: 'a' }, { label: 'Lesson', key: 'b' }, { label: 'Class', key: 'c' }, { label: 'Room', key: 'd' },
-        ]} rows={[
-          { a: '08:30–08:50', b: 'Registration', c: '10A', d: 'M02' },
-          { a: '09:00–10:00', b: 'Mathematics', c: '10A', d: 'M02' },
-          { a: '10:20–11:20', b: 'Further mathematics', c: '11A', d: 'M02' },
-          { a: '11:20–12:20', b: 'Planning & preparation', c: '—', d: 'Staff room' },
-          { a: '13:10–14:10', b: 'Mathematics', c: '9C', d: 'M03' },
-        ]} />
+        {timetableNote || (!todayLessons.length ? <ApiNote>No lessons today.</ApiNote> : (
+          <DataTable boxed cols={[
+            { label: 'Time', render: (e) => { const x = slotOf(e.periodNumber); return x ? `${lms.hhmm(x.startTime)}–${lms.hhmm(x.endTime)}` : `P${e.periodNumber}`; } },
+            { label: 'Lesson', key: 'subjectName' }, { label: 'Class', key: 'className' },
+          ]} rows={todayLessons} />
+        ))}
+      </div>
+    </Card>
+  );
+  const weekCard = (
+    <Card>
+      <SectionHead title="Weekly timetable" sub={tt.data ? `${tt.data.periodsPerWeek} periods a week` : undefined} />
+      <div style={{ marginTop: 14 }}>
+        {timetableNote || (bell.error ? <ApiErr error={bell.error} /> : schedules.error ? <ApiErr error={schedules.error} />
+          : !bellId && !schedules.loading ? <ApiNote>No bell schedule is set up yet.</ApiNote>
+            : !bell.data ? <Loading /> : <TimetableGrid bell={bell.data} entries={tt.data.entries} show="class" />)}
       </div>
     </Card>
   );
@@ -174,9 +313,9 @@ export function StaffProfile() {
     <Card>
       <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Qualifications & professional development</h3>
       <KV rows={[
-        ['Qualifications', 'BSc Mathematics · University of Bristol, 2013'],
-        ['Teaching status', 'PGCE Secondary Mathematics · QTS, 2014'],
-        ['Latest training', 'Safeguarding refresher · Completed 12 Oct 2026'],
+        ['Qualifications', s.qualifications || '—'],
+        ['Latest training', latestCpd ? `${latestCpd.courseTitle} · ${latestCpd.conductingAgency} · ${formatDate(latestCpd.completionDate)}` : cpd.loading ? '…' : 'None recorded'],
+        ['CPD this year', cpd.data ? `${formatNumber(cpd.data.reduce((t, c) => t + Number(c.trainingHours), 0))} hours · ${formatNumber(cpd.data.reduce((t, c) => t + Number(c.creditsEarned), 0))} credits` : '…'],
       ]} />
     </Card>
   );
@@ -184,196 +323,226 @@ export function StaffProfile() {
     <Card>
       <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Employment & contact</h3>
       <KV rows={[
-        ['Department', 'Mathematics'], ['Line manager', 'Dr Helen Morris · Deputy head'], ['Contract', 'Permanent · 1.0 FTE'],
-        ['Emergency contact', 'Thomas Hughes · Spouse'], ['Emergency phone', '+44 7700 900 215'],
+        ['Department', s.department], ['Role', s.designation], ['Contract', s.contractTerms || '—'],
+        ['Probation', `${hr.PROBATION[s.probationStatus] || '—'}${s.probationEndDate ? ` · ${s.probationStatus === 'CONFIRMED' ? 'ended' : 'ends'} ${formatDate(s.probationEndDate)}` : ''}`],
+        ['Campus', s.branchId], ['Joined', formatDate(s.joiningDate)],
       ]} />
+    </Card>
+  );
+  // Only returned to HR, payroll, the principal and the employee themself (hrservice masks it for everyone else)
+  const payCard = s.basicSalary != null && (
+    <Card>
+      <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Pay & statutory details</h3>
+      <KV rows={[
+        ['Basic salary', `${formatMoney(s.basicSalary)} a month`], ['PAN', s.panNumber || '—'], ['PF UAN', s.pfUan || '—'],
+        ['Bank', s.bankName ? `${s.bankName} · ••••${(s.bankAccountNumber || '').slice(-4)} · ${s.bankIfsc}` : '—'],
+      ]} />
+      <p className="xs muted" style={{ marginTop: 8 }}>Visible to HR, payroll, the principal and {self ? 'you' : 'the employee'}.</p>
     </Card>
   );
   const leaveCard = (
     <Card>
-      <SectionHead title="Leave & attendance" sub="Academic year 2026–2027" link="Leave history →" />
-      <div className="row" style={{ justifyContent: 'flex-start', gap: 40, margin: '18px 0 14px', alignItems: 'flex-start' }}>
-        <div><div style={{ fontSize: 26, fontWeight: 600 }}>2 days</div><div className="xs muted">Approved leave taken</div></div>
-        <div><div style={{ fontSize: 26, fontWeight: 600 }}>{leaves.length}</div><div className="xs muted">Pending requests</div></div>
-      </div>
-      {upcoming.length
-        ? <Pill tone="amber">Upcoming: {upcoming[0].type} from {fmtDay(upcoming[0].from)}</Pill>
-        : <Pill tone="green">No upcoming leave</Pill>}
-      {leaves.length > 0 && (
-        <div style={{ marginTop: 14 }}>
-          <DataTable boxed cols={[
-            { label: 'Leave', render: (l) => <span className="cell-id"><b>{l.type}</b><small>{l.reason || '—'}</small></span> },
-            { label: 'Dates', render: (l) => (l.from === l.to ? fmtDay(l.from) : `${fmtDay(l.from)} – ${fmtDay(l.to)}`) },
-            { label: 'Days', key: 'days', className: 'num' },
-            { label: 'Status', render: (l) => <Pill tone="amber">{l.status}</Pill> },
-          ]} rows={leaves} />
+      <SectionHead title="Leave & attendance" sub={`Leave year ${today.slice(0, 4)}`} />
+      {leaves.error ? <ApiErr error={leaves.error} /> : !leaves.data ? <Loading /> : (<>
+        <div className="row" style={{ justifyContent: 'flex-start', gap: 40, margin: '18px 0 14px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <div><div style={{ fontSize: 26, fontWeight: 600 }}>{days(approved.filter((l) => l.startDate.startsWith(today.slice(0, 4))).reduce((t, l) => t + Number(l.totalDays), 0))}</div><div className="xs muted">Approved leave taken</div></div>
+          <div><div style={{ fontSize: 26, fontWeight: 600 }}>{pendingLeave.length}</div><div className="xs muted">Pending requests</div></div>
+          {(quotas.data || []).map((qt) => (
+            <div key={qt.leaveType}><div style={{ fontSize: 26, fontWeight: 600 }}>{formatNumber(Number(qt.balanceDays))}</div><div className="xs muted">{hr.LEAVE_LABEL[qt.leaveType]} left of {formatNumber(Number(qt.totalEntitled))}</div></div>
+          ))}
         </div>
-      )}
-      <div style={{ marginTop: 16 }}><button type="button" className="btn" onClick={() => setRecording(true)}><Plus size={15} />Record leave</button></div>
+        {upcoming.length
+          ? <Pill tone="amber">Upcoming: {hr.LEAVE_LABEL[upcoming[0].leaveType]} from {formatDate(upcoming[0].startDate)}</Pill>
+          : <Pill tone="green">No upcoming leave</Pill>}
+        {leaves.data.length > 0 && (
+          <div style={{ marginTop: 14 }}>
+            <DataTable boxed cols={[
+              { label: 'Leave', render: (l) => <span className="cell-id"><b>{hr.LEAVE_LABEL[l.leaveType]}</b><small>{l.reason}{l.proxyNotes ? ` · ${l.proxyNotes}` : ''}</small></span> },
+              { label: 'Dates', render: dateRange },
+              { label: 'Days', render: (l) => formatNumber(Number(l.totalDays)), className: 'num' },
+              { label: 'Status', render: (l) => {
+                const [t, tone] = hr.LEAVE_STATUS[l.status] || [l.status, ''];
+                if (l.status !== 'PENDING' || !canApprove) return <span className="cell-id"><Pill tone={tone}>{t}</Pill>{l.reviewComments && l.reviewComments !== t && <small>{l.reviewComments}</small>}</span>;
+                return (
+                  <span className="pills">
+                    <button type="button" className="btn" disabled={!!reviewing} onClick={() => review(l, 'APPROVED')}><Check size={13} />Approve</button>
+                    <button type="button" className="btn" disabled={!!reviewing} onClick={() => review(l, 'REJECTED')}><X size={13} />Reject</button>
+                  </span>
+                );
+              } },
+            ]} rows={leaves.data} />
+          </div>
+        )}
+        {reviewError && <div className="api-error" role="alert" style={{ marginTop: 10 }}><span>{reviewError}</span></div>}
+        {canRecord && <div style={{ marginTop: 16 }}><button type="button" className="btn" onClick={() => setRecording(true)}><Plus size={15} />{self ? 'Apply for leave' : 'Record leave'}</button></div>}
+      </>)}
     </Card>
   );
   const documentsCard = (
     <Card>
-      <SectionHead title="Documents" sub="Restricted · Human resources" link="View all →" />
+      <SectionHead title="Documents" sub="Restricted · Human resources" />
       <div style={{ marginTop: 14 }}>
-        <Docs items={[['Employment contract.pdf', '412 KB · 01 Sep 2018 · Verified'], ['QTS certificate.pdf', '268 KB · 01 Sep 2018 · Verified'], ['DBS confirmation.pdf', '182 KB · Reviewed 01 Sep 2026 · Verified']]} />
+        <ApiNote>hrservice has no document vault endpoint yet, so contracts and certificates cannot be listed here.</ApiNote>
       </div>
     </Card>
   );
+
   return (
     <>
       <PageHeader
-        title="Staff profile"
+        title={self ? 'My staff profile' : 'Staff profile'}
         desc="Employment details, teaching responsibilities and staff records in one place."
         actions={[
           { label: 'Back to staff', icon: <ArrowLeft size={15} />, to: '/staff' },
-          { label: 'Message staff' },
-          { label: 'Edit staff details', icon: <Pencil size={14} />, primary: true, to: 'edit' },
-        ]}
+          s.email && { label: 'Message staff', onClick: () => { window.location.href = `mailto:${s.email}`; } },
+          hasRole(...hr.HR_ROLES.manage) && { label: 'Edit staff details', icon: <Pencil size={14} />, primary: true, to: `/staff/${s.staffId}/edit` },
+        ].filter(Boolean)}
       />
       <Card className="summary">
-        <div className="bigavatar">EH</div>
+        <div className="bigavatar">{`${s.firstName[0]}${s.lastName[0]}`.toUpperCase()}</div>
         <div className="id">
-          <h2>Eleanor Hughes</h2>
-          <p>SF-2018-014 · Head of Mathematics · Mathematics department</p>
-          <div className="pills"><Pill tone="green">On campus</Pill><Pill tone="purple">Full-time · Permanent</Pill></div>
+          <h2>{name}</h2>
+          <p>{s.employeeCode} · {s.designation} · {s.department}</p>
+          <div className="pills"><Pill tone={availTone}>{availText}</Pill>{s.contractTerms && <Pill tone="purple">{s.contractTerms}</Pill>}
+            {s.probationStatus !== 'CONFIRMED' && <Pill tone="amber">{hr.PROBATION[s.probationStatus]}</Pill>}</div>
         </div>
         <div className="side">
-          <span className="link strong">e.hughes@oakridge.ac.uk</span>
-          <span>+44 7700 900 214 · Extension 204</span><span>Joined 01 September 2018</span>
+          {s.email && <a className="link strong" href={`mailto:${s.email}`}>{s.email}</a>}
+          {s.phone && <span>{s.phone}</span>}<span>Joined {formatDate(s.joiningDate)}</span>
         </div>
       </Card>
       <Tabs items={STAFF_TABS.map(([, label]) => label)} value={index} onChange={setTab} />
       {tab === 'overview' && (
         <div className="cols">
           <div className="stack">{assignmentsCard}{timetableCard}{qualificationsCard}</div>
-          <div className="stack">{employmentCard}{leaveCard}{documentsCard}</div>
+          <div className="stack">{employmentCard}{leaveCard}{payCard}</div>
         </div>
       )}
       {tab === 'teaching' && <div className="stack">{assignmentsCard}{qualificationsCard}</div>}
-      {tab === 'timetable' && <div className="stack">{timetableCard}</div>}
+      {tab === 'timetable' && <div className="stack">{timetableCard}{weekCard}</div>}
       {tab === 'leave' && <div className="stack">{leaveCard}</div>}
-      {tab === 'documents' && <div className="stack">{documentsCard}</div>}
-      {recording && <RecordLeaveModal name="Eleanor Hughes" onClose={() => setRecording(false)} onSave={(l) => setLeaves((all) => [...all, l])} />}
+      {tab === 'documents' && <div className="stack">{documentsCard}{payCard}</div>}
+      {recording && <RecordLeaveModal staff={s} onClose={() => setRecording(false)} onSaved={() => { leaves.reload(); quotas.reload(); }} />}
       <Footer />
     </>
   );
 }
 
-/* ---------- edit / add ---------- */
+/* ---------- edit / add (POST /employees, PUT /employees/{id}) ---------- */
+
+const DEPARTMENTS = ['Mathematics', 'Science', 'English', 'Hindi', 'Social Science', 'Computer Science', 'Physical Education',
+  'Academics', 'Examinations', 'Leadership', 'Administration', 'Accounts', 'Admissions', 'IT', 'Student Wellbeing'];
 
 export function StaffForm() {
   const nav = useNavigate();
+  const { id } = useParams();
   const isNew = useLocation().pathname.endsWith('/new');
-  const v = (a) => (isNew ? '' : a);
-  // Role list comes from authservice GET /api/v1/roles (US-00002) when the user may read roles
-  const roleOptions = useRoleOptions(['Head of department', 'Teacher', 'Finance officer', 'Administrator']);
-  const back = isNew ? '/staff' : '/staff/sf-2018-014';
+  const { branchId, hasRole } = useAuth();
+  const canManage = hasRole(...hr.HR_ROLES.manage);
+  const emp = useApi(() => hr.getEmployee(id), [id], !isNew);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const s = isNew ? {} : emp.data;
+  const back = isNew ? '/staff' : `/staff/${id}`;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    const v = Object.fromEntries(new FormData(e.currentTarget));
+    const body = {
+      employeeCode: isNew ? v['employee-code']?.trim() : s.employeeCode,
+      firstName: v['first-name']?.trim(), lastName: v['last-name']?.trim(), email: v['work-email']?.trim() || undefined,
+      phone: v['mobile-number']?.trim() || undefined, department: v.department, designation: v['role-job-title']?.trim(),
+      basicSalary: v['basic-salary-month'] ? Number(v['basic-salary-month']) : undefined, joiningDate: v['start-date'] || undefined,
+      contractTerms: v.contract || undefined, qualifications: v.qualifications?.trim() || undefined,
+      probationEndDate: v['probation-ends'] || undefined, branchId: v.campus?.trim() || undefined, userId: v['sign-in-account-id']?.trim() ?? undefined,
+    };
+    const missing = [['employeeCode', 'Employee code'], ['firstName', 'First name'], ['lastName', 'Last name'], ['department', 'Department'],
+      ['designation', 'Role / job title'], ['basicSalary', 'Basic salary'], ['joiningDate', 'Start date'], ['branchId', 'Campus']].filter(([k]) => !body[k]);
+    if (missing.length) { setError({ detail: `Fill in: ${missing.map(([, l]) => l).join(', ')}.` }); return; }
+    setBusy(true);
+    setError(null);
+    try {
+      const saved = isNew ? await hr.createEmployee(body) : await hr.updateEmployee(id, body);
+      nav(`/staff/${saved.staffId}`);
+    } catch (err) {
+      setError(err);
+      setBusy(false);
+    }
+  };
+
+  if (!isNew && (emp.error || !s)) {
+    return (<>
+      <PageHeader title="Edit staff details" desc="Maintain personal, employment and contract information." actions={[{ label: 'Back to staff', icon: <ArrowLeft size={15} />, to: '/staff' }]} />
+      {emp.error ? <ApiErr error={emp.error} /> : <Loading />}
+    </>);
+  }
+
   return (
-    <form onSubmit={(e) => { e.preventDefault(); nav(back); }} style={{ display: 'contents' }}>
+    <form onSubmit={submit} noValidate style={{ display: 'contents' }} key={s.staffId || 'new'}>
       <PageHeader
         title={isNew ? 'Add staff member' : 'Edit staff details'}
-        desc={isNew ? 'Create a staff record with employment and access details.' : 'Maintain Eleanor Hughes’s personal, employment and teaching information.'}
+        desc={isNew ? 'Create an HR record with employment and contract details.' : `Maintain ${fullName(s)}’s personal, employment and contract information.`}
         actions={[{ label: isNew ? 'Back to staff' : 'Back to profile', icon: <ArrowLeft size={15} />, to: back }]}
       />
+      {!canManage && <ApiNote>Only HR, the principal or a super administrator can add or edit staff records.</ApiNote>}
       <div className="cols s404">
         <div className="stack">
           <Card>
             <div className="cardhead"><h3>Personal & contact details</h3><p>Required fields are marked with an asterisk.</p></div>
             <div className="photo">
-              <div className="bigavatar">{isNew ? '+' : 'EH'}</div>
-              <button type="button" className="btn"><Upload size={15} />{isNew ? 'Upload photo' : 'Change photo'}</button>
-              {!isNew && <Pill tone="purple">SF-2018-014</Pill>}
+              <div className="bigavatar">{isNew ? '+' : `${s.firstName[0]}${s.lastName[0]}`.toUpperCase()}</div>
+              {!isNew && <Pill tone="purple">{s.employeeCode}</Pill>}
             </div>
             <FieldGrid cols={[
-              [{ label: 'First name', required: true, value: v('Eleanor'), placeholder: 'Enter first name' }, { label: 'Work email', required: true, value: v('e.hughes@oakridge.ac.uk'), placeholder: 'Enter work email' }],
-              [{ label: 'Last name', required: true, value: v('Hughes'), placeholder: 'Enter last name' }, { label: 'Mobile number', required: true, value: v('+44 7700 900 214'), placeholder: 'Enter mobile number' }],
-              [{ label: 'Date of birth', required: true, select: true, value: v('18 February 1991'), placeholder: 'Select date' }, { label: 'Extension', value: v('204'), placeholder: 'Enter extension' }],
-            ]} />
-            <Field box label="Home address" value={v('18 Beech Road, Oxford, OX3 8HT')} placeholder="Enter street address, town and postcode" />
-            <FieldGrid cols={[
-              [{ label: 'Emergency contact', required: true, value: v('Thomas Hughes'), placeholder: 'Enter full name' }],
-              [{ label: 'Relationship', select: true, value: v('Spouse'), placeholder: 'Select relationship', options: ['Spouse', 'Parent', 'Sibling', 'Friend', 'Other'] }],
-              [{ label: 'Emergency phone', required: true, value: v('+44 7700 900 215'), placeholder: 'Enter emergency number' }],
+              [{ label: 'First name', required: true, value: s.firstName, placeholder: 'Enter first name' }, { label: 'Work email', value: s.email, placeholder: 'name@school.edu.in' }],
+              [{ label: 'Last name', required: true, value: s.lastName, placeholder: 'Enter last name' }, { label: 'Mobile number', value: s.phone, placeholder: '+91…' }],
             ]} />
           </Card>
           <Card>
             <div className="cardhead"><h3>Employment information</h3></div>
             <FieldGrid cols={[
               [
-                { label: 'Staff ID', value: v('SF-2018-014'), placeholder: 'Assigned on creation' },
-                { label: 'Department', required: true, select: true, value: v('Mathematics'), placeholder: 'Select department', options: ['Mathematics', 'English', 'Science', 'Humanities', 'Administration'] },
-                { label: 'Contract type', required: true, select: true, value: v('Permanent'), placeholder: 'Select contract', options: ['Permanent', 'Fixed-term', 'Casual'] },
+                isNew ? { label: 'Employee code', required: true, placeholder: 'e.g. DPS-EMP-1050' } : { label: 'Employee code', value: s.employeeCode, readOnly: true },
+                { label: 'Department', required: true, select: true, value: s.department, placeholder: 'Select department', options: DEPARTMENTS.includes(s.department) || !s.department ? DEPARTMENTS : [s.department, ...DEPARTMENTS] },
+                { label: 'Contract', select: true, value: s.contractTerms, placeholder: 'Select contract', options: [...new Set([s.contractTerms, 'Permanent Full-Time', 'Probationary Contract', 'Fixed-Term', 'Part-Time 0.7 FTE'].filter(Boolean))] },
               ],
               [
-                { label: 'Role / job title', required: true, value: v('Head of Mathematics'), placeholder: 'Enter job title' },
-                { label: 'Line manager', required: true, select: true, value: v('Dr Helen Morris'), placeholder: 'Select line manager', options: ['Dr Helen Morris', 'Michael Brooks'] },
-                { label: 'Working pattern', select: true, value: v('Full-time · 1.0 FTE'), placeholder: 'Select pattern', options: ['Full-time · 1.0 FTE', 'Part-time'] },
+                { label: 'Role / job title', required: true, value: s.designation, placeholder: 'e.g. TGT Mathematics' },
+                { label: 'Start date', required: true, type: 'date', value: s.joiningDate },
+                isNew ? { label: 'Probation ends', type: 'date', placeholder: 'Default: 6 months after the start date' } : { label: 'Probation', value: hr.PROBATION[s.probationStatus], readOnly: true },
               ],
               [
-                { label: 'Staff type', required: true, select: true, value: v('Teaching'), placeholder: 'Select type', options: ['Teaching', 'Support'] },
-                { label: 'Start date', required: true, select: true, value: v('01 September 2018'), placeholder: 'Select date' },
-                { label: 'Employment status', select: true, value: v('Active'), placeholder: 'Select status', options: ['Active', 'On leave', 'Archived'] },
+                { label: 'Basic salary / month', required: true, type: 'number', value: s.basicSalary ?? '', placeholder: 'e.g. 45000' },
+                { label: 'Campus', required: true, value: s.branchId || branchId, placeholder: 'e.g. DPS-DELHI-NORTH' },
+                { label: 'Sign-in account ID', value: s.userId || '', placeholder: 'authservice user ID (optional)' },
               ],
             ]} />
-          </Card>
-          <Card>
-            <SectionHead title="Teaching assignments" sub="2026–2027 · Term 1" link="Add assignment +" />
-            <FieldGrid cols={[
-              [{ label: 'Primary subject', required: true, select: true, value: v('Mathematics'), placeholder: 'Select subject' }],
-              [{ label: 'Form tutor class', select: true, value: v('Year 10A'), placeholder: 'Select class' }],
-              [{ label: 'Teaching room', select: true, value: v('M02'), placeholder: 'Select room' }],
-            ]} />
-            <div style={{ marginTop: 18 }}>
-              <DataTable boxed cols={[
-                { label: 'Class', key: 'a' }, { label: 'Subject', key: 'b' }, { label: 'Periods / week', key: 'c' },
-                { label: 'Action', render: () => <span className="act">Remove</span> },
-              ]} rows={isNew ? [] : [
-                { a: 'Year 10A', b: 'Mathematics', c: 4 }, { a: 'Year 10B', b: 'Mathematics', c: 4 },
-                { a: 'Year 11A', b: 'Further mathematics', c: 4 }, { a: 'Year 9C', b: 'Mathematics', c: 4 },
-              ]} />
-            </div>
           </Card>
         </div>
         <div className="stack">
           <Card className="notice">
             <h4>{isNew ? 'New staff record' : 'Existing staff record'}</h4>
-            <p>{isNew ? 'A staff ID is assigned when the record is created.' : 'Updates apply to Eleanor Hughes. Staff ID, employment history and previous assignments are retained.'}</p>
+            <p>{isNew ? 'The record starts on probation. Link the sign-in account so the person can see their own profile, leave and timetable.'
+              : 'PAN, Aadhaar, PF/ESI and bank details are kept as they are; payroll maintains them.'}</p>
           </Card>
           <Card>
             <h3 style={{ fontSize: 15, fontWeight: 600 }}>Qualifications</h3>
             <div className="fieldlist">
-              <Field box label="Highest qualification" required value={v('BSc Mathematics · Bristol, 2013')} placeholder="Enter qualification" />
-              <Field box label="Teaching qualification" value={v('PGCE Secondary Mathematics, 2014')} placeholder="Enter qualification" />
-              <Field box label="QTS / teacher reference" value={v('QTS verified · TRN 14/58362')} placeholder="Enter reference" />
-              <Field box label="Professional development" value={v('Safeguarding refresher · 12 Oct 2026')} placeholder="Enter latest training" />
+              <Field box label="Qualifications" value={s.qualifications} placeholder="e.g. M.Sc Mathematics, B.Ed" />
             </div>
           </Card>
           <Card>
-            <div className="cardhead"><h3>Compliance & documents</h3><p>Only HR and school administrators can access these files.</p></div>
-            <div style={{ margin: '14px 0' }}>
-              {!isNew && <Docs items={[['Employment contract.pdf', '412 KB · Signed 01 Sep 2018 · Verified'], ['QTS certificate.pdf', '268 KB · Verified · Verified'], ['DBS confirmation.pdf', '182 KB · Reviewed 01 Sep 2026 · Verified']]} />}
-            </div>
-            <button type="button" className="btn"><Upload size={15} />Upload document</button>
-          </Card>
-          <Card>
-            <h3 style={{ fontSize: 15, fontWeight: 600 }}>Access & permissions</h3>
-            <div className="fieldlist">
-              <Field key={roleOptions.join()} box label="System role" select value={v(roleOptions.includes('Head of department') ? 'Head of department' : 'Department Head')} placeholder="Select role" options={roleOptions} />
-              <Field box label="Record visibility" select value={v('Assigned classes & department')} placeholder="Select visibility" options={['Assigned classes & department', 'Whole school']} />
-            </div>
-            <label className="check"><input type="checkbox" defaultChecked />Staff portal access enabled</label>
-            <label className="check"><input type="checkbox" defaultChecked />Receive operational notices</label>
-            <label className="check"><input type="checkbox" />Finance administration access</label>
-            <div style={{ marginTop: 16 }}><Pill>Permission changes are audited</Pill></div>
+            <h3 style={{ fontSize: 15, fontWeight: 600 }}>Teaching assignments & access</h3>
+            <p className="small muted" style={{ marginTop: 6 }}>Classes and periods come from the timetable (Teaching & learning); system roles are managed in Settings → Users & permissions.</p>
           </Card>
         </div>
       </div>
+      {error && <div className="api-error" role="alert"><span>{error.validationErrors?.length ? error.validationErrors.map((x) => x.message).join(' · ') : error.detail}</span></div>}
       <div className="formbar">
-        <span>{isNew ? 'Draft not yet saved' : 'Last updated 12 Oct 2026 by Sarah Williams'}</span>
+        <span>{isNew ? 'Draft not yet saved' : `Employee ${s.employeeCode}`}</span>
         <div className="actions">
           <Link to={back} className="btn">Cancel</Link>
-          <button type="submit" className="btn primary">Save changes</button>
+          <button type="submit" className="btn primary" disabled={!canManage || busy}>{busy ? 'Saving…' : 'Save changes'}</button>
         </div>
       </div>
       <Footer />

@@ -11,6 +11,9 @@ import { AttendanceChart } from './Overview.jsx';
 import { useAttendanceWeek } from '../components/AttendanceLive.jsx';
 import { RolesCard, SecurityCard } from '../components/AuthSettings.jsx';
 import { useAuth } from '../auth.jsx';
+import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
+import { getRegional, applyServerRegional, version, zoneName, TIME_ZONES, CURRENCIES, DATE_FORMATS, LANGUAGES, DEFAULT_REGIONAL } from '../regional.js';
+import { saveRegionalSettings } from '../api/authService.js';
 
 const act = (t) => <span className="act">{t}</span>;
 
@@ -205,9 +208,9 @@ export function Reports() {
     ? { period: att.period || 'This week', avg: att.weekAvg === null ? '—' : `${att.weekAvg.toFixed(1)}%`,
       change: att.change === null ? '—' : `${att.change >= 0 ? '+' : ''}${att.change.toFixed(1)} pp`, up: att.change === null || att.change >= 0,
       onTarget: att.weekAvg !== null && att.weekAvg >= 95,
-      rows: [['Present', t.present.toLocaleString('en-IN'), share(t.present)], ['Excused', String(t.excused), share(t.excused)], ['Unexcused', String(t.unexcused), share(t.unexcused)],
+      rows: [['Present', formatNumber(t.present), share(t.present)], ['Excused', String(t.excused), share(t.excused)], ['Unexcused', String(t.unexcused), share(t.unexcused)],
         ['Not yet marked', String(t.unmarked), share(t.unmarked)]],
-      updated: new Date().toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) }
+      updated: formatDateTime(new Date()) }
     : { period: '12–16 October 2026', avg: '95.2%', change: '+0.5 pp', up: true, onTarget: true,
       rows: [['Present', '1,188', '95.2%'], ['Excused', '42', '3.4%'], ['Unexcused', '18', '1.4%']], updated: '16 Oct 2026 · 09:42' };
   return (
@@ -347,6 +350,61 @@ export function Documents() {
 }
 
 /* ---------- Settings ---------- */
+let regionalSavedAt = 0;
+const zoneLabel = (zone) => `${zone.replace(/_/g, ' ')} · ${zoneName(zone, 'short')}`;
+const currencySymbol = (code) => { try { return new Intl.NumberFormat('en-IN', { style: 'currency', currency: code, currencyDisplay: 'narrowSymbol' }).format(0).replace(/[\d.,\s]/g, ''); } catch { return code; } };
+
+// Roles allowed to save the school's regional preferences (PUT /api/v1/tenants/{tenantId}/regional-settings)
+export const REGIONAL_EDITORS = ['SUPER_ADMIN', 'TRUSTEE', 'SCHOOL_PRINCIPAL', 'PRINCIPAL', 'IT_SYSTEM_ADMIN'];
+
+/**
+ * Settings → General → Regional preferences: time zone, currency, date format and language, with a live preview.
+ * Saved for the whole school through authservice; users without an editor role see the values read-only.
+ */
+function RegionalCard({ draft, setDraft, onSave, onDiscard, canEdit, saving, error }) {
+  const set = (k) => (e) => setDraft({ ...draft, [k]: e.target.value });
+  const changed = version(draft) !== version(getRegional());
+  const justSaved = Date.now() - regionalSavedAt < 8000;
+  // Preview with the draft values (the helpers read the saved preferences, so format here directly)
+  const now = new Date();
+  let preview = '';
+  try {
+    const time = new Intl.DateTimeFormat(draft.language, { timeZone: draft.timeZone, hour: '2-digit', minute: '2-digit', timeZoneName: 'short' }).format(now);
+    const amount = new Intl.NumberFormat(draft.language, { style: 'currency', currency: draft.currency }).format(125000.5);
+    const example = DATE_FORMATS.find(([f]) => f === draft.dateFormat)?.[1];
+    preview = `${example} · ${time} · ${amount}`;
+  } catch { preview = ''; }
+  const sel = (id, label, key, options) => (
+    <div className="field box"><label htmlFor={id}>{label}</label>
+      <select id={id} value={draft[key]} onChange={set(key)} disabled={!canEdit}>{options.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></div>
+  );
+  return (
+    <Card>
+      <h3 style={{ fontSize: 15, fontWeight: 600 }}>Regional preferences</h3>
+      <p className="small muted" style={{ marginTop: 4 }}>Applied to every date, time and amount across the app for everyone at this school.</p>
+      <div className="fieldlist">
+        {sel('rp-zone', 'TIME ZONE', 'timeZone', TIME_ZONES.map(([z, place]) => [z, `${zoneLabel(z)} — ${place}`]))}
+        {sel('rp-currency', 'CURRENCY', 'currency', CURRENCIES.map(([c, n]) => [c, `${c} · ${n} (${currencySymbol(c)})`]))}
+        {sel('rp-date', 'DATE FORMAT', 'dateFormat', DATE_FORMATS.map(([f, ex]) => [f, `${f} — ${ex}`]))}
+        {sel('rp-lang', 'LANGUAGE (DATES & NUMBERS)', 'language', LANGUAGES)}
+      </div>
+      <div className="api-note" style={{ marginTop: 12 }}><span><b>Preview</b> · {preview}</span></div>
+      <p className="xs muted" style={{ marginTop: 8 }}>Changing the currency changes how amounts are shown, not their value: fees stay as billed. Screens stay in English; the language sets month names and number grouping.</p>
+      {justSaved && !changed && <div className="api-note ok" style={{ marginTop: 10 }}><Check size={14} style={{ flex: 'none' }} /><span>Saved. The whole app now uses these settings for everyone at this school.</span></div>}
+      {error && <div className="api-error" role="alert" style={{ marginTop: 10 }}><span>Could not save: {error}</span></div>}
+      {canEdit ? (
+        <div className="pills" style={{ marginTop: 12 }}>
+          <button className="btn" disabled={!changed || saving} onClick={onDiscard}>Discard</button>
+          <button className="btn primary" disabled={!changed || saving} onClick={onSave}><Check size={14} />{saving ? 'Saving…' : 'Save preferences'}</button>
+          <button className="btn" disabled={saving} onClick={() => setDraft({ ...DEFAULT_REGIONAL })}>Reset to defaults</button>
+        </div>
+      ) : (
+        <p className="xs muted" style={{ marginTop: 12 }}>Only a principal, trustee or administrator can change these settings.</p>
+      )}
+    </Card>
+  );
+}
+
 // One section per tab; the tab is kept in the URL (/settings?tab=academic) so it survives reloads and can be linked to.
 const SETTINGS_TABS = [
   ['general', 'General'], ['academic', 'Academic setup'], ['users', 'Users & permissions'],
@@ -360,13 +418,35 @@ export function Settings() {
   const index = Math.max(0, SETTINGS_TABS.findIndex(([key]) => key === params.get('tab')));
   const tab = SETTINGS_TABS[index][0];
   const setTab = (i) => setParams(i === 0 ? {} : { tab: SETTINGS_TABS[i][0] }, { replace: true });
+  // Regional preferences: edited here, applied to the whole app on Save (the page re-renders with them)
+  const { user, hasRole } = useAuth();
+  const canEditRegional = hasRole(...REGIONAL_EDITORS);
+  const [regional, setRegional] = useState(getRegional);
+  const [regionalSaving, setRegionalSaving] = useState(false);
+  const [regionalError, setRegionalError] = useState('');
+  const saveRegional = async () => {
+    setRegionalSaving(true);
+    setRegionalError('');
+    try {
+      const saved = await saveRegionalSettings(user.tenantId, regional);
+      regionalSavedAt = Date.now();
+      applyServerRegional(saved); // the page re-renders (and this form remounts) with the saved values
+    } catch (e) {
+      setRegionalError(e.detail || e.message);
+    }
+    setRegionalSaving(false);
+  };
+  const regionalChanged = version(regional) !== version(getRegional());
 
   return (
     <>
       <PageHeader
         title="Settings"
         desc="Manage your school profile, academic setup and workspace preferences."
-        actions={FORM_TABS.includes(tab) ? [{ label: 'Discard changes' }, { label: 'Save changes', icon: <Check size={15} />, primary: true }] : []}
+        actions={FORM_TABS.includes(tab) ? [
+          { label: 'Discard changes', onClick: () => setRegional(getRegional()), disabled: tab === 'general' && (!regionalChanged || regionalSaving) },
+          { label: 'Save changes', icon: <Check size={15} />, primary: true, onClick: tab === 'general' ? saveRegional : undefined, disabled: tab === 'general' && (!canEditRegional || !regionalChanged || regionalSaving) },
+        ] : []}
       />
       <Tabs items={SETTINGS_TABS.map(([, label]) => label)} value={index} onChange={setTab} />
 
@@ -386,15 +466,8 @@ export function Settings() {
             </Card>
           </div>
           <div className="stack">
-            <Card>
-              <h3 style={{ fontSize: 15, fontWeight: 600 }}>Regional preferences</h3>
-              <div className="fieldlist">
-                <Field box label="Time zone" select value="Europe/London (BST)" />
-                <Field box label="Currency" select value="GBP · British pound (£)" />
-                <Field box label="Date format" select value="DD MMM YYYY" />
-                <Field box label="Language" select value="English (United Kingdom)" />
-              </div>
-            </Card>
+            <RegionalCard draft={regional} setDraft={setRegional} onSave={saveRegional} onDiscard={() => { setRegional(getRegional()); setRegionalError(''); }}
+              canEdit={canEditRegional} saving={regionalSaving} error={regionalError} />
           </div>
         </div>
       )}

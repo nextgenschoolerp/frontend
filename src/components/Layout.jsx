@@ -6,9 +6,10 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth.jsx';
-import { listBranches } from '../api/authService.js';
+import { listBranches, getRegionalSettings } from '../api/authService.js';
 import { useApi } from '../api/useApi.js';
 import { THEMES, getTheme, applyTheme } from '../theme.js';
+import { useRegional, version, applyServerRegional } from '../regional.js';
 
 const GROUPS = [
   ['WORKSPACE', [
@@ -38,8 +39,8 @@ function crumbsFor(pathname) {
   const [seg, id, tail] = pathname.split('/').filter(Boolean);
   if (!seg) return ['Overview'];
   const out = [SECTION[seg] || 'Overview'];
-  // Live student records have UUID ids (studentservice); other ids are the static sample people
-  const person = seg === 'students' ? (/^[0-9a-f]{8}-/i.test(id || '') ? 'Student profile' : 'Amara Thompson') : seg === 'staff' ? 'Eleanor Hughes' : null;
+  // Live student records have UUID ids (studentservice); other ids are the static sample people. Staff records come from hrservice.
+  const person = seg === 'students' ? (/^[0-9a-f]{8}-/i.test(id || '') ? 'Student profile' : 'Amara Thompson') : seg === 'staff' ? (id === 'me' ? 'My profile' : 'Staff profile') : null;
   if (id === 'new') out.push(seg === 'students' ? 'Add student' : 'Add staff member');
   else if (id && person) out.push(tail === 'edit' ? `${person} / Edit` : person);
   return out;
@@ -139,11 +140,18 @@ function AccountMenu({ onSignOut }) {
 
 export default function Layout() {
   const { pathname } = useLocation();
+  // Settings → Regional preferences: a change re-renders the page so every date, time and amount uses it
+  const regional = version(useRegional());
   const crumbs = crumbsFor(pathname);
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const [navOpen, setNavOpen] = useState(false);
   const logout = () => { signOut(); navigate('/login', { replace: true }); };
+  // The school's saved preferences replace this browser's cached copy; if authservice is unreachable the cache stays in force
+  useEffect(() => {
+    if (!user?.tenantId) return;
+    getRegionalSettings(user.tenantId).then(applyServerRegional).catch(() => { /* offline: keep the cached preferences */ });
+  }, [user?.tenantId]);
   useEffect(() => { window.scrollTo(0, 0); document.title = `Oakridge Academy – ${crumbs[crumbs.length - 1]}`; }, [pathname]);
 
   useEffect(() => setNavOpen(false), [pathname]);
@@ -212,7 +220,7 @@ export default function Layout() {
             <AccountMenu onSignOut={logout} />
           </div>
         </header>
-        <div className="page" key={pathname}><Outlet /></div>
+        <div className="page" key={`${pathname}|${regional}`}><Outlet /></div>
       </div>
     </div>
   );

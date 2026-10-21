@@ -1,0 +1,838 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Infra cost</title>
+<!--
+  Dev-only page (Vite dev server: /dev/infra-cost.html). AWS infrastructure cost of the School ERP for 10 – 10,000 users, compared with CloudPe,,
+  per month and per year, with the breakdown, sizing, and cost optimisations.
+  Prices come straight from AWS in the browser — the public AWS Price List files on pricing.us-east-1.amazonaws.com
+  (CORS-enabled, no credentials, no API of ours): Fargate, RDS PostgreSQL, ALB, VPC, CloudWatch, S3, ECR, Secrets Manager,
+  WAF, data transfer, Route 53 and CloudFront for Asia Pacific (Mumbai, ap-south-1). The extracted prices are cached for 24 h.
+  Three price sets are only published in files too large for a browser (EC2 315 MB: NAT gateway, EC2, EBS; Compute Savings
+  Plans 286 MB: Fargate commitments): they ship as a snapshot read from those files on 20 Oct 2026 and are labelled "snapshot".
+  If AWS cannot be reached, the whole snapshot is used and the page says so.
+-->
+<style>
+  :root{color-scheme:light;--bg:#f6f6f4;--card:#fff;--bd:#e6e5e0;--tx:#24283b;--mu:#6d717e;--fa:#9597a1;--pr:#5f53a8;--tint:#efedf9;
+    --gr:#2f8a5b;--grt:#e7f4ec;--am:#8f6208;--amt:#fbf2df;--rd:#b8434a;--rdt:#f9e8e9;--grid:#ecebe6;
+    --series-1:#2a78d6;--series-2:#eb6834;--series-3:#1baf7a;--bar:#2a78d6}
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#121214;--card:#1b1b1e;--bd:#2d2d33;--tx:#ececf0;--mu:#a3a5b0;--fa:#7a7c8c;
+    --pr:#8f86e6;--tint:#272640;--gr:#4cbf96;--grt:#16302a;--am:#e0a85a;--amt:#33291a;--rd:#ec7b80;--rdt:#3a1f22;--grid:#26262b;--series-1:#3987e5;--series-2:#d95926;--series-3:#199e70;--bar:#3987e5}}
+  :root[data-theme="dark"]{color-scheme:dark;--bg:#121214;--card:#1b1b1e;--bd:#2d2d33;--tx:#ececf0;--mu:#a3a5b0;--fa:#7a7c8c;
+    --pr:#8f86e6;--tint:#272640;--gr:#4cbf96;--grt:#16302a;--am:#e0a85a;--amt:#33291a;--rd:#ec7b80;--rdt:#3a1f22;--grid:#26262b;--series-1:#3987e5;--series-2:#d95926;--series-3:#199e70;--bar:#3987e5}
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--bg);color:var(--tx);font:400 13px/1.45 Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  button,select,input{font:inherit;color:inherit}
+  .wrap{max-width:1240px;margin:0 auto;padding:24px 16px 60px}
+  header{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:flex-start}
+  h1{font-size:24px;font-weight:700;letter-spacing:-.01em} h2{font-size:15px;font-weight:600} h3{font-size:13px;font-weight:600}
+  .sub{color:var(--mu);margin-top:4px;max-width:760px}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px 18px;margin-top:12px}
+  .muted{color:var(--mu)} .small{font-size:11px} .num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+  .btn{height:34px;padding:0 12px;border-radius:8px;border:1px solid var(--bd);background:var(--card);font-weight:500;cursor:pointer}
+  .btn:disabled{opacity:.5;cursor:default}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600}
+  .pill.ok{background:var(--grt);color:var(--gr)} .pill.warn{background:var(--amt);color:var(--am)} .pill.no{background:var(--rdt);color:var(--rd)} .pill.info{background:var(--tint);color:var(--pr)}
+  .controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px 18px;margin-top:12px}
+  .controls label.h{display:block;font-size:10px;font-weight:600;letter-spacing:.04em;color:var(--mu);text-transform:uppercase;margin-bottom:5px}
+  .controls select,.controls input[type=number]{width:100%;height:34px;border:1px solid var(--bd);border-radius:8px;padding:0 8px;background:var(--card)}
+  .controls input[type=range]{width:100%;accent-color:var(--pr)}
+  .chk{display:flex;gap:6px;align-items:center;font-size:12px;margin-top:4px}
+  .users{display:flex;align-items:baseline;gap:8px} .users b{font-size:20px}
+  .ticks{position:relative;height:16px;margin:0 8px} .ticks span{position:absolute;transform:translateX(-50%);white-space:nowrap}
+  .ticks span:first-child{transform:translateX(-25%)} .ticks span:last-child{transform:translateX(-85%)}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:12px}
+  .tile{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px 16px}
+  .tile .l{font-size:11px;color:var(--mu);font-weight:600;letter-spacing:.03em;text-transform:uppercase}
+  .tile .v{font-size:26px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums}
+  .tile .s{font-size:12px;color:var(--mu);margin-top:2px}
+  .tile.good .v{color:var(--gr)}
+  .cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:12px}
+  @media (max-width:900px){.cols{grid-template-columns:minmax(0,1fr)}}
+  .bars{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+  .barrow{display:grid;grid-template-columns:150px minmax(0,1fr) 92px;gap:10px;align-items:center;font-size:12px}
+  .barrow .track{height:14px;position:relative}
+  .barrow .fill{position:absolute;left:0;top:0;bottom:0;background:var(--bar);border-radius:0 4px 4px 0;min-width:2px}
+  @media (max-width:560px){.barrow{grid-template-columns:100px minmax(0,1fr) 78px}}
+  .chartbox{position:relative;margin-top:10px}
+  .chartbox svg{display:block;width:100%;height:auto;overflow:visible}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-top:8px}
+  .legend i{display:inline-block;width:14px;height:3px;border-radius:2px;vertical-align:middle;margin-right:6px}
+  .tip{position:absolute;pointer-events:none;background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:8px 10px;font-size:12px;box-shadow:0 6px 18px rgba(0,0,0,.14);display:none;white-space:nowrap;z-index:5}
+  table{width:100%;border-collapse:collapse;margin-top:10px}
+  th{font-size:10px;font-weight:600;letter-spacing:.04em;color:var(--mu);text-align:left;padding:6px 8px;text-transform:uppercase;border-bottom:1px solid var(--bd);white-space:nowrap}
+  td{padding:7px 8px;border-bottom:1px solid var(--bd);vertical-align:top}
+  tr.group td{background:var(--tint);font-weight:600;color:var(--pr)}
+  tr.total td{font-weight:700;border-top:2px solid var(--bd)}
+  .tablewrap{overflow-x:auto}
+  .src{font-size:10px;font-weight:600;padding:1px 6px;border-radius:4px;background:var(--grt);color:var(--gr)} .src.snap{background:var(--amt);color:var(--am)}
+  .lever td:first-child{width:28px}
+  .warn{margin-top:12px;padding:10px 12px;border-radius:8px;background:var(--amt);color:var(--am);font-size:12px}
+  .progress{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .progress span{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--tint);color:var(--pr)}
+  .progress span.done{background:var(--grt);color:var(--gr)} .progress span.err{background:var(--rdt);color:var(--rd)}
+  details summary{cursor:pointer;font-weight:600}
+  ul.notes{margin:8px 0 0 18px;display:flex;flex-direction:column;gap:4px;color:var(--mu)}
+  a{color:var(--pr)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Infrastructure cost: AWS vs CloudPe</h1>
+      <p class="sub">School ERP on AWS Mumbai (ap-south-1): ECS Fargate for the microservices, RDS PostgreSQL, an Application Load Balancer, CloudFront + S3 for the web app and documents. Prices are read live from the AWS Price List; change the inputs to see the breakdown, the yearly total and what each optimisation saves. The same workload is also priced on CloudPe (Navi Mumbai) for comparison.</p>
+    </div>
+    <div style="text-align:right">
+      <div id="priceStatus" class="pill info">Loading prices…</div>
+      <div style="margin-top:6px"><button class="btn" id="refreshBtn">Refresh prices from AWS</button> <button class="btn" id="csvBtn">Export CSV</button></div>
+      <div class="progress" id="progress"></div>
+    </div>
+  </header>
+
+  <div class="card">
+    <h2>Workload</h2>
+    <div class="controls">
+      <div style="grid-column:span 2;min-width:0">
+        <label class="h" for="users">Users accessing the site</label>
+        <div class="users"><b id="usersLabel">1,000</b><span class="muted small" id="usersHint"></span></div>
+        <input type="range" id="users" min="0" max="108" step="1" value="18" aria-label="Users" />
+        <div class="muted small ticks"><span style="left:0">10</span><span style="left:8.33%">100</span><span style="left:16.67%">1,000</span><span style="left:52.78%">5,000</span><span style="left:100%">10,000</span></div>
+        <div class="muted small">Steps of 10 up to 100, then steps of 100. Arrow keys move one step.</div>
+      </div>
+      <div><label class="h" for="services">Microservices</label><select id="services"></select></div>
+      <div><label class="h" for="compute">Compute</label><select id="compute">
+        <option value="fargate-x86">ECS Fargate · x86</option><option value="fargate-arm">ECS Fargate · Graviton (ARM)</option><option value="ec2">ECS on EC2 · Graviton instances</option></select></div>
+      <div><label class="h" for="commit">Pricing</label><select id="commit">
+        <option value="od">On-demand (no commitment)</option><option value="1y">1-year Savings Plan + RDS reserved (no upfront)</option><option value="3y">3-year Savings Plan + RDS reserved (all upfront)</option></select></div>
+      <div><label class="h">Environments</label>
+        <label class="chk"><input type="checkbox" checked disabled /> Production</label>
+        <label class="chk"><input type="checkbox" id="staging" checked /> Staging (UAT)</label>
+        <label class="chk"><input type="checkbox" id="dev" checked /> Development</label></div>
+      <div><label class="h">Production resilience</label>
+        <label class="chk"><input type="checkbox" id="multiAz" checked /> Database Multi-AZ (standby in a 2nd zone)</label>
+        <label class="chk"><input type="checkbox" id="ha" checked /> At least 2 tasks per API service</label></div>
+      <div><label class="h" for="logLevel">Production logging</label><select id="logLevel">
+        <option value="info">INFO (production setting)</option><option value="debug">DEBUG with request/response bodies (as in dev today)</option></select></div>
+      <div><label class="h" for="support">AWS support plan</label><select id="support">
+        <option value="basic">Basic (free)</option><option value="developer">Developer (3%, min $29)</option><option value="business">Business (10%, min $100)</option></select></div>
+      <div><label class="h" for="currency">Currency</label><select id="currency"><option value="INR">INR ₹</option><option value="USD">USD $</option></select></div>
+      <div><label class="h" for="fx">USD → INR rate</label><input type="number" id="fx" value="88" step="0.1" min="1" /></div>
+      <div><label class="h">Tax</label><label class="chk"><input type="checkbox" id="gst" checked /> Add 18% GST (AWS India invoices; claimable as input credit)</label></div>
+    </div>
+    <details style="margin-top:12px"><summary>Load assumptions</summary>
+      <div class="controls">
+        <div><label class="h" for="conc">Peak concurrent users (% of users)</label><input type="number" id="conc" value="15" min="1" max="100" /></div>
+        <div><label class="h" for="rpu">API requests / s per active user</label><input type="number" id="rpu" value="0.4" step="0.05" min="0.05" /></div>
+        <div><label class="h" for="avgLoad">Average load vs peak (%)</label><input type="number" id="avgLoad" value="20" min="1" max="100" /></div>
+        <div><label class="h" for="apiMb">API data per user / month (MB)</label><input type="number" id="apiMb" value="30" min="1" /></div>
+        <div><label class="h" for="docMb">Documents & photos per user (MB)</label><input type="number" id="docMb" value="50" min="0" /></div>
+        <div><label class="h" for="retention">Log retention (days)</label><input type="number" id="retention" value="30" min="1" /></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="tiles">
+    <div class="tile"><div class="l">Per month</div><div class="v" id="tMonth">—</div><div class="s" id="tMonthS"></div></div>
+    <div class="tile"><div class="l">Per year</div><div class="v" id="tYear">—</div><div class="s" id="tYearS"></div></div>
+    <div class="tile"><div class="l">Per user per month</div><div class="v" id="tUser">—</div><div class="s" id="tUserS"></div></div>
+    <div class="tile good"><div class="l">With the selected optimisations</div><div class="v" id="tOpt">—</div><div class="s" id="tOptS"></div></div>
+  </div>
+  <div id="logWarn"></div>
+
+  <div class="cols">
+    <div class="card">
+      <h2>Where the money goes</h2>
+      <p class="muted small" id="barsSub"></p>
+      <div class="bars" id="bars"></div>
+      <h3 style="margin-top:16px">By environment</h3>
+      <div class="bars" id="envBars"></div>
+    </div>
+    <div class="card">
+      <h2>Monthly cost from 10 to 10,000 users</h2>
+      <p class="muted small">Same settings at every scale; the dots are your user count. Hover for values.</p>
+      <div class="chartbox" id="chart"><div class="tip" id="tip"></div></div>
+      <div class="legend"><span><i style="background:var(--series-1)"></i>AWS, your settings</span><span><i style="background:var(--series-2)"></i>AWS, with the selected optimisations</span><span><i style="background:var(--series-3)"></i>CloudPe, your settings</span></div>
+    </div>
+  </div>
+
+  <div class="card" id="vendorCard">
+    <h2>AWS vs CloudPe</h2>
+    <p class="muted small" id="vendorSub"></p>
+    <div class="tiles" id="vendorTiles"></div>
+    <div class="tablewrap"><table><thead><tr><th>Category</th><th class="num">AWS / month</th><th class="num">CloudPe / month</th><th class="num">Difference</th></tr></thead><tbody id="vendorCats"></tbody></table></div>
+    <h3 style="margin-top:16px">What you get for the money</h3>
+    <div class="tablewrap"><table><thead><tr><th>Area</th><th>AWS Mumbai</th><th>CloudPe Navi Mumbai</th></tr></thead><tbody id="vendorFeatures"></tbody></table></div>
+    <details style="margin-top:12px"><summary>CloudPe breakdown</summary>
+      <p class="muted small" style="margin-top:6px">Prices from <a href="https://www.cloudpe.com/pricing" target="_blank" rel="noopener">cloudpe.com/pricing</a> in INR, read on 20 Oct 2026 <span class="src snap">snapshot</span>. CloudPe has no price API and its site blocks browser requests from other origins, so it cannot be fetched live like AWS.</p>
+      <div class="tablewrap"><table><thead><tr><th>Item</th><th>Sizing</th><th class="num">Unit price (INR)</th><th class="num">Per month</th><th class="num">Per year</th></tr></thead><tbody id="cpLines"></tbody></table></div>
+    </details>
+  </div>
+
+  <div class="card">
+    <h2>Cost optimisation</h2>
+    <p class="muted small">Each saving is measured against your current settings on its own; ticked items are combined in the green total above. Effort: <b>low</b> = configuration only, <b>medium</b> = some engineering.</p>
+    <div class="tablewrap"><table><thead><tr><th></th><th>Optimisation</th><th>How</th><th>Effort / risk</th><th class="num">Saves / month</th><th class="num">Saves / year</th></tr></thead><tbody id="levers"></tbody></table></div>
+  </div>
+
+  <div class="card">
+    <h2>Breakdown</h2>
+    <p class="muted small">Every line is quantity × AWS unit price × 730 hours a month where hourly. <span class="src">live</span> = read from the AWS Price List now; <span class="src snap">snapshot</span> = from the large AWS files, 20 Oct 2026.</p>
+    <div class="tablewrap"><table><thead><tr><th>Item</th><th>Sizing</th><th class="num">Unit price (USD)</th><th class="num">Per month</th><th class="num">Per year</th><th>Price</th></tr></thead><tbody id="lines"></tbody></table></div>
+  </div>
+
+  <div class="card">
+    <h2>Production sizing</h2>
+    <p class="muted small" id="sizingSub"></p>
+    <div class="tablewrap"><table><thead><tr><th>Service</th><th class="num">Traffic share</th><th class="num">Peak req/s</th><th class="num">Tasks</th><th>Task size</th><th class="num">Per month</th></tr></thead><tbody id="sizing"></tbody></table></div>
+  </div>
+
+  <div class="card">
+    <h2>Assumptions and what is not included</h2>
+    <ul class="notes" id="notes"></ul>
+  </div>
+</div>
+
+<script>
+// ---------------- prices ----------------
+const BASE = 'https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws';
+const R = 'ap-south-1';
+const FILES = {
+  ECS: `${BASE}/AmazonECS/current/${R}/index.json`, ELB: `${BASE}/AWSELB/current/${R}/index.json`, RDS: `${BASE}/AmazonRDS/current/${R}/index.json`,
+  CW: `${BASE}/AmazonCloudWatch/current/${R}/index.json`, SM: `${BASE}/AWSSecretsManager/current/${R}/index.json`, S3: `${BASE}/AmazonS3/current/${R}/index.json`,
+  ECR: `${BASE}/AmazonECR/current/${R}/index.json`, WAF: `${BASE}/awswaf/current/${R}/index.json`, DT: `${BASE}/AWSDataTransfer/current/${R}/index.json`,
+  VPC: `${BASE}/AmazonVPC/current/${R}/index.json`, R53: `${BASE}/AmazonRoute53/current/index.json`, CF: `${BASE}/AmazonCloudFront/current/index.json`,
+};
+const RDS_TYPES = ['db.t4g.micro', 'db.t4g.small', 'db.t4g.medium', 'db.t4g.large', 'db.m7g.large', 'db.m7g.xlarge', 'db.r7g.large', 'db.r7g.xlarge', 'db.m7g.2xlarge'];
+// Snapshot, read from the AWS Price List files on 20 Oct 2026 (ap-south-1). The live values replace the first block.
+const SNAPSHOT = {
+  fargate: { x86: { cpu: 0.04256, gb: 0.004655 }, arm: { cpu: 0.02383, gb: 0.00261 } },
+  alb: { hour: 0.0239, lcu: 0.008 }, vpce: { hour: 0.013 }, ipv4: 0.005,
+  cwIngest: 0.67, cwStore: 0.03, cwAlarm: 0.10, secret: 0.40, s3: 0.025, ecr: 0.10,
+  waf: { acl: 5, rule: 1, req: 0.0000006 }, dto: 0.1093, r53: { zone: 0.5, query: 0.0000004 }, cf: { gb: 0.109, req: 0.0000012 },
+  rdsStorage: { single: 0.131, multi: 0.262 }, rdsBackup: 0.095,
+  rds: {
+    'db.t4g.micro': { vcpu: 2, mem: '1 GiB', single: { od: 0.021, ri1: 0.0165, ri3: 324 / 26280 }, multi: { od: 0.042, ri1: 0.033, ri3: 648 / 26280 } },
+    'db.t4g.small': { vcpu: 2, mem: '2 GiB', single: { od: 0.042, ri1: 0.033, ri3: 648 / 26280 }, multi: { od: 0.084, ri1: 0.066, ri3: 1296 / 26280 } },
+    'db.t4g.medium': { vcpu: 2, mem: '4 GiB', single: { od: 0.084, ri1: 0.066, ri3: 1296 / 26280 }, multi: { od: 0.167, ri1: 0.1321, ri3: 2592 / 26280 } },
+    'db.t4g.large': { vcpu: 2, mem: '8 GiB', single: { od: 0.167, ri1: 0.1321, ri3: 2592 / 26280 }, multi: { od: 0.334, ri1: 0.2642, ri3: 5185 / 26280 } },
+    'db.m7g.large': { vcpu: 2, mem: '8 GiB', single: { od: 0.24, ri1: 0.1844, ri3: 3336 / 26280 }, multi: { od: 0.479, ri1: 0.3688, ri3: 6672 / 26280 } },
+    'db.m7g.xlarge': { vcpu: 4, mem: '16 GiB', single: { od: 0.479, ri1: 0.3688, ri3: 6672 / 26280 }, multi: { od: 0.958, ri1: 0.7377, ri3: 13343 / 26280 } },
+    'db.r7g.large': { vcpu: 2, mem: '16 GiB', single: { od: 0.272, ri1: 0.2094, ri3: 3789 / 26280 }, multi: { od: 0.544, ri1: 0.4189, ri3: 7577 / 26280 } },
+    'db.r7g.xlarge': { vcpu: 4, mem: '32 GiB', single: { od: 0.544, ri1: 0.4189, ri3: 7577 / 26280 }, multi: { od: 1.088, ri1: 0.8378, ri3: 15154 / 26280 } },
+    'db.m7g.2xlarge': { vcpu: 8, mem: '32 GiB', single: { od: 0.958, ri1: 0.7377, ri3: 13343 / 26280 }, multi: { od: 1.916, ri1: 1.4753, ri3: 26687 / 26280 } },
+  },
+};
+// Only in files too large for a browser (always snapshot)
+const BIG = {
+  nat: { hour: 0.056, gb: 0.056 },                               // AmazonEC2 price list (315 MB)
+  ec2: { 't4g.large': { od: 0.0448, ri1: 0.0283, vcpu: 2, mem: 8 }, 'm7g.large': { od: 0.0583, ri1: 0.0385, vcpu: 2, mem: 8 }, 'm7g.xlarge': { od: 0.1166, ri1: 0.0770, vcpu: 4, mem: 16 } },
+  ebs: 0.0912,
+  // Compute Savings Plans price list version 20261013035015 (286 MB): Fargate rates
+  sp: { '1y': { x86: { cpu: 0.034048, gb: 0.003724 }, arm: { cpu: 0.018774, gb: 0.002058 } },     // 1 year, no upfront
+        '3y': { x86: { cpu: 0.0204288, gb: 0.0022344 }, arm: { cpu: 0.011682, gb: 0.001274 } } },  // 3 years, all upfront (amortised)
+  spotDiscount: 0.65,   // Fargate Spot: AWS quotes "up to 70%" off; spot prices move, so 65% is used
+};
+let P = structuredClone(SNAPSHOT), LIVE = new Set(), priceMeta = { source: 'snapshot', at: '2026-10-20' };
+
+/** First-tier on-demand USD price of the products matching `pred`. */
+function od(doc, pred) {
+  for (const [sku, p] of Object.entries(doc.products)) {
+    if (!pred(p.attributes || {}, p.productFamily || '')) continue;
+    for (const t of Object.values(doc.terms.OnDemand[sku] || {})) {
+      const dims = Object.values(t.priceDimensions).sort((a, b) => Number(a.beginRange || 0) - Number(b.beginRange || 0));
+      if (dims.length) return Number(dims[0].pricePerUnit.USD);
+    }
+  }
+  return null;
+}
+const ut = (u) => (a) => a.usagetype === u;
+const setLive = (key, v, assign) => { if (v != null && !Number.isNaN(v)) { assign(v); LIVE.add(key); } };
+
+const EXTRACT = {
+  ECS(d) {
+    setLive('fargate', od(d, ut('APS3-Fargate-vCPU-Hours:perCPU')), (v) => P.fargate.x86.cpu = v);
+    setLive('fargate', od(d, ut('APS3-Fargate-GB-Hours')), (v) => P.fargate.x86.gb = v);
+    setLive('fargate', od(d, ut('APS3-Fargate-ARM-vCPU-Hours:perCPU')), (v) => P.fargate.arm.cpu = v);
+    setLive('fargate', od(d, ut('APS3-Fargate-ARM-GB-Hours')), (v) => P.fargate.arm.gb = v);
+  },
+  ELB(d) {
+    setLive('alb', od(d, (a, f) => f === 'Load Balancer-Application' && a.usagetype === 'APS3-LoadBalancerUsage'), (v) => P.alb.hour = v);
+    setLive('alb', od(d, (a, f) => f === 'Load Balancer-Application' && a.usagetype === 'APS3-LCUUsage'), (v) => P.alb.lcu = v);
+  },
+  RDS(d) {
+    for (const [sku, p] of Object.entries(d.products)) {
+      const a = p.attributes || {};
+      if (p.productFamily !== 'Database Instance' || a.databaseEngine !== 'PostgreSQL' || !RDS_TYPES.includes(a.instanceType) || !a.vcpu) continue;
+      const dep = a.deploymentOption === 'Multi-AZ' ? 'multi' : a.deploymentOption === 'Single-AZ' ? 'single' : null;
+      if (!dep || /IOOptimized/i.test(a.usagetype || '')) continue;
+      const row = (P.rds[a.instanceType] ||= { vcpu: Number(a.vcpu), mem: a.memory, single: {}, multi: {} });
+      row.vcpu = Number(a.vcpu); row.mem = a.memory;
+      for (const t of Object.values(d.terms.OnDemand[sku] || {})) for (const x of Object.values(t.priceDimensions)) if (x.unit === 'Hrs') row[dep].od = Number(x.pricePerUnit.USD);
+      for (const t of Object.values(d.terms.Reserved?.[sku] || {})) {
+        const ta = t.termAttributes;
+        for (const x of Object.values(t.priceDimensions)) {
+          if (ta.LeaseContractLength === '1yr' && ta.PurchaseOption === 'No Upfront' && x.unit === 'Hrs') row[dep].ri1 = Number(x.pricePerUnit.USD);
+          if (ta.LeaseContractLength === '3yr' && ta.PurchaseOption === 'All Upfront' && x.unit === 'Quantity') row[dep].ri3 = Number(x.pricePerUnit.USD) / 26280;
+        }
+      }
+      LIVE.add('rds');
+    }
+    setLive('rdsStorage', od(d, ut('APS3-RDS:GP3-Storage')), (v) => P.rdsStorage.single = v);
+    setLive('rdsStorage', od(d, ut('APS3-RDS:Multi-AZ-GP3-Storage')), (v) => P.rdsStorage.multi = v);
+    setLive('rdsBackup', od(d, ut('APS3-RDS:ChargedBackupUsage')), (v) => P.rdsBackup = v);
+  },
+  CW(d) {
+    setLive('cw', od(d, ut('APS3-DataProcessing-Bytes')), (v) => P.cwIngest = v);
+    setLive('cw', od(d, ut('APS3-TimedStorage-ByteHrs')), (v) => P.cwStore = v);
+    setLive('cw', od(d, ut('APS3-CW:AlarmMonitorUsage')), (v) => P.cwAlarm = v);
+  },
+  SM(d) { setLive('secret', od(d, ut('APS3-AWSSecretsManager-Secrets')), (v) => P.secret = v); },
+  S3(d) { setLive('s3', od(d, ut('APS3-TimedStorage-ByteHrs')), (v) => P.s3 = v); },
+  ECR(d) { setLive('ecr', od(d, ut('APS3-TimedStorage-ByteHrs')), (v) => P.ecr = v); },
+  WAF(d) {
+    setLive('waf', od(d, ut('APS3-WebACL')), (v) => P.waf.acl = v);
+    setLive('waf', od(d, ut('APS3-Rule')), (v) => P.waf.rule = v);
+    setLive('waf', od(d, ut('APS3-Request')), (v) => P.waf.req = v);
+  },
+  DT(d) { setLive('dto', od(d, ut('APS3-DataTransfer-Out-Bytes')), (v) => P.dto = v); },
+  VPC(d) {
+    setLive('ipv4', od(d, ut('APS3-PublicIPv4:InUseAddress')), (v) => P.ipv4 = v);
+    setLive('vpce', od(d, ut('APS3-VpcEndpoint-Hours')), (v) => P.vpce.hour = v);
+  },
+  R53(d) {
+    setLive('r53', od(d, ut('HostedZone')), (v) => P.r53.zone = v);
+    setLive('r53', od(d, ut('DNS-Queries')), (v) => P.r53.query = v);
+  },
+  CF(d) {
+    setLive('cf', od(d, ut('IN-DataTransfer-Out-Bytes')), (v) => P.cf.gb = v);
+    setLive('cf', od(d, ut('IN-Requests-Tier2-HTTPS')), (v) => P.cf.req = v);
+  },
+};
+
+const CACHE_KEY = 'erp.infraCost.prices';
+async function fetchJson(name, url) {
+  const el = document.querySelector(`[data-file="${name}"]`);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${name} ${res.status}`);
+  const total = Number(res.headers.get('content-length')) || 0;
+  const reader = res.body.getReader(); const chunks = []; let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value); got += value.length;
+    if (el && total > 2e6) el.textContent = `${name} ${Math.round(got / total * 100)}%`;
+  }
+  const doc = JSON.parse(new TextDecoder().decode(await new Blob(chunks).arrayBuffer()));
+  if (el) { el.textContent = `${name} ✓`; el.className = 'done'; }
+  return doc;
+}
+async function loadPrices(force) {
+  $('refreshBtn').disabled = true;
+  try {
+    if (!force) {
+      const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
+      if (c && Date.now() - c.savedAt < 864e5) { P = c.P; LIVE = new Set(c.live); priceMeta = c.meta; showStatus(); render(); return; }
+    }
+  } catch { /* storage unavailable */ }
+  P = structuredClone(SNAPSHOT); LIVE = new Set();
+  $('priceStatus').className = 'pill info'; $('priceStatus').textContent = 'Fetching prices from AWS…';
+  $('progress').innerHTML = Object.keys(FILES).map((k) => `<span data-file="${k}">${k}</span>`).join('');
+  const results = await Promise.allSettled(Object.entries(FILES).map(async ([k, url]) => {
+    const doc = await fetchJson(k, url);
+    EXTRACT[k](doc);
+    return doc.publicationDate;
+  }));
+  results.forEach((r, i) => { if (r.status === 'rejected') { const el = document.querySelector(`[data-file="${Object.keys(FILES)[i]}"]`); if (el) { el.className = 'err'; el.textContent += ' ✕'; } } });
+  const ok = results.filter((r) => r.status === 'fulfilled');
+  const pub = ok.map((r) => r.value).filter(Boolean).sort().pop();
+  priceMeta = { source: ok.length === results.length ? 'live' : ok.length ? 'partial' : 'snapshot', at: new Date().toISOString(), published: pub, failed: results.length - ok.length };
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), P, live: [...LIVE], meta: priceMeta })); } catch { /* storage unavailable */ }
+  showStatus(); render();
+}
+function showStatus() {
+  const s = $('priceStatus');
+  const when = new Date(priceMeta.at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+  if (priceMeta.source === 'live') { s.className = 'pill ok'; s.textContent = `Live AWS prices · fetched ${when}${priceMeta.published ? ` · price list ${priceMeta.published.slice(0, 10)}` : ''}`; }
+  else if (priceMeta.source === 'partial') { s.className = 'pill warn'; s.textContent = `Partly live (${priceMeta.failed} file(s) failed, snapshot used for those) · ${when}`; }
+  else { s.className = 'pill warn'; s.textContent = 'AWS unreachable: using the 20 Oct 2026 snapshot'; }
+  $('refreshBtn').disabled = false;
+}
+
+// ---------------- workload model ----------------
+const HOURS = 730;
+// 10 BRD modules first, then the platform services; `w` = share of API traffic, worker = background job runner
+const SERVICES = [
+  { name: 'authservice', w: 0.10 }, { name: 'admissionservice', w: 0.05 }, { name: 'studentservice', w: 0.13 }, { name: 'financeservice', w: 0.08 },
+  { name: 'examservice', w: 0.10 }, { name: 'academicservice (LMS)', w: 0.13 }, { name: 'hr-payroll-service', w: 0.04 }, { name: 'transport-service', w: 0.05 },
+  { name: 'communication-service', w: 0.11 }, { name: 'analytics-integration-service', w: 0.04 },
+  { name: 'document-service', w: 0.07 }, { name: 'notification-worker', worker: true }, { name: 'report-pdf-service', w: 0.06 },
+  { name: 'scheduler-worker', worker: true }, { name: 'audit-search-service', w: 0.04 }, { name: 'library-hostel-service', w: 0.03 },
+];
+const SERVICE_COUNTS = Array.from({ length: SERVICES.length / 2 }, (_, i) => (i + 1) * 2);   // 2, 4 … 16
+const DB_TIERS = [[100, 'db.t4g.small'], [300, 'db.t4g.medium'], [1500, 'db.m7g.large'], [5000, 'db.m7g.xlarge'], [Infinity, 'db.r7g.xlarge']];
+const SECRETS_PER_ENV = 6, ALARMS_PROD = 25, ECR_GB_PER_SERVICE = 3.5;
+
+function fargateRate(cfg, env, spot) {
+  const arch = cfg.compute === 'fargate-arm' ? 'arm' : 'x86';
+  if (spot) return { cpu: P.fargate[arch].cpu * (1 - BIG.spotDiscount), gb: P.fargate[arch].gb * (1 - BIG.spotDiscount), src: 'snap', label: 'Fargate Spot' };
+  if (cfg.commit !== 'od') return { ...BIG.sp[cfg.commit][arch], src: 'snap', label: `Savings Plan ${cfg.commit}` };
+  return { ...P.fargate[arch], src: LIVE.has('fargate') ? 'live' : 'snap', label: 'on-demand' };
+}
+/** Production tasks per service from peak traffic: 0.5 vCPU/1 GB handles ~35 req/s, 1 vCPU/2 GB ~80 req/s (Spring Boot CRUD). */
+function prodPlan(cfg) {
+  const list = SERVICES.slice(0, cfg.services);
+  const apiW = list.filter((s) => !s.worker).reduce((n, s) => n + s.w, 0);
+  const peakRps = cfg.users * cfg.conc / 100 * cfg.rpu;
+  return list.map((s) => {
+    if (s.worker) return { ...s, rps: 0, tasks: cfg.users > 5000 ? 2 : 1, cpu: 0.25, mem: 1 };
+    const rps = peakRps * s.w / apiW;
+    const min = cfg.ha ? 2 : 1;
+    return rps > 70 ? { ...s, rps, tasks: Math.max(min, Math.ceil(rps / 80)), cpu: 1, mem: 2 } : { ...s, rps, tasks: Math.max(min, Math.ceil(rps / 35)), cpu: 0.5, mem: 1 };
+  });
+}
+const nonProdPlan = (cfg) => SERVICES.slice(0, cfg.services).map((s) => ({ ...s, tasks: 1, cpu: s.worker ? 0.25 : 0.5, mem: 1 }));
+const envs = (cfg) => ['prod', ...(cfg.staging ? ['staging'] : []), ...(cfg.dev ? ['dev'] : [])];
+const ENV_LABEL = { prod: 'Production', staging: 'Staging', dev: 'Development', shared: 'Shared' };
+
+function cost(cfg) {
+  const lines = [];
+  const add = (env, cat, item, sizing, unit, usd, src = 'live') => lines.push({ env, cat, item, sizing, unit, usd, src });
+  const peakRps = cfg.users * cfg.conc / 100 * cfg.rpu, avgRps = peakRps * cfg.avgLoad / 100, monthlyReq = avgRps * HOURS * 3600;
+  const plan = { prod: prodPlan(cfg), staging: nonProdPlan(cfg), dev: nonProdPlan(cfg) };
+  for (const env of envs(cfg)) {
+    const prod = env === 'prod';
+    const hours = prod || !cfg.schedule ? HOURS : HOURS * 60 / 168;
+    const hoursNote = hours < HOURS ? ' · 60 h/week' : '';
+    const tasks = plan[env];
+    // ---- compute
+    if (cfg.compute === 'ec2') {
+      const vcpu = tasks.reduce((n, t) => n + t.tasks * t.cpu, 0), mem = tasks.reduce((n, t) => n + t.tasks * t.mem, 0);
+      const type = prod ? 'm7g.large' : 't4g.large', it = BIG.ec2[type];
+      let n = Math.ceil(Math.max(vcpu / (it.vcpu * 0.85), mem / (it.mem * 0.85)));
+      if (prod) n = Math.max(2, n + (cfg.ha ? 1 : 0));
+      const rate = cfg.commit === 'od' ? it.od : it.ri1;
+      add(env, 'Compute', `EC2 ${type} for the ECS cluster`, `${n} × ${it.vcpu} vCPU / ${it.mem} GB for ${tasks.reduce((a, t) => a + t.tasks, 0)} tasks${hoursNote}${cfg.commit !== 'od' ? ' · 1-yr reserved' : ''}`, rate, n * rate * hours, 'snap');
+      add(env, 'Compute', 'EBS gp3 for the EC2 hosts', `${n} × 30 GB`, BIG.ebs, n * 30 * BIG.ebs, 'snap');
+    } else {
+      const groups = [[tasks.filter((t) => !(prod && t.worker && cfg.spotWorkers)), !prod && cfg.spotNonProd], [prod && cfg.spotWorkers ? tasks.filter((t) => t.worker) : [], true]];
+      for (const [list, spot] of groups) {
+        if (!list.length) continue;
+        const r = fargateRate(cfg, env, spot);
+        const vcpu = list.reduce((n, t) => n + t.tasks * t.cpu, 0), mem = list.reduce((n, t) => n + t.tasks * t.mem, 0);
+        add(env, 'Compute', `ECS Fargate ${cfg.compute === 'fargate-arm' ? 'Graviton' : 'x86'} · ${r.label}${prod && spot ? ' (workers)' : ''}`,
+          `${list.reduce((n, t) => n + t.tasks, 0)} tasks · ${vcpu} vCPU + ${mem} GB${hoursNote}`, r.cpu, (vcpu * r.cpu + mem * r.gb) * hours, r.src);
+      }
+    }
+    // ---- database
+    if (env !== 'dev' || !cfg.shareDevDb) {
+      const type = prod ? DB_TIERS.find(([max]) => cfg.users <= max)[1] : env === 'staging' ? 'db.t4g.small' : 'db.t4g.micro';
+      const multi = prod && cfg.multiAz;
+      const row = P.rds[type][multi ? 'multi' : 'single'];
+      const committed = cfg.commit !== 'od' && (prod || !cfg.schedule);
+      const rate = committed ? (cfg.commit === '1y' ? row.ri1 : row.ri3) : row.od;
+      const dbHours = prod || !cfg.schedule ? HOURS : HOURS * 60 / 168;
+      add(env, 'Database', `RDS PostgreSQL ${type}${multi ? ' Multi-AZ' : ''}`, `${P.rds[type].vcpu} vCPU / ${P.rds[type].mem}${dbHours < HOURS ? ' · stopped nights & weekends' : ''}${committed ? ` · ${cfg.commit} reserved` : ''}`,
+        rate, rate * dbHours, LIVE.has('rds') ? 'live' : 'snap');
+      const gb = prod ? Math.max(20, Math.ceil(cfg.users * 0.02)) : 20;
+      const sp = multi ? P.rdsStorage.multi : P.rdsStorage.single;
+      add(env, 'Database', 'RDS storage gp3 (3,000 IOPS included)', `${gb} GB`, sp, gb * sp, LIVE.has('rdsStorage') ? 'live' : 'snap');
+      if (prod) add(env, 'Database', 'RDS backups beyond the free allowance', `${Math.ceil(gb * 0.5)} GB (7-day retention)`, P.rdsBackup, Math.ceil(gb * 0.5) * P.rdsBackup, LIVE.has('rdsBackup') ? 'live' : 'snap');
+    }
+    // ---- load balancer
+    if (prod || env === 'staging' || !cfg.sharedAlb || !cfg.staging) {
+      const lcu = prod ? Math.max(1, avgRps * 8e3 * 3600 / 1e9, avgRps / 2 / 25) : 0.3;
+      add(env, 'Load balancing', 'Application Load Balancer', `1 ALB · ${lcu.toFixed(1)} LCU average${!prod && cfg.sharedAlb && cfg.dev ? ' · shared with dev (host rules)' : ''}`, P.alb.hour, P.alb.hour * HOURS + lcu * P.alb.lcu * HOURS, LIVE.has('alb') ? 'live' : 'snap');
+      add(env, 'Networking', 'Public IPv4 addresses (ALB)', '2 (one per zone)', P.ipv4, 2 * P.ipv4 * HOURS, LIVE.has('ipv4') ? 'live' : 'snap');
+    }
+    // ---- NAT gateway (private subnets reach ECR, SMS/e-mail and payment APIs)
+    if (prod || !cfg.noNatNonProd) {
+      const n = prod ? 2 : 1, gb = prod ? 20 + cfg.users * 0.004 : 10;
+      add(env, 'Networking', 'NAT gateway', `${n}${prod ? ' (one per zone)' : ''} · ${Math.round(gb)} GB processed`, BIG.nat.hour, n * BIG.nat.hour * HOURS + gb * BIG.nat.gb, 'snap');
+      add(env, 'Networking', 'Public IPv4 addresses (NAT)', `${n}`, P.ipv4, n * P.ipv4 * HOURS, LIVE.has('ipv4') ? 'live' : 'snap');
+    } else {
+      const n = tasks.reduce((a, t) => a + t.tasks, 0);
+      add(env, 'Networking', 'Public IPv4 on tasks (no NAT gateway)', `${n} tasks${hoursNote}`, P.ipv4, n * P.ipv4 * hours, LIVE.has('ipv4') ? 'live' : 'snap');
+    }
+    // ---- logs and secrets
+    const bytes = cfg.logLevel === 'debug' ? 12e3 : 1.5e3;
+    const taskCount = tasks.reduce((a, t) => a + t.tasks, 0);
+    const ingest = prod ? monthlyReq * bytes / 1e9 + taskCount * 0.3 : taskCount * 0.5 + 3;
+    add(env, 'Observability', `CloudWatch Logs ingestion (${prod ? cfg.logLevel.toUpperCase() : 'INFO'})`, `${Math.round(ingest).toLocaleString('en-IN')} GB / month`, P.cwIngest, ingest * P.cwIngest, LIVE.has('cw') ? 'live' : 'snap');
+    const stored = ingest * 0.25 * cfg.retention / 30;
+    add(env, 'Observability', 'CloudWatch Logs storage', `${cfg.retention} days · ~${Math.round(stored)} GB compressed`, P.cwStore, stored * P.cwStore, LIVE.has('cw') ? 'live' : 'snap');
+    if (prod) add(env, 'Observability', 'CloudWatch alarms', `${ALARMS_PROD} alarms`, P.cwAlarm, ALARMS_PROD * P.cwAlarm, LIVE.has('cw') ? 'live' : 'snap');
+    add(env, 'Security', 'Secrets Manager', `${SECRETS_PER_ENV} secrets (DB, JWT, SMTP, SMS, payment)`, P.secret, SECRETS_PER_ENV * P.secret, LIVE.has('secret') ? 'live' : 'snap');
+  }
+  // ---- shared / production-only edge services
+  const apiGb = cfg.users * cfg.apiMb / 1024;
+  if (cfg.apiViaCf) {
+    add('prod', 'Data transfer & CDN', 'API responses via CloudFront (origin transfer free)', `${Math.round(apiGb)} GB · counted with the web app below`, 0, 0, LIVE.has('cf') ? 'live' : 'snap');
+  } else {
+    const billable = Math.max(0, apiGb - 100);
+    add('prod', 'Data transfer & CDN', 'Data transfer out to the internet (API)', `${Math.round(apiGb)} GB (first 100 GB/month free)`, P.dto, billable * P.dto, LIVE.has('dto') ? 'live' : 'snap');
+  }
+  const cfGb = cfg.users * 0.02 + (cfg.apiViaCf ? apiGb : 0), cfReq = cfg.users * 600 + (cfg.apiViaCf ? monthlyReq : 0);
+  add('prod', 'Data transfer & CDN', 'CloudFront (web app' + (cfg.apiViaCf ? ' + API' : '') + ')', `${Math.round(cfGb)} GB, ${(cfReq / 1e6).toFixed(1)} M requests (1 TB + 10 M free)`,
+    P.cf.gb, Math.max(0, cfGb - 1024) * P.cf.gb + Math.max(0, cfReq - 10e6) * P.cf.req, LIVE.has('cf') ? 'live' : 'snap');
+  const docGb = cfg.users * cfg.docMb / 1024 + 1;
+  add('prod', 'Storage', 'S3 Standard (documents, photos, web app)', `${Math.round(docGb)} GB`, P.s3, docGb * P.s3, LIVE.has('s3') ? 'live' : 'snap');
+  add('shared', 'Storage', 'ECR container images', `${cfg.services} services · ~${Math.round(cfg.services * ECR_GB_PER_SERVICE)} GB (10 versions each)`, P.ecr, cfg.services * ECR_GB_PER_SERVICE * P.ecr, LIVE.has('ecr') ? 'live' : 'snap');
+  add('prod', 'Security', 'AWS WAF (managed rules)', `1 web ACL · 6 rule groups · ${(monthlyReq / 1e6).toFixed(1)} M requests`, P.waf.acl, P.waf.acl + 6 * P.waf.rule + monthlyReq * P.waf.req, LIVE.has('waf') ? 'live' : 'snap');
+  add('shared', 'DNS', 'Route 53', `1 hosted zone · ${(cfg.users * 1500 / 1e6).toFixed(1)} M queries`, P.r53.zone, P.r53.zone + cfg.users * 1500 * P.r53.query, LIVE.has('r53') ? 'live' : 'snap');
+  let total = lines.reduce((n, l) => n + l.usd, 0);
+  if (cfg.support !== 'basic') {
+    const s = cfg.support === 'business' ? Math.max(100, total * 0.10) : Math.max(29, total * 0.03);
+    add('shared', 'Support', `AWS ${cfg.support === 'business' ? 'Business' : 'Developer'} support`, cfg.support === 'business' ? '10% of usage, min $100' : '3% of usage, min $29', 0, s, 'snap');
+    total += s;
+  }
+  return { lines, total, peakRps, avgRps, monthlyReq, plan: plan.prod };
+}
+
+// ---------------- CloudPe (Indian cloud, Navi Mumbai, 2 zones) ----------------
+// CloudPe publishes no price API and its site sends no CORS headers, so these are a snapshot of cloudpe.com/pricing
+// read on 20 Oct 2026 (INR per month, before GST). Linux plans include a 30 GB NVMe root disk.
+const CLOUDPE = {
+  at: '2026-10-20',
+  vm: {
+    'a.cpu1.4g': { vcpu: 2, mem: 4, inr: 931 }, 'a.cpu1.8g': { vcpu: 4, mem: 8, inr: 1538 }, 'a.cpu1.16g': { vcpu: 8, mem: 16, inr: 2781 },
+    'a.gp1.4g': { vcpu: 1, mem: 4, inr: 930 }, 'a.gp1.8g': { vcpu: 2, mem: 8, inr: 1182 }, 'a.gp1.16g': { vcpu: 4, mem: 16, inr: 2079 },
+    'a.mem1.32g': { vcpu: 4, mem: 32, inr: 3899 },
+  },
+  blockPro: 8.00, blockStd: 6.20, backup: 2.00, object: 3.10, ip: 200, router: 200, lb: 2000,
+  annualDiscount: 0.12,   // "annual billing: 12% off"; no multi-year plans are listed
+};
+// Self-managed PostgreSQL VM matching each RDS tier (CloudPe lists no managed database)
+const CLOUDPE_DB = { 'db.t4g.micro': 'a.gp1.4g', 'db.t4g.small': 'a.gp1.4g', 'db.t4g.medium': 'a.gp1.8g', 'db.m7g.large': 'a.gp1.8g', 'db.m7g.xlarge': 'a.gp1.16g', 'db.r7g.xlarge': 'a.mem1.32g' };
+
+/** Same workload on CloudPe: managed Kubernetes (free control plane) worker nodes, PostgreSQL on VMs, CloudPe LB and object storage. */
+function cloudpeCost(cfg) {
+  const lines = [];
+  const fx = cfg.fx || 88;
+  const add = (env, cat, item, sizing, unitInr, inr) => lines.push({ env, cat, item, sizing, unitInr, inr, usd: inr / fx, src: 'snap' });
+  const annual = cfg.commit !== 'od' ? 1 - CLOUDPE.annualDiscount : 1;
+  const annualNote = annual < 1 ? ' · annual billing −12%' : '';
+  const peakRps = cfg.users * cfg.conc / 100 * cfg.rpu, monthlyReq = peakRps * cfg.avgLoad / 100 * HOURS * 3600;
+  const plan = { prod: prodPlan(cfg), staging: nonProdPlan(cfg), dev: nonProdPlan(cfg) };
+  let logGb = 0;
+  for (const env of envs(cfg)) {
+    const prod = env === 'prod';
+    const frac = prod || !cfg.schedule ? 1 : 60 / 168;            // hourly billing: node pool scaled to 0 out of hours
+    const disc = frac < 1 ? 1 : annual;                            // scheduled pools stay hourly, no annual plan
+    const note = (frac < 1 ? ' · 60 h/week (hourly)' : '') + (disc < 1 ? annualNote : '');
+    const tasks = plan[env];
+    // ---- Kubernetes worker nodes: 80% of each node is for pods (kubelet, ingress controller, log/metrics agents use the rest)
+    const vcpu = tasks.reduce((n, t) => n + t.tasks * t.cpu, 0), mem = tasks.reduce((n, t) => n + t.tasks * t.mem, 0);
+    const type = !prod ? 'a.cpu1.4g' : vcpu > 12 ? 'a.cpu1.16g' : 'a.cpu1.8g', vm = CLOUDPE.vm[type];
+    let n = Math.ceil(Math.max(vcpu / (vm.vcpu * 0.8), mem / (vm.mem * 0.8)));
+    if (prod) n = Math.max(cfg.ha ? 3 : 2, n + (cfg.ha ? 1 : 0));   // spare node so a node can fail or drain
+    add(env, 'Compute', `Kubernetes worker nodes ${type} (control plane free)`, `${n} × ${vm.vcpu} vCPU / ${vm.mem} GB for ${tasks.reduce((a, t) => a + t.tasks, 0)} pods${note}`, vm.inr, n * vm.inr * frac * disc);
+    // ---- database
+    if (env !== 'dev' || !cfg.shareDevDb) {
+      const rdsType = prod ? DB_TIERS.find(([max]) => cfg.users <= max)[1] : env === 'staging' ? 'db.t4g.small' : 'db.t4g.micro';
+      const dbType = CLOUDPE_DB[rdsType], db = CLOUDPE.vm[dbType];
+      const standby = prod && cfg.multiAz;
+      const nodes = standby ? 2 : 1;
+      add(env, 'Database', `PostgreSQL on ${dbType} (self-managed${standby ? ', Patroni primary + standby in the 2nd zone' : ''})`,
+        `${nodes} × ${db.vcpu} vCPU / ${db.mem} GB · sized like ${rdsType}${note}`, db.inr, nodes * db.inr * frac * disc);
+      const gb = prod ? Math.max(20, Math.ceil(cfg.users * 0.02)) : 20;
+      add(env, 'Database', 'Pro NVMe block volume for the data', `${nodes} × ${gb} GB`, CLOUDPE.blockPro, nodes * gb * CLOUDPE.blockPro);
+      if (prod) add(env, 'Database', 'Automated backups (pgBackRest full + WAL)', `${gb * 2} GB (7-day retention)`, CLOUDPE.backup, gb * 2 * CLOUDPE.backup);
+    }
+    // ---- load balancer and network
+    if (prod || env === 'staging' || !cfg.sharedAlb || !cfg.staging) {
+      add(env, 'Load balancing', 'Application load balancer', `1 LB${!prod && cfg.sharedAlb && cfg.dev ? ' · shared with dev (host rules)' : ''}`, CLOUDPE.lb, CLOUDPE.lb);
+      add(env, 'Networking', 'Floating IPv4 for the load balancer', '1', CLOUDPE.ip, CLOUDPE.ip);
+    }
+    add(env, 'Networking', 'Router (outbound internet for private nodes)', '1 · VPC free', CLOUDPE.router, CLOUDPE.router);
+    // ---- logs (shipped to the shared monitoring VM below)
+    const bytes = prod && cfg.logLevel === 'debug' ? 12e3 : 1.5e3;
+    const taskCount = tasks.reduce((a, t) => a + t.tasks, 0);
+    logGb += (prod ? monthlyReq * bytes / 1e9 + taskCount * 0.3 : taskCount * 0.5 + 3) * frac;
+  }
+  // ---- observability: self-hosted Grafana + Loki + Prometheus (replaces CloudWatch)
+  const monType = cfg.users > 1500 ? 'a.gp1.16g' : 'a.gp1.8g', mon = CLOUDPE.vm[monType];
+  add('shared', 'Observability', `Monitoring VM ${monType} (Grafana, Loki, Prometheus, Alertmanager)`, `1 × ${mon.vcpu} vCPU / ${mon.mem} GB${annualNote}`, mon.inr, mon.inr * annual);
+  const logDisk = Math.max(50, Math.ceil(logGb * 0.25 * cfg.retention / 30 * 1.3));
+  add('shared', 'Observability', 'Standard NVMe volume for logs and metrics', `${logDisk} GB · ${Math.round(logGb).toLocaleString('en-IN')} GB logs/month, ${cfg.retention} days`, CLOUDPE.blockStd, logDisk * CLOUDPE.blockStd);
+  // ---- storage
+  const docGb = cfg.users * cfg.docMb / 1024 + 1;
+  add('prod', 'Storage', 'Object storage (documents, photos, web app)', `${Math.round(docGb)} GB · egress free up to 1 TB/month`, CLOUDPE.object, docGb * CLOUDPE.object);
+  const regGb = cfg.services * ECR_GB_PER_SERVICE;
+  add('shared', 'Storage', 'Container images (registry backed by object storage)', `${cfg.services} services · ~${Math.round(regGb)} GB`, CLOUDPE.object, regGb * CLOUDPE.object);
+  const apiGb = cfg.users * cfg.apiMb / 1024;
+  add('prod', 'Data transfer & CDN', 'Data transfer out (API and web app)', `${Math.round(apiGb + cfg.users * 0.02)} GB · CloudPe charges no egress`, 0, 0);
+  add('prod', 'Security', 'Web firewall and DNS', 'Not offered: e.g. Cloudflare free plan in front of the LB', 0, 0);
+  add('shared', 'Security', 'Secrets', 'Kubernetes secrets (sealed-secrets / External Secrets)', 0, 0);
+  const total = lines.reduce((s, l) => s + l.usd, 0);
+  return { lines, total, totalInr: total * fx };
+}
+
+// ---------------- optimisations ----------------
+const LEVERS = [
+  { id: 'arm', title: 'Run on Graviton (ARM) Fargate', how: 'Build the images for linux/arm64 (Temurin JDK 21 has ARM builds) and set the task CPU architecture to ARM64.', effort: 'Low · test once', done: (c) => c.compute !== 'fargate-x86', relevant: (c) => c.compute !== 'ec2', apply: (c) => ({ ...c, compute: 'fargate-arm' }), on: true },
+  { id: '1y', title: '1-year Compute Savings Plan + RDS reserved instance', how: 'Commit to the steady baseline for a year (no upfront). Covers Fargate in every environment and the production database.', effort: 'Low · 1-year commitment', done: (c) => c.commit !== 'od', apply: (c) => ({ ...c, commit: '1y' }), on: true },
+  { id: '3y', title: '3-year commitment (all upfront)', how: 'Deeper discount for a stable platform; paid upfront, so only once the size has settled.', effort: 'Low · 3-year lock-in', done: (c) => c.commit === '3y', apply: (c) => ({ ...c, commit: '3y' }), on: false, excludes: '1y' },
+  { id: 'schedule', title: 'Run staging and dev only in office hours', how: 'EventBridge Scheduler scales the ECS services to 0 and stops the RDS instances at night and on weekends (60 of 168 hours on).', effort: 'Low', done: (c) => c.schedule, relevant: (c) => c.staging || c.dev, apply: (c) => ({ ...c, schedule: true }), on: true },
+  { id: 'spot', title: 'Fargate Spot for staging and dev', how: 'Capacity provider FARGATE_SPOT for non-production services; an interrupted task just restarts.', effort: 'Low', done: (c) => c.spotNonProd, relevant: (c) => (c.staging || c.dev) && c.compute !== 'ec2', apply: (c) => ({ ...c, spotNonProd: true }), on: true },
+  { id: 'spotWorkers', title: 'Background workers on Fargate Spot in production', how: 'Notification and scheduler workers are retry-safe; run them on Spot with an on-demand fallback.', effort: 'Medium · jobs must be idempotent', done: (c) => c.spotWorkers, relevant: (c) => c.compute !== 'ec2' && SERVICES.slice(0, c.services).some((s) => s.worker), apply: (c) => ({ ...c, spotWorkers: true }), on: true },
+  { id: 'nat', title: 'No NAT gateway in staging and dev', how: 'Put non-production tasks in public subnets with a public IP and a strict security group (ALB only).', effort: 'Low · non-prod only', done: (c) => c.noNatNonProd, relevant: (c) => c.staging || c.dev, apply: (c) => ({ ...c, noNatNonProd: true }), on: true },
+  { id: 'alb', title: 'One load balancer for staging and dev', how: 'Host-based rules (uat.… / dev.…) on a single ALB.', effort: 'Low', done: (c) => c.sharedAlb, relevant: (c) => c.staging && c.dev, apply: (c) => ({ ...c, sharedAlb: true }), on: true },
+  { id: 'devdb', title: 'Dev shares the staging database server', how: 'One RDS instance with separate databases for dev and staging.', effort: 'Low', done: (c) => c.shareDevDb, relevant: (c) => c.dev && c.staging, apply: (c) => ({ ...c, shareDevDb: true }), on: true },
+  { id: 'cf', title: 'Serve the API through CloudFront', how: 'Add the ALB as a second CloudFront origin for /api/*: transfer from AWS to CloudFront is free and CloudFront includes 1 TB/month.', effort: 'Low · add caching headers carefully', done: (c) => c.apiViaCf, apply: (c) => ({ ...c, apiViaCf: true }), on: true },
+  { id: 'logs', title: 'INFO logs in production, 14-day retention', how: 'The services log DEBUG with request/response bodies today: switch production to INFO, keep 14 days and export older logs to S3.', effort: 'Low', done: (c) => c.logLevel === 'info' && c.retention <= 14, apply: (c) => ({ ...c, logLevel: 'info', retention: Math.min(c.retention, 14) }), on: true },
+  { id: 'ha', title: 'Single task per service below 500 users', how: 'For a single small school, one task per service (ECS restarts a failed task in ~1 minute) instead of two; keep two for auth.', effort: 'Low · brief outage on failure', done: (c) => !c.ha, relevant: (c) => c.users < 500, apply: (c) => ({ ...c, ha: false }), on: false },
+];
+const leverOn = {};
+LEVERS.forEach((l) => { leverOn[l.id] = l.on; });
+const applicable = (l, c) => (l.relevant ? l.relevant(c) : true) && !l.done(c);
+/** Ticked levers that apply and actually lower the cost (some only pay off at larger sizes), applied in order. */
+function optimised(cfg) {
+  let c = { ...cfg };
+  for (const l of LEVERS) {
+    if (!leverOn[l.id] || !applicable(l, c)) continue;
+    if (l.id === '1y' && leverOn['3y']) continue;
+    const next = l.apply(c);
+    if (cost(next).total < cost(c).total - 0.01) c = next;
+  }
+  return c;
+}
+
+// ---------------- rendering ----------------
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+// Slider stops: 10, 20 … 100 (steps of 10), then 200, 300 … 10,000 (steps of 100)
+const USER_STOPS = [...Array.from({ length: 10 }, (_, i) => (i + 1) * 10), ...Array.from({ length: 99 }, (_, i) => (i + 2) * 100)];
+const usersFromSlider = (v) => USER_STOPS[Math.max(0, Math.min(USER_STOPS.length - 1, Math.round(v)))];
+const sliderFromUsers = (u) => USER_STOPS.reduce((best, s, i) => Math.abs(s - u) < Math.abs(USER_STOPS[best] - u) ? i : best, 0);
+// Chart samples: every stop up to 1,000, then every 500
+const CHART_USERS = USER_STOPS.filter((u) => u <= 1000 || u % 500 === 0);
+
+function readCfg() {
+  return {
+    users: usersFromSlider(Number($('users').value)), services: Number($('services').value), compute: $('compute').value, commit: $('commit').value,
+    staging: $('staging').checked, dev: $('dev').checked, multiAz: $('multiAz').checked, ha: $('ha').checked, logLevel: $('logLevel').value,
+    support: $('support').value, conc: Number($('conc').value) || 15, rpu: Number($('rpu').value) || 0.4, avgLoad: Number($('avgLoad').value) || 20,
+    fx: Number($('fx').value) || 88, apiMb: Number($('apiMb').value) || 0, docMb: Number($('docMb').value) || 0, retention: Number($('retention').value) || 30,
+    schedule: false, spotNonProd: false, spotWorkers: false, noNatNonProd: false, sharedAlb: false, shareDevDb: false, apiViaCf: false,
+  };
+}
+const withTax = (usd) => usd * ($('gst').checked ? 1.18 : 1);
+function money(usd, { tax = true, dp } = {}) {
+  const v = tax ? withTax(usd) : usd;
+  const inr = $('currency').value === 'INR';
+  const x = inr ? v * (Number($('fx').value) || 88) : v;
+  const d = dp ?? (x < 10 ? 2 : 0);
+  return inr ? `₹${x.toLocaleString('en-IN', { maximumFractionDigits: d, minimumFractionDigits: d })}` : `$${x.toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d })}`;
+}
+
+function render() {
+  const cfg = readCfg();
+  $('usersLabel').textContent = cfg.users.toLocaleString('en-IN');
+  const now = cost(cfg), optCfg = optimised(cfg), opt = cost(optCfg);
+  $('usersHint').textContent = `peak ≈ ${Math.round(cfg.users * cfg.conc / 100).toLocaleString('en-IN')} at once · ${now.peakRps.toFixed(0)} API req/s`;
+  const taxNote = $('gst').checked ? 'incl. 18% GST' : 'excl. GST';
+  $('tMonth').textContent = money(now.total); $('tMonthS').textContent = `${taxNote} · ${money(now.total, { tax: false })} before tax`;
+  $('tYear').textContent = money(now.total * 12); $('tYearS').textContent = `${taxNote} · on ${cfg.commit === 'od' ? 'on-demand' : cfg.commit + ' commitment'} pricing`;
+  $('tUser').textContent = money(now.total / cfg.users, { dp: 2 }); $('tUserS').textContent = `${money(now.total * 12 / cfg.users, { dp: 0 })} per user per year`;
+  $('tOpt').textContent = money(opt.total);
+  $('tOptS').textContent = `${money(opt.total * 12)} a year · saves ${Math.round((1 - opt.total / now.total) * 100)}% (${money((now.total - opt.total) * 12)} a year)`;
+
+  // log warning
+  const debugCost = cost({ ...cfg, logLevel: 'debug' }).total - cost({ ...cfg, logLevel: 'info' }).total;
+  $('logWarn').innerHTML = cfg.logLevel === 'debug'
+    ? `<div class="warn"><b>DEBUG logging in production costs about ${money(debugCost)} a month extra</b> at this size: the services log every request and response body and repository result (RequestAndRepositoryLoggingAspect). Ship production with INFO.</div>`
+    : `<div class="warn">Note: the services log at DEBUG with request/response bodies today. Deployed unchanged, CloudWatch would add about <b>${money(debugCost)} a month</b>; set the production profile to INFO.</div>`;
+
+  // bars by category and env
+  const byCat = {}, byEnv = {};
+  now.lines.forEach((l) => { byCat[l.cat] = (byCat[l.cat] || 0) + l.usd; byEnv[l.env] = (byEnv[l.env] || 0) + l.usd; });
+  const barList = (obj, el, label = (k) => k) => {
+    const rows = Object.entries(obj).filter(([, v]) => v > 0.005).sort((a, b) => b[1] - a[1]);
+    const max = rows[0]?.[1] || 1;
+    $(el).innerHTML = rows.map(([k, v]) => `<div class="barrow" title="${esc(label(k))}: ${money(v)} a month (${Math.round(v / now.total * 100)}%)"><span>${esc(label(k))}</span>
+      <span class="track"><span class="fill" style="width:${(v / max * 100).toFixed(1)}%"></span></span><span class="num">${money(v)} <span class="muted small">${Math.round(v / now.total * 100)}%</span></span></div>`).join('');
+  };
+  barList(byCat, 'bars'); barList(byEnv, 'envBars', (k) => ENV_LABEL[k]);
+  $('barsSub').textContent = `Per month, ${taxNote}. Production database: ${DB_TIERS.find(([m]) => cfg.users <= m)[1]}${cfg.multiAz ? ' Multi-AZ' : ''}.`;
+
+  // levers
+  $('levers').innerHTML = LEVERS.map((l) => {
+    const relevant = l.relevant ? l.relevant(cfg) : true, done = l.done(cfg);
+    const save = relevant && !done ? now.total - cost(l.apply(cfg)).total : 0;
+    const ok = relevant && !done && save > 0.01;
+    const badge = done ? '<span class="pill ok">already in your settings</span>' : !relevant ? '<span class="pill info">does not apply to these settings</span>'
+      : !ok ? '<span class="pill warn">not worth it at this size</span>' : '';
+    const why = l.id === 'nat' && !ok && relevant && !done ? ' A public IPv4 address per task costs more than the NAT gateway with this many services.'
+      : l.id === 'cf' && !ok && relevant && !done ? ' CloudFront request charges exceed the transfer saved while API traffic fits in the free 100 GB.' : '';
+    return `<tr class="lever"><td><input type="checkbox" data-lever="${l.id}" ${leverOn[l.id] ? 'checked' : ''} ${ok ? '' : 'disabled'} aria-label="${esc(l.title)}" /></td>
+      <td><b style="font-weight:600">${esc(l.title)}</b> ${badge}</td><td class="muted small">${esc(l.how + why)}</td><td class="small">${esc(l.effort)}</td>
+      <td class="num">${ok ? money(save) : '—'}</td><td class="num">${ok ? money(save * 12) : '—'}</td></tr>`;
+  }).join('');
+  document.querySelectorAll('[data-lever]').forEach((el) => { el.onchange = () => { leverOn[el.dataset.lever] = el.checked; if (el.dataset.lever === '3y' && el.checked) leverOn['1y'] = false; if (el.dataset.lever === '1y' && el.checked) leverOn['3y'] = false; render(); }; });
+
+  // breakdown table
+  const order = ['prod', 'staging', 'dev', 'shared'];
+  let html = '';
+  for (const env of order) {
+    const ls = now.lines.filter((l) => l.env === env);
+    if (!ls.length) continue;
+    const sub = ls.reduce((n, l) => n + l.usd, 0);
+    html += `<tr class="group"><td colspan="3">${ENV_LABEL[env]}</td><td class="num">${money(sub, { tax: false })}</td><td class="num">${money(sub * 12, { tax: false })}</td><td></td></tr>`;
+    html += ls.map((l) => `<tr><td>${esc(l.item)}<div class="muted small">${esc(l.cat)}</div></td><td class="small">${esc(l.sizing)}</td><td class="num small">${l.unit ? `$${Number(l.unit.toPrecision(4))}` : '—'}</td>
+      <td class="num">${money(l.usd, { tax: false })}</td><td class="num">${money(l.usd * 12, { tax: false })}</td><td><span class="src ${l.src === 'snap' ? 'snap' : ''}">${l.src === 'snap' ? 'snapshot' : 'live'}</span></td></tr>`).join('');
+  }
+  html += `<tr class="total"><td colspan="3">Total before tax</td><td class="num">${money(now.total, { tax: false })}</td><td class="num">${money(now.total * 12, { tax: false })}</td><td></td></tr>`;
+  if ($('gst').checked) html += `<tr><td colspan="3">GST 18%</td><td class="num">${money(now.total * 0.18, { tax: false })}</td><td class="num">${money(now.total * 12 * 0.18, { tax: false })}</td><td></td></tr>
+    <tr class="total"><td colspan="3">Total incl. GST</td><td class="num">${money(now.total)}</td><td class="num">${money(now.total * 12)}</td><td></td></tr>`;
+  $('lines').innerHTML = html;
+
+  // sizing
+  const r = fargateRate(cfg, 'prod', false);
+  $('sizingSub').textContent = `Peak ${now.peakRps.toFixed(0)} API requests/s (${cfg.users.toLocaleString('en-IN')} users × ${cfg.conc}% at once × ${cfg.rpu} req/s), average ${now.avgRps.toFixed(1)} req/s. A 0.5 vCPU / 1 GB Spring Boot task serves ~35 req/s, a 1 vCPU / 2 GB task ~80 req/s; API services keep ${cfg.ha ? 'at least 2 tasks (one per zone)' : 'at least 1 task'}. Measure with load tests and adjust.`;
+  $('sizing').innerHTML = now.plan.map((s) => `<tr><td>${esc(s.name)}${s.worker ? ' <span class="pill info">worker</span>' : ''}</td><td class="num">${s.worker ? '—' : Math.round(s.w * 100) + '%'}</td><td class="num">${s.worker ? '—' : s.rps.toFixed(1)}</td>
+    <td class="num">${s.tasks}</td><td>${s.cpu} vCPU / ${s.mem} GB</td><td class="num">${cfg.compute === 'ec2' ? '—' : money(s.tasks * (s.cpu * r.cpu + s.mem * r.gb) * HOURS, { tax: false })}</td></tr>`).join('');
+
+  renderVendor(cfg, now, optCfg, opt);
+  renderNotes(cfg);
+  drawChart(cfg);
+  save(cfg);
+}
+
+/** AWS vs CloudPe for the same workload. Optimised CloudPe = the same ticked optimisations where CloudPe has them (annual billing, office hours, shared LB / DB). */
+function renderVendor(cfg, now, optCfg, opt) {
+  const cp = cloudpeCost(cfg), cpOpt = cloudpeCost(optCfg);
+  const diff = (a, b) => `${b <= a ? '−' : '+'}${money(Math.abs(b - a), { tax: false })}`;
+  const pct = (a, b) => `${Math.round(Math.abs(1 - b / a) * 100)}% ${b <= a ? 'less' : 'more'} than AWS`;
+  const taxNote = $('gst').checked ? 'incl. 18% GST' : 'excl. GST';
+  $('vendorSub').textContent = `Same ${cfg.services} services, ${cfg.users.toLocaleString('en-IN')} users and environments on both, ${taxNote}. CloudPe has no managed PostgreSQL, WAF, CDN or log service, so its estimate runs PostgreSQL on VMs (with a standby in the second zone when Multi-AZ is on) and a self-hosted Grafana/Loki/Prometheus VM. Running those takes engineering time that is not in the numbers.`;
+  const tile = (l, v, s, cls = '') => `<div class="tile ${cls}"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
+  const cheaper = cp.total <= now.total;
+  $('vendorTiles').innerHTML = tile('AWS per month', money(now.total), `${money(now.total * 12)} a year`)
+    + tile('CloudPe per month', money(cp.total), `${money(cp.total * 12)} a year · ${pct(now.total, cp.total)}`, cheaper ? 'good' : '')
+    + tile(cheaper ? 'CloudPe saves a year' : 'CloudPe costs more a year', money(Math.abs(now.total - cp.total) * 12), `${money(Math.abs(now.total - cp.total))} a month`)
+    + tile('Both optimised, per month', `${money(cpOpt.total)}`, `CloudPe; AWS optimised ${money(opt.total)} · ${pct(opt.total, cpOpt.total)}`);
+  const cats = [...new Set([...now.lines.map((l) => l.cat), ...cp.lines.map((l) => l.cat)])];
+  const sum = (lines, cat) => lines.filter((l) => l.cat === cat).reduce((s, l) => s + l.usd, 0);
+  const rows = cats.map((c) => [c, sum(now.lines, c), sum(cp.lines, c)]).filter(([, a, b]) => a > 0.005 || b > 0.005).sort((a, b) => b[1] - a[1]);
+  const m0 = (v) => money(v, { tax: false, dp: 0 });
+  $('vendorCats').innerHTML = rows.map(([c, a, b]) => `<tr><td>${esc(c)}</td><td class="num">${m0(a)}</td><td class="num">${m0(b)}${b < 0.005 ? ` <span class="muted small">${c === 'Data transfer & CDN' ? 'no egress fee' : 'not offered'}</span>` : ''}</td><td class="num">${diff(a, b)}</td></tr>`).join('')
+    + `<tr class="total"><td>Total before tax</td><td class="num">${money(now.total, { tax: false })}</td><td class="num">${money(cp.total, { tax: false })}</td><td class="num">${diff(now.total, cp.total)}</td></tr>`
+    + `<tr><td>Per year, ${taxNote}</td><td class="num">${money(now.total * 12)}</td><td class="num">${money(cp.total * 12)}</td><td class="num">${diff(withTax(now.total) * 12, withTax(cp.total) * 12)}</td></tr>`
+    + `<tr><td>Optimised per year, ${taxNote}</td><td class="num">${money(opt.total * 12)}</td><td class="num">${money(cpOpt.total * 12)}</td><td class="num">${diff(withTax(opt.total) * 12, withTax(cpOpt.total) * 12)}</td></tr>`;
+  const F = [
+    ['PostgreSQL', 'RDS: managed patching, automatic Multi-AZ failover (about 1–2 minutes), point-in-time restore, reserved pricing', 'No managed database: you run PostgreSQL on VMs (Patroni, pgBackRest), patch it, and test failover and restores yourself'],
+    ['Containers', 'ECS Fargate: no servers to manage; Spot and Savings Plans', 'Managed Kubernetes with a free control plane; you size and patch the worker nodes'],
+    ['Pricing', 'USD, billed by the second or hour; 1- and 3-year commitments; the rupee bill moves with the exchange rate', 'INR, hourly or monthly; 12% off with annual billing; no exchange-rate risk'],
+    ['Data transfer', '100 GB a month free, then about $0.11 per GB; CloudFront includes 1 TB', 'No egress charges (object storage: free up to 1 TB a month)'],
+    ['Edge and security', 'WAF, Shield, CloudFront CDN, Route 53, Secrets Manager, KMS', 'Not offered: put Cloudflare (free plan) in front for WAF, CDN and DNS; keep secrets in Kubernetes'],
+    ['Logs and monitoring', 'CloudWatch Logs, metrics and alarms (pay per GB)', 'Self-hosted Grafana, Loki and Prometheus on a VM (flat cost; you maintain it)'],
+    ['Locations', 'Mumbai (3 zones), plus Hyderabad for disaster recovery', 'Navi Mumbai (2 zones); New Delhi and Chennai announced'],
+    ['Billing', 'AWS India (AISPL) GST invoices', 'Indian company; GST invoices in INR'],
+  ];
+  $('vendorFeatures').innerHTML = F.map(([a, b, c]) => `<tr><td><b style="font-weight:600">${esc(a)}</b></td><td class="small">${esc(b)}</td><td class="small">${esc(c)}</td></tr>`).join('');
+  // CloudPe breakdown, always in INR (its price list currency)
+  const inr = (v) => `₹${Math.round(v).toLocaleString('en-IN')}`;
+  let html = '';
+  for (const env of ['prod', 'staging', 'dev', 'shared']) {
+    const ls = cp.lines.filter((l) => l.env === env);
+    if (!ls.length) continue;
+    const sub = ls.reduce((n, l) => n + l.inr, 0);
+    html += `<tr class="group"><td colspan="3">${ENV_LABEL[env]}</td><td class="num">${inr(sub)}</td><td class="num">${inr(sub * 12)}</td></tr>`;
+    html += ls.map((l) => `<tr><td>${esc(l.item)}<div class="muted small">${esc(l.cat)}</div></td><td class="small">${esc(l.sizing)}</td><td class="num small">${l.unitInr ? `₹${l.unitInr.toLocaleString('en-IN')}` : '—'}</td>
+      <td class="num">${inr(l.inr)}</td><td class="num">${inr(l.inr * 12)}</td></tr>`).join('');
+  }
+  html += `<tr class="total"><td colspan="3">Total before tax</td><td class="num">${inr(cp.totalInr)}</td><td class="num">${inr(cp.totalInr * 12)}</td></tr>`;
+  if ($('gst').checked) html += `<tr class="total"><td colspan="3">Total incl. 18% GST</td><td class="num">${inr(cp.totalInr * 1.18)}</td><td class="num">${inr(cp.totalInr * 12 * 1.18)}</td></tr>`;
+  $('cpLines').innerHTML = html;
+}
+
+function drawChart(cfg) {
+  const W = 640, H = 300, m = { l: 64, r: 16, t: 14, b: 34 };
+  const pts = CHART_USERS.map((u) => { const c = { ...cfg, users: u }; return { u, a: withTax(cost(c).total), b: withTax(cost(optimised(c)).total), c: withTax(cloudpeCost(c).total) }; });
+  const fx = Number($('fx').value) || 88, inr = $('currency').value === 'INR', k = inr ? fx : 1;
+  const maxY = Math.max(...pts.map((p) => Math.max(p.a, p.c))) * k * 1.08;
+  const X = (u) => m.l + Math.log(u / 10) / Math.log(1000) * (W - m.l - m.r), Y = (v) => H - m.b - v * k / maxY * (H - m.t - m.b);
+  const ticks = 5, step = niceStep(maxY / ticks);
+  let g = '';
+  for (let y = 0; y <= maxY; y += step) g += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(y / k)}" y2="${Y(y / k)}" stroke="var(--grid)"/><text x="${m.l - 8}" y="${Y(y / k) + 4}" text-anchor="end" font-size="11" fill="var(--mu)">${short(y, inr)}</text>`;
+  for (const u of [10, 30, 100, 300, 1000, 3000, 10000]) g += `<text x="${X(u)}" y="${H - m.b + 18}" text-anchor="middle" font-size="11" fill="var(--mu)">${u.toLocaleString('en-IN')}</text>`;
+  g += `<text x="${(m.l + W - m.r) / 2}" y="${H - 2}" text-anchor="middle" font-size="11" fill="var(--mu)">Users (log scale)</text>`;
+  const path = (key) => pts.map((p, i) => `${i ? 'L' : 'M'}${X(p.u).toFixed(1)},${Y(p[key]).toFixed(1)}`).join('');
+  const cur = { ...cfg }, ca = withTax(cost(cur).total), cb = withTax(cost(optimised(cur)).total), cc = withTax(cloudpeCost(cur).total);
+  const last = pts[pts.length - 1];
+  const dot = (y, color) => `<circle cx="${X(cfg.users)}" cy="${Y(y)}" r="5" fill="var(${color})" stroke="var(--card)" stroke-width="2"/>`;
+  const svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Monthly cost against users: AWS with your settings, AWS optimised and CloudPe">${g}
+    <path d="${path('a')}" fill="none" stroke="var(--series-1)" stroke-width="2"/><path d="${path('b')}" fill="none" stroke="var(--series-2)" stroke-width="2"/><path d="${path('c')}" fill="none" stroke="var(--series-3)" stroke-width="2"/>
+    <text x="${X(last.u) - 4}" y="${Y(last.a) - 8}" text-anchor="end" font-size="11" fill="var(--tx)">AWS</text>
+    <text x="${X(last.u) - 4}" y="${Y(last.b) - 8}" text-anchor="end" font-size="11" fill="var(--tx)">AWS optimised</text>
+    <text x="${X(last.u) - 4}" y="${Y(last.c) + 16}" text-anchor="end" font-size="11" fill="var(--tx)">CloudPe</text>
+    ${dot(ca, '--series-1')}${dot(cb, '--series-2')}${dot(cc, '--series-3')}
+    <line id="xh" x1="0" x2="0" y1="${m.t}" y2="${H - m.b}" stroke="var(--mu)" stroke-dasharray="3 3" visibility="hidden"/>
+    <rect x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent" id="hit"/></svg>`;
+  const box = $('chart'); box.querySelector('svg')?.remove(); box.insertAdjacentHTML('afterbegin', svg);
+  const s = box.querySelector('svg'), tip = $('tip'), xh = s.querySelector('#xh');
+  s.querySelector('#hit').onmousemove = (e) => {
+    const rect = s.getBoundingClientRect(), px = (e.clientX - rect.left) / rect.width * W;
+    const p = pts.reduce((best, q) => Math.abs(X(q.u) - px) < Math.abs(X(best.u) - px) ? q : best, pts[0]);
+    xh.setAttribute('x1', X(p.u)); xh.setAttribute('x2', X(p.u)); xh.setAttribute('visibility', 'visible');
+    tip.style.display = 'block';
+    tip.innerHTML = `<b>${p.u.toLocaleString('en-IN')} users</b><br><span style="color:var(--series-1)">■</span> AWS ${money(p.a, { tax: false })}/mo<br><span style="color:var(--series-2)">■</span> AWS optimised ${money(p.b, { tax: false })}/mo<br><span style="color:var(--series-3)">■</span> CloudPe ${money(p.c, { tax: false })}/mo`;
+    const left = X(p.u) / W * rect.width; tip.style.left = `${Math.min(left + 12, rect.width - tip.offsetWidth)}px`; tip.style.top = '8px';
+  };
+  s.querySelector('#hit').onmouseleave = () => { tip.style.display = 'none'; xh.setAttribute('visibility', 'hidden'); };
+}
+function niceStep(raw) { const p = Math.pow(10, Math.floor(Math.log10(raw))); const f = raw / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p; }
+function short(v, inr) { const sym = inr ? '₹' : '$'; if (inr && v >= 1e5) return `${sym}${(v / 1e5).toFixed(v >= 1e6 ? 0 : 1)}L`; if (v >= 1e3) return `${sym}${(v / 1e3).toFixed(v >= 1e4 ? 0 : 1)}k`; return `${sym}${Math.round(v)}`; }
+
+function renderNotes(cfg) {
+  $('notes').innerHTML = [
+    'Region: Asia Pacific (Mumbai) ap-south-1. Prices: AWS public Price List (pricing.us-east-1.amazonaws.com), fetched by this page; no AWS account or credentials are needed and nothing is sent to AWS.',
+    'NAT gateway, EC2, EBS and Fargate Savings Plan rates come from the 20 Oct 2026 snapshot of the EC2 (315 MB) and Compute Savings Plans (286 MB) price lists, which are too large to load in a browser. Fargate Spot is taken as 65% off on-demand (AWS quotes "up to 70%"; spot prices move).',
+    'Architecture: one VPC across 2 Availability Zones; ECS Fargate services behind one Application Load Balancer (path routing replaces an API gateway service); RDS PostgreSQL 16 (all services share one instance with a schema per service); web app on S3 + CloudFront; documents on S3.',
+    `Database size by users: up to 100 → db.t4g.small, 300 → db.t4g.medium, 1,500 → db.m7g.large, 5,000 → db.m7g.xlarge, above → db.r7g.xlarge. Storage 20 MB per user (today: 21 MB for 55 students with all modules' tables), min 20 GB.`,
+    'Users: steps of 10 up to 100, then steps of 100 up to 10,000. Microservices: 2 to 16 in steps of 2, taken in the order of the production sizing table (the 10 BRD modules first, then the platform services).',
+    'CloudPe: prices from cloudpe.com/pricing on 20 Oct 2026 (INR, taken as before GST; CloudPe issues GST invoices). CloudPe publishes no price API and its site does not allow browser requests from other sites, so these are a snapshot, not live. Linux plans include a 30 GB NVMe disk. Kubernetes nodes use the CPU-intensive plans (2 GB per vCPU, like the service tasks); PostgreSQL runs on general-purpose or memory plans sized like the RDS tier. Annual billing (12% off) stands in for the AWS 1- and 3-year commitments. Engineering time to run PostgreSQL, Kubernetes nodes and monitoring yourself is not included.',
+    '3-year prices are all-upfront, shown amortised per month; the upfront payment is due on purchase. 1-year prices are no-upfront.',
+    'GST: AWS India (AISPL) bills 18% GST; GST-registered schools can claim it as input credit.',
+    'Not included: SMS / e-mail / WhatsApp / payment-gateway charges (third parties), domain registration, Amazon SES beyond the free tier, ElastiCache/Redis (not used by the services today), CI/CD (GitHub Actions or CodeBuild minutes), AWS Backup cross-region copies, staff time.',
+    'After deployment, real spend comes from AWS Cost Explorer (needs credentials, so not from this page); compare it with this estimate after the first month and adjust the load assumptions.',
+  ].map((t) => `<li>${esc(t)}</li>`).join('');
+}
+
+// ---------------- CSV, persistence, wiring ----------------
+function exportCsv() {
+  const cfg = readCfg(), c = cost(cfg), cp = cloudpeCost(cfg);
+  const rows = [['Vendor', 'Environment', 'Category', 'Item', 'Sizing', 'Unit price', 'Monthly USD', 'Yearly USD', 'Price source'],
+    ...c.lines.map((l) => ['AWS', ENV_LABEL[l.env], l.cat, l.item, l.sizing, l.unit, l.usd.toFixed(2), (l.usd * 12).toFixed(2), l.src === 'snap' ? 'snapshot' : 'live']),
+    ['AWS', '', '', 'Total before tax', '', '', c.total.toFixed(2), (c.total * 12).toFixed(2), ''],
+    ...cp.lines.map((l) => ['CloudPe', ENV_LABEL[l.env], l.cat, l.item, l.sizing, `INR ${l.unitInr}`, l.usd.toFixed(2), (l.usd * 12).toFixed(2), 'snapshot']),
+    ['CloudPe', '', '', 'Total before tax', '', '', cp.total.toFixed(2), (cp.total * 12).toFixed(2), '']];
+  const csv = rows.map((r) => r.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' }));
+  a.download = `infra-cost-aws-vs-cloudpe-${cfg.users}-users-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+const SETTINGS_KEY = 'erp.infraCost.settings.v2';   // v2: slider positions are user stops (10 … 10,000), services 2 … 16
+const INPUTS = ['users', 'services', 'compute', 'commit', 'staging', 'dev', 'multiAz', 'ha', 'logLevel', 'support', 'currency', 'fx', 'gst', 'conc', 'rpu', 'avgLoad', 'apiMb', 'docMb', 'retention'];
+function save() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(Object.fromEntries(INPUTS.map((id) => [id, $(id).type === 'checkbox' ? $(id).checked : $(id).value])))); } catch { /* private mode */ } }
+function restore() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null');
+    if (s) INPUTS.forEach((id) => { if (s[id] !== undefined) { if ($(id).type === 'checkbox') $(id).checked = s[id]; else $(id).value = s[id]; } });
+  } catch { /* private mode */ }
+}
+$('services').innerHTML = SERVICE_COUNTS.map((n) => `<option value="${n}" ${n === 14 ? 'selected' : ''}>${n} services</option>`).join('');
+$('users').value = sliderFromUsers(1000);
+restore();
+if (!SERVICE_COUNTS.includes(Number($('services').value))) $('services').value = 14;
+INPUTS.forEach((id) => { $(id).addEventListener('input', render); $(id).addEventListener('change', render); });
+$('refreshBtn').onclick = () => loadPrices(true);
+$('csvBtn').onclick = exportCsv;
+render();
+loadPrices(false);
+window.__infraCost = { cost, cloudpeCost, optimised, readCfg, prices: () => P, live: () => [...LIVE] };
+</script>
+</body>
+</html>

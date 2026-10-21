@@ -6,6 +6,7 @@ import * as studentApi from '../api/studentService.js';
 import { PageHeader, Metrics, Card, DataTable, Tabs, SectionHead, Pill, Person, KV, Footer, downloadCsv, todayIso } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
+import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
 
 const { ROLES, ATTENDANCE_STATUS, FOLLOW_UP_STATUS } = studentApi;
 const Loading = () => <p className="xs muted"><LoaderCircle size={12} className="spin" /> Loading…</p>;
@@ -19,8 +20,9 @@ const Picker = ({ label, value, onChange, options, empty }) => (
 const statusPill = (code) => { if (!code) return <Pill tone="amber">Unmarked</Pill>; const [t, c] = ATTENDANCE_STATUS[code] || [code, '']; return <Pill tone={c}>{t}</Pill>; };
 const followPill = (code) => { if (!code) return null; const [t, c] = FOLLOW_UP_STATUS[code] || [code, '']; return <Pill tone={c}>{t}</Pill>; };
 const label = (code) => (code ? (ATTENDANCE_STATUS[code] || [code])[0] : 'Unmarked');
-const dayLabel = (iso, opts = { day: 'numeric', month: 'short', year: 'numeric' }) => new Date(`${iso}T12:00:00`).toLocaleDateString('en-GB', opts);
-const timeLabel = (t) => (t ? new Date(t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '');
+// Dates in the school's format: opts with a year (or none) keep it; a weekday option adds the day name
+const dayLabel = (iso, opts) => formatDate(iso, { year: !opts || !!opts.year, weekday: opts?.weekday });
+const timeLabel = (t) => formatTime(t);
 const pctText = (v) => (v === null || v === undefined ? '—' : `${Number(v).toFixed(1)}%`);
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const addDays = (iso, n) => { const d = new Date(`${iso}T12:00:00`); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
@@ -38,9 +40,19 @@ export function useAttendanceAllowed() {
   return hasRole(...ROLES.attendanceView) && !!user?.tenantId;
 }
 
+/** Trend ranges: [key, label, first Monday (weeks back), weeks, label of the period compared against]. */
+export const ATTENDANCE_RANGES = [
+  ['week', 'This week', 0, 1, 'last week'],
+  ['last', 'Last week', 1, 1, 'the week before'],
+  ['month', 'Last 4 weeks', 3, 4, 'the 4 weeks before'],
+];
+const periodLabel = (list) => (!list.length ? null : list.length === 1 ? dayLabel(list[0].date, { day: 'numeric', month: 'long', year: 'numeric' })
+  : `${dayLabel(list[0].date, { day: 'numeric', month: 'short' })}–${dayLabel(list[list.length - 1].date, { day: 'numeric', month: 'long', year: 'numeric' })}`);
+
 /**
- * Today's school figure and this week's trend (Overview, Reports): GET /attendance/summary and /attendance/trend.
- * `live` is false for roles without attendance access, which keep the sample figures.
+ * Today's school figure and the attendance trend (Overview, Reports): GET /attendance/summary and one GET /attendance/trend
+ * covering the last 8 weeks, from which every range in ATTENDANCE_RANGES is cut. The top-level fields are this week's;
+ * `range(key)` gives another range with its comparison. `live` is false for roles without attendance access (sample shown).
  */
 export function useAttendanceWeek() {
   const { branchId } = useAuth();
@@ -48,17 +60,24 @@ export function useAttendanceWeek() {
   const today = todayIso();
   const monday = mondayOf(today);
   const summary = useApi(() => studentApi.attendanceSummary(today, branchId || undefined), [today, branchId], allowed);
-  const trend = useApi(() => studentApi.attendanceTrend(addDays(monday, -7), today, branchId || undefined), [monday, today, branchId], allowed);
+  const trend = useApi(() => studentApi.attendanceTrend(addDays(monday, -49), today, branchId || undefined), [monday, today, branchId], allowed);
   const days = trend.data || [];
-  const week = days.filter((d) => d.date >= monday);
-  const lastWeek = days.filter((d) => d.date < monday);
-  const weekAvg = avg(week), lastAvg = avg(lastWeek);
+  const range = (key) => {
+    const [, label, back, weeks, versus] = ATTENDANCE_RANGES.find((r) => r[0] === key) || ATTENDANCE_RANGES[0];
+    const start = addDays(monday, -7 * back), end = addDays(start, 7 * weeks);
+    const prevStart = addDays(start, -7 * weeks);
+    const list = days.filter((d) => d.date >= start && d.date < end);
+    const prev = days.filter((d) => d.date >= prevStart && d.date < start);
+    const a = avg(list), p = avg(prev);
+    return {
+      key, label, versus, days: list, avg: a, change: a !== null && p !== null ? a - p : null, period: periodLabel(list),
+      points: list.map((d) => ({ label: dayLabel(d.date, weeks > 1 ? { day: 'numeric', month: 'short' } : { weekday: 'short', day: 'numeric' }), value: Number(d.presentRate || 0) })),
+    };
+  };
+  const week = range('week');
   return {
     allowed, live: allowed && !!summary.data && !!trend.data, loading: summary.loading || trend.loading, error: summary.error || trend.error,
-    today: summary.data, week, weekAvg, change: weekAvg !== null && lastAvg !== null ? weekAvg - lastAvg : null,
-    points: week.map((d) => ({ label: dayLabel(d.date, { weekday: 'short', day: 'numeric' }), value: Number(d.presentRate || 0) })),
-    period: !week.length ? null : week.length === 1 ? dayLabel(week[0].date, { day: 'numeric', month: 'long', year: 'numeric' })
-      : `${dayLabel(week[0].date, { day: 'numeric', month: 'short' })}–${dayLabel(week[week.length - 1].date, { day: 'numeric', month: 'long', year: 'numeric' })}`,
+    today: summary.data, week: week.days, weekAvg: week.avg, change: week.change, points: week.points, period: week.period, range,
   };
 }
 
@@ -108,8 +127,8 @@ export function AttendanceLive() {
       />
       {summary.error ? <ApiErr error={summary.error} /> : (
         <Metrics items={s ? [
-          [isToday ? 'Present today' : `Present on ${dayLabel(date, { day: 'numeric', month: 'short' })}`, s.present.toLocaleString('en-IN'), s.unmarked === s.totalStudents ? `No registers in yet · ${s.totalStudents.toLocaleString('en-IN')} on roll`
-            : `${pctText(s.presentRate)} of ${(s.totalStudents - s.unmarked).toLocaleString('en-IN')} marked${s.unmarked ? ` · ${s.unmarked.toLocaleString('en-IN')} not yet marked` : ''}`],
+          [isToday ? 'Present today' : `Present on ${dayLabel(date, { day: 'numeric', month: 'short' })}`, formatNumber(s.present), s.unmarked === s.totalStudents ? `No registers in yet · ${formatNumber(s.totalStudents)} on roll`
+            : `${pctText(s.presentRate)} of ${formatNumber(s.totalStudents - s.unmarked)} marked${s.unmarked ? ` · ${formatNumber(s.unmarked)} not yet marked` : ''}`],
           ['Excused absences', s.excused, s.excused ? 'Reasons recorded' : 'None recorded'],
           ['Unexcused absences', s.unexcused, s.openFollowUps ? `${s.openFollowUps} awaiting guardian follow-up` : 'No follow-up pending'],
           ['Class registers', `${s.amRegistersSubmitted} / ${s.registersExpected}`, `Morning registers submitted · ${s.pmRegistersSubmitted} afternoon`],

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { LoaderCircle, FileText, Pencil } from 'lucide-react';
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
@@ -6,10 +6,11 @@ import * as exam from '../api/examService.js';
 import { Card, SectionHead, DataTable, Pill, KV } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
+import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
 
 const { ROLES, RESULT, TREND, AREAS, pct } = exam;
 const Loading = () => <p className="xs muted"><LoaderCircle size={12} className="spin" /> Loading…</p>;
-const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
+const fmtDate = (d) => formatDate(d);
 const pill = (map, code) => { const [t, c] = map[code] || [code, '']; return <Pill tone={c}>{t}</Pill>; };
 const signed = (n) => (n === null || n === undefined ? '' : `${n > 0 ? '+' : ''}${Number(n).toFixed(1)} pts`);
 /** Bar colours for up to three terms, oldest first. */
@@ -80,37 +81,74 @@ export function AcademicProgressCard({ student, trend, detailed }) {
                   { label: 'Rank', render: (t) => t.sectionRank ?? '—' },
                   { label: 'Change', render: (t) => signed(t.changeFromPrevious) || '—' },
                   { label: 'Result', render: (t) => <>{pill(RESULT, t.result)}{!t.published && <small className="xs muted"> not published</small>}</> },
-                  { label: 'Action', render: (t) => <span className="act"><button type="button" className="link" onClick={() => setOpen(t.examTermId)}><FileText size={13} />Progress card</button></span> },
+                  { label: 'Action', render: (t) => <span className="act"><button type="button" className="link" onPointerEnter={() => prefetchCard(student.studentId, t.examTermId)} onFocus={() => prefetchCard(student.studentId, t.examTermId)} onClick={() => setOpen(t.examTermId)}><FileText size={13} />Progress card</button></span> },
                 ]} rows={d.terms} />
               )}
-              {!detailed && <div className="pills"><button className="btn" onClick={() => setOpen(latest.examTermId)}><FileText size={14} />View progress card</button></div>}
+              {!detailed && <div className="pills"><button className="btn" onPointerEnter={() => prefetchCard(student.studentId, latest.examTermId)} onFocus={() => prefetchCard(student.studentId, latest.examTermId)} onClick={() => setOpen(latest.examTermId)}><FileText size={14} />View progress card</button></div>}
             </>)}
       {open && <ProgressCardModal student={student} terms={d.terms} termId={open} onTerm={setOpen} onClose={() => setOpen(null)} onChanged={trend.reload} />}
     </Card>
   );
 }
 
+/**
+ * Progress cards fetched in the last 30 s, keyed by student and term. Hovering or focusing a "Progress card" button
+ * starts the request, so the modal usually opens with the card already loaded; the other terms are fetched once it is open.
+ */
+const cardCache = new Map();
+const cardKey = (studentId, termId) => `${studentId}|${termId}`;
+function loadCard(studentId, termId) {
+  const key = cardKey(studentId, termId), hit = cardCache.get(key);
+  if (hit && Date.now() - hit.at < 30_000) return hit.promise;
+  const entry = { promise: exam.progressCard(studentId, termId), at: Date.now() };
+  cardCache.set(key, entry);
+  entry.promise.then((data) => { entry.data = data; }, () => cardCache.delete(key));
+  return entry.promise;
+}
+/** The card if it has already arrived (shown on the first render, without a placeholder frame). */
+const cachedCard = (studentId, termId) => { const hit = cardCache.get(cardKey(studentId, termId)); return hit && Date.now() - hit.at < 30_000 ? hit.data : undefined; };
+const prefetchCard = (studentId, termId) => { loadCard(studentId, termId).catch(() => { /* shown when opened */ }); };
+
+/** Placeholder with the card's shape (subject rows, totals), so the modal opens at its final size. */
+function CardSkeleton({ rows }) {
+  const line = (w) => <span className="skel" style={{ width: w }} />;
+  return (
+    <div aria-busy="true" aria-label="Loading progress card">
+      <DataTable boxed cols={[{ label: 'Subject', render: () => line('60%') }, { label: 'Marks', className: 'num', render: () => line(56) }, { label: 'Grade', render: () => line(24) }, { label: '', render: () => null }]}
+        rows={Array.from({ length: rows }, (_, i) => ({ i }))} />
+      <KV rows={['Total', 'Grade', 'Result', 'Section rank', 'Published to parents'].map((k, i) => [k, line(i % 2 ? 90 : 130)])} />
+    </div>
+  );
+}
+
 /** Progress card: GET /api/v1/academic/students/{id}/progress-card (US-05009); remarks PUT …/remarks (US-05018). */
 function ProgressCardModal({ student, terms, termId, onTerm, onClose, onChanged }) {
   const { hasRole } = useAuth();
-  const card = useApi(() => exam.progressCard(student.studentId, termId), [student.studentId, termId]);
+  const card = useApi(() => loadCard(student.studentId, termId), [student.studentId, termId]);
+  // Once open, fetch the other terms too so switching term is instant
+  useEffect(() => { terms.forEach((t) => prefetchCard(student.studentId, t.examTermId)); }, [student.studentId, terms]);
+  const subjectRows = terms.find((t) => String(t.examTermId) === String(termId))?.subjects?.length || 4;
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const c = card.data;
+  // While the request settles, an already-fetched card for this term is shown at once; else the previous term's card (dimmed)
+  const ready = card.loading ? cachedCard(student.studentId, termId) : undefined;
+  const c = ready ?? card.data;
+  const pending = card.loading && !ready;
   const save = async () => {
     setBusy(true); setError(null);
-    try { await exam.saveRemarks(student.studentId, { examTermId: termId, remarks: text.trim() }); setEditing(false); card.reload(); onChanged?.(); } catch (e) { setError(e); } finally { setBusy(false); }
+    try { await exam.saveRemarks(student.studentId, { examTermId: termId, remarks: text.trim() }); setEditing(false); cardCache.delete(cardKey(student.studentId, termId)); card.reload(); onChanged?.(); } catch (e) { setError(e); } finally { setBusy(false); }
   };
   return (
     <Modal title="Holistic progress card" sub={`${student.firstName} ${student.lastName}${c ? ` · ${c.className} · ${c.academicYear}` : ''}`} onClose={onClose}
       footer={<button className="btn primary" onClick={onClose}>Done</button>}>
-      <div className="field box" style={{ marginBottom: 12 }}><label htmlFor="pc-term">TERM</label>
+      <div className="field box" style={{ marginBottom: 12 }}><label htmlFor="pc-term">TERM{c && pending && <LoaderCircle size={11} className="spin" style={{ marginLeft: 6, verticalAlign: -1 }} aria-label="Loading term" />}</label>
         <select id="pc-term" value={termId} onChange={(e) => { setEditing(false); onTerm(e.target.value); }}>
           {terms.map((t) => <option key={t.examTermId} value={t.examTermId}>{t.termName}</option>)}
         </select></div>
-      {card.loading ? <Loading /> : card.error ? <ApiErr error={card.error} /> : (<>
+      {/* Switching term keeps the previous card on screen (dimmed) until the new one arrives, so the modal does not collapse to a spinner and jump */}
+      {!c && pending ? <CardSkeleton rows={subjectRows} /> : card.error ? <ApiErr error={card.error} /> : (<div className="fade-in" aria-busy={pending} style={{ opacity: pending ? 0.5 : 1, transition: 'opacity 150ms ease', pointerEvents: pending ? 'none' : undefined }}>
         <DataTable boxed cols={[
           { label: 'Subject', render: (r) => r.subjectName },
           { label: 'Marks', className: 'num', render: (r) => (!r.entered ? '—' : r.absent ? 'AB' : `${Number(r.marksObtained)} / ${Number(r.maxMarks)}`) },
@@ -143,7 +181,7 @@ function ProgressCardModal({ student, terms, termId, onTerm, onClose, onChanged 
             <button className="btn" style={{ marginTop: 8 }} onClick={() => { setText(c.teacherRemarks || ''); setEditing(true); }}><Pencil size={14} />{c.teacherRemarks ? 'Edit remarks' : 'Add remarks'}</button>
           )}
         </>)}
-      </>)}
+      </div>)}
     </Modal>
   );
 }

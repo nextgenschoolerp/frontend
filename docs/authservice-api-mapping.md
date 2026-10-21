@@ -34,6 +34,14 @@ Code: [`src/api/client.js`](../src/api/client.js) (fetch wrapper, JWT, error env
 | Screen · action | Method & endpoint | Story | Roles | Status |
 |---|---|---|---|---|
 | Sidebar · **campus switcher** | `GET /api/v1/tenants/{tenantId}/branches` | US-00009 | SUPER_ADMIN | **Wired**. Lists the tenant's branches; selection kept per browser. Other roles see the static "Main campus" label |
+| Layout (every page after sign-in) · **regional preferences** | `GET /api/v1/tenants/{tenantId}/regional-settings` | – | any signed-in user of the tenant (SUPER_ADMIN: any tenant) | **Wired**. `{timeZone, currency, dateFormat, language, saved, updatedAt, updatedBy}`; defaults (Asia/Kolkata, INR, DD MMM YYYY, en-IN, `saved:false`) when the school never saved any. Loaded into `regional.js` on sign-in / reload; the copy in `localStorage` (`oakridge.regional.<tenantId>`) is a cache and the offline fallback. Another tenant → 403 |
+
+## Settings → General tab (`/settings`)
+
+| Screen · action | Method & endpoint | Story | Roles | Status |
+|---|---|---|---|---|
+| Regional preferences · **Save preferences** / page **Save changes** | `PUT /api/v1/tenants/{tenantId}/regional-settings` `{timeZone, currency, dateFormat, language}` | – | SUPER_ADMIN, TRUSTEE, SCHOOL_PRINCIPAL, PRINCIPAL, IT_SYSTEM_ADMIN | **Wired**. Values must be in the option lists of `regional.js` (23 IANA zones, 19 ISO 4217 currencies, 8 date patterns, 13 locales), else 400 `VALIDATION_FAILED` with one error per field; another tenant → 403 (SUPER_ADMIN may cross); audit entry `UPDATE_REGIONAL_SETTINGS`. Other roles see the values read-only (selects disabled, no Save) |
+| School profile · Save | — | — | — | **Gap**: the tenant profile has no update API |
 
 ## Settings → Users & permissions tab (`/settings?tab=users`)
 
@@ -53,7 +61,7 @@ Code: [`src/api/client.js`](../src/api/client.js) (fetch wrapper, JWT, error env
 | "Two-factor authentication enabled" pill | `GET /api/v1/mfa/config?tenantId=` | US-00003 | PRINCIPAL, SUPER_ADMIN | **Wired**. Shows methods (authenticator app / SMS) and whether sensitive actions need a second factor |
 | "Session timeout" | `GET /api/v1/security/session-config?tenantId=` | US-00004 | IT_SYSTEM_ADMIN, SUPER_ADMIN | **Wired**. Idle timeout, max duration, concurrent sessions |
 | **View audit log** | `GET /api/v1/audit/logs?userId=&ipAddress=&from=&to=` | US-00005 | SECURITY_AUDITOR, SUPER_ADMIN | **Wired**. Lists the 100 newest events; "Filter by user ID" → Apply sends `userId`. The 500 that every filter combination used to return is fixed in authservice: `AuditLogRepository` now builds the optional filters as JPA Specifications, because the old `(:param IS NULL OR …)` sent untyped nulls that PostgreSQL rejected |
-| Settings · **Save changes** / Discard (school profile, academic year, regional) | — | — | — | **Gap**: school profile and term settings are not authservice data (tenant profile has no update API) |
+| Settings · **Save changes** / Discard (school profile, academic year) | — | — | — | **Gap**: school profile and term settings are not authservice data (tenant profile has no update API). Regional preferences are saved, see the General tab |
 
 ## Staff → Add / Edit staff → Access & permissions
 

@@ -6,6 +6,7 @@ import { useApi } from '../api/useApi.js';
 import * as admissionApi from '../api/admissionService.js';
 import * as studentApi from '../api/studentService.js';
 import { Pill } from './ui.jsx';
+import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
 
 const OPEN = ['NEW_INQUIRY', 'CONTACTED', 'EVALUATION_SCHEDULED', 'EVALUATION_PASSED', 'OFFER_ISSUED'];
 const SA = 'SUPER_ADMIN';
@@ -215,7 +216,7 @@ function StepForm({ step, enquiry, offer, onDone }) {
     enrol: <>
       {/* Date of birth and gender come from the application; asked for only when it did not record them */}
       {enquiry.candidateDateOfBirth && enquiry.candidateGender ? <>
-        <p className="xs muted">From the application: born {new Date(enquiry.candidateDateOfBirth).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+        <p className="xs muted">From the application: born {formatDate(enquiry.candidateDateOfBirth)}
           {' · '}{label(enquiry.candidateGender)}{enquiry.guardianRelationship ? ` · guardian ${enquiry.guardianName} (${enquiry.guardianRelationship})` : ''}</p>
         <input type="hidden" name="dob" value={enquiry.candidateDateOfBirth} />
         <input type="hidden" name="gender" value={enquiry.candidateGender} />

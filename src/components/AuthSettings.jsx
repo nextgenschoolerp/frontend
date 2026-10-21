@@ -6,6 +6,7 @@ import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as authApi from '../api/authService.js';
 import { Card, SectionHead, DataTable, Pill, KV } from './ui.jsx';
+import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
 
 // Screens a role can be granted, matching the names already used by authservice role_permissions.
 const SCREENS = ['ALL_SCREENS', 'STUDENT_PROFILE', 'STAFF_MANAGEMENT', 'ATTENDANCE_RECORD', 'EXAM_MARKS', 'FEE_COLLECTION', 'ROLE_MANAGEMENT',
@@ -180,7 +181,7 @@ function AuditLogModal({ onClose }) {
   const [filter, setFilter] = useState({});
   const { data, error, loading } = useApi(() => authApi.queryAuditLogs(filter), [JSON.stringify(filter)]);
   const rows = (data || []).slice().sort((a, b) => String(b.eventTime).localeCompare(String(a.eventTime))).slice(0, 100);
-  const fmt = (t) => (t ? new Date(t).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
+  const fmt = (t) => (t ? formatDateTime(t, { year: false }) : '');
 
   return (
     <Modal title="Audit log" sub="Most recent 100 events from authservice (GET /api/v1/audit/logs)." onClose={onClose}>

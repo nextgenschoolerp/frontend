@@ -6,13 +6,14 @@ import * as lms from '../api/academicService.js';
 import { PageHeader, Metrics, Card, Tabs, DataTable, Pill, Footer, SectionHead, downloadFile, todayIso } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
+import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
 
 const { ROLES, DAYS, hhmm } = lms;
 const Loading = () => <p className="xs muted"><LoaderCircle size={12} className="spin" /> Loading…</p>;
 const TABS = ['Timetable', 'Workload', 'Cover', 'Syllabus', 'Homework', 'Lesson plans', 'Labs'];
 const pill = (map, code) => { const [t, c] = map[code] || [code, '']; return <Pill tone={c}>{t}</Pill>; };
-const fmtDate = (d) => (d ? new Date(`${String(d).slice(0, 10)}T12:00:00`).toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' }) : '—');
-const when = (t) => (t ? new Date(t).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
+const fmtDate = (d) => (d ? formatDate(String(d).slice(0, 10), { weekday: 'short' }) : '—');
+const when = (t) => (t ? formatDateTime(t, { year: false }) : '—');
 const isoPlus = (iso, days) => { const d = new Date(`${iso}T12:00:00`); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10); };
 /** Today, or the Monday after when today is a Sunday (the bell schedule runs Monday–Saturday). */
 const nextSchoolDay = () => { const t = todayIso(); return new Date(`${t}T12:00:00`).getDay() === 0 ? isoPlus(t, 1) : t; };
@@ -121,7 +122,7 @@ function TimetableTab({ sections, sectionId, setSectionId, teachers, schedule, m
   </>);
 }
 
-function TimetableGrid({ bell, entries, show }) {
+export function TimetableGrid({ bell, entries, show }) {
   const days = bell.workingDays;
   const at = (day, period) => entries.find((e) => e.dayOfWeek === day && e.periodNumber === period);
   return (

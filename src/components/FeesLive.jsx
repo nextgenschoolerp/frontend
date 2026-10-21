@@ -11,6 +11,27 @@ import { Loading, fmtDate, feePill, RecordPaymentModal, ReceiptsTable } from './
 const { ROLES, money, moneyShort, PAYMENT_MODES, classOf } = fin;
 const PAGE = 8;
 
+/**
+ * Overview "Term fees collected" figure and "Fee collection" card: academic year to date for the selected campus from
+ * GET /reports/head-wise-collection and /reports/defaulters. `live` is false for roles outside finance staff (sample shown).
+ */
+export function useFeeOverview() {
+  const { hasRole, branchId } = useAuth();
+  const allowed = hasRole(...ROLES.staff) && !!branchId;
+  const from = fin.yearStartIso();
+  const summary = useApi(() => fin.headWiseCollection(branchId, from, todayIso()), [branchId], allowed);
+  const overdue = useApi(() => fin.defaulters(branchId), [branchId], allowed);
+  const s = summary.data, d = overdue.data;
+  const billed = Number(s?.totalDemanded || 0), outstanding = Number(s?.totalOutstanding || 0), late = Number(d?.totalOverdue || 0);
+  const pct = (n) => (billed > 0 ? (100 * n) / billed : 0);
+  return {
+    allowed, live: allowed && !!s && !!d, error: summary.error || overdue.error,
+    billed, collected: billed - outstanding, outstanding, overdue: late, notYetDue: Math.max(0, outstanding - late),
+    accounts: d?.totalDefaulters || 0, receipts: s?.receiptCount || 0, fromDate: s?.fromDate,
+    collectedPct: pct(billed - outstanding), overduePct: pct(late), notYetDuePct: pct(Math.max(0, outstanding - late)),
+  };
+}
+
 /** Fees & payments with live financeservice data (finance staff, principals, super administrators). */
 export function FeesLive() {
   const { hasRole, branchId } = useAuth();

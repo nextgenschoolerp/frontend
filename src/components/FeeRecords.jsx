@@ -6,10 +6,11 @@ import * as fin from '../api/financeService.js';
 import { DataTable, Pill, Card, SectionHead, KV, downloadFile } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
+import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
 
 const { ROLES, money, FEE_STATUS, LINE_STATUS, PAYMENT_MODES } = fin;
 export const Loading = () => <p className="xs muted"><LoaderCircle size={12} className="spin" /> Loading…</p>;
-export const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
+export const fmtDate = (d) => formatDate(d);
 const tone = (map, code) => map[code] || [code, ''];
 export const feePill = (status) => { const [t, c] = tone(FEE_STATUS, status); return <Pill tone={c}>{t}</Pill>; };
 export const linePill = (status) => { const [t, c] = tone(LINE_STATUS, status); return <Pill tone={c}>{t}</Pill>; };

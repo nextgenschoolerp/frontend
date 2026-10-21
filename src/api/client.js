@@ -1,17 +1,20 @@
 // Thin fetch wrapper for the School ERP services.
 // Every service answers with { success, message, data } or an ApiErrorResponse
 // { success: false, status, errorCode, message, validationErrors }.
+// Every call carries X-Span-Id (the signed-in session) and a new X-Trace-Id (see tracing.js).
+import { TRACE_HEADER, traceHeaders } from './tracing.js';
 
 const SESSION_KEY = 'oakridge.session';
 
 export class ApiError extends Error {
-  constructor(status, body) {
+  constructor(status, body, traceId) {
     // A 5xx without the JSON envelope comes from the dev proxy when the backend service is not running
     const unreachable = status === 0 || (status >= 500 && !body);
     super(body?.message || (unreachable ? 'Cannot reach the server. Check that the service is running.' : `Request failed (${status})`));
     this.status = status;
     this.code = body?.errorCode;
     this.validationErrors = body?.validationErrors || [];
+    this.traceId = body?.traceId || traceId; // the X-Trace-Id of the failed call: find it in the service log
   }
 
   /** First field-level message, falling back to the general message. */
@@ -38,7 +41,8 @@ function storedToken() {
 export async function request(method, path, { body, query, auth = true, token } = {}) {
   const url = new URL(path, window.location.origin);
   Object.entries(query || {}).forEach(([k, v]) => v !== undefined && v !== null && v !== '' && url.searchParams.set(k, v));
-  const headers = { Accept: 'application/json' };
+  const trace = traceHeaders();
+  const headers = { Accept: 'application/json', ...trace };
   const bearer = token || (auth ? storedToken() : null);
   if (bearer) headers.Authorization = `Bearer ${bearer}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -47,14 +51,14 @@ export async function request(method, path, { body, query, auth = true, token } 
   try {
     res = await fetch(url.pathname + url.search, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
   } catch {
-    throw new ApiError(0);
+    throw new ApiError(0, null, trace[TRACE_HEADER]);
   }
   const text = await res.text();
   let json = null;
   try { json = text ? JSON.parse(text) : null; } catch { /* non-JSON error page */ }
 
   if (!res.ok || json?.success === false) {
-    const err = new ApiError(res.status, json);
+    const err = new ApiError(res.status, json, trace[TRACE_HEADER]);
     if (res.status === 401 && bearer) onUnauthorized(err);
     throw err;
   }
@@ -64,16 +68,17 @@ export async function request(method, path, { body, query, auth = true, token } 
 /** GET a file with the bearer token (photos, document downloads); returns a Blob. */
 export async function fetchBlob(path) {
   const bearer = storedToken();
+  const trace = traceHeaders();
   let res;
   try {
-    res = await fetch(path, { headers: bearer ? { Authorization: `Bearer ${bearer}` } : {} });
+    res = await fetch(path, { headers: bearer ? { ...trace, Authorization: `Bearer ${bearer}` } : trace });
   } catch {
-    throw new ApiError(0);
+    throw new ApiError(0, null, trace[TRACE_HEADER]);
   }
   if (!res.ok) {
     let json = null;
     try { json = await res.json(); } catch { /* binary or empty */ }
-    const err = new ApiError(res.status, json);
+    const err = new ApiError(res.status, json, trace[TRACE_HEADER]);
     if (res.status === 401 && bearer) onUnauthorized(err);
     throw err;
   }
@@ -84,20 +89,21 @@ export async function fetchBlob(path) {
 export async function upload(path, formData, { query } = {}) {
   const url = new URL(path, window.location.origin);
   Object.entries(query || {}).forEach(([k, v]) => v !== undefined && v !== null && v !== '' && url.searchParams.set(k, v));
-  const headers = { Accept: 'application/json' };
+  const trace = traceHeaders();
+  const headers = { Accept: 'application/json', ...trace };
   const bearer = storedToken();
   if (bearer) headers.Authorization = `Bearer ${bearer}`;
   let res;
   try {
     res = await fetch(url.pathname + url.search, { method: 'POST', headers, body: formData });
   } catch {
-    throw new ApiError(0);
+    throw new ApiError(0, null, trace[TRACE_HEADER]);
   }
   const text = await res.text();
   let json = null;
   try { json = text ? JSON.parse(text) : null; } catch { /* non-JSON error page */ }
   if (!res.ok || json?.success === false) {
-    const err = new ApiError(res.status, json);
+    const err = new ApiError(res.status, json, trace[TRACE_HEADER]);
     if (res.status === 401 && bearer) onUnauthorized(err);
     throw err;
   }

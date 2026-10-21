@@ -1,6 +1,7 @@
 // financeservice endpoints used by the UI (Module 04, fees & billing).
 // See docs/financeservice-api-mapping.md for the screen-by-screen map.
 import { api, fetchBlob } from './client.js';
+import { formatMoney, formatMoneyShort } from '../regional.js';
 
 const FIN = '/api/v1/finance';
 
@@ -50,17 +51,10 @@ export const LINE_STATUS = {
 };
 export const PAYMENT_MODES = { CASH: 'Cash', CHEQUE: 'Cheque', DEMAND_DRAFT: 'Demand draft', UPI: 'UPI', CARD: 'Card', NET_BANKING: 'Net banking' };
 
-const INR = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
-const INR2 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2 });
-/** ₹18,000 (whole rupees) or ₹18,000.50 */
-export const money = (n) => (n === null || n === undefined ? '—' : Number(n) % 1 ? INR2.format(Number(n)) : INR.format(Number(n)));
-/** ₹19.5 L / ₹3.1 Cr for headline numbers */
-export const moneyShort = (n) => {
-  const v = Number(n || 0);
-  if (v >= 1e7) return `₹${(v / 1e7).toFixed(2)} Cr`;
-  if (v >= 1e5) return `₹${(v / 1e5).toFixed(2)} L`;
-  return money(v);
-};
+/** ₹18,000 (whole amounts) or ₹18,000.50, in the currency of Settings → Regional preferences */
+export const money = (n) => formatMoney(n);
+/** ₹19.5 L / ₹3.1 Cr for headline numbers (compact in other currencies) */
+export const moneyShort = (n) => formatMoneyShort(n);
 /** Start of the academic year that contains today (1 April) as yyyy-mm-dd. */
 export const yearStartIso = () => { const d = new Date(); return `${d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1}-04-01`; };
 export const classOf = (r) => [r.gradeName, r.sectionName].filter(Boolean).join('-');

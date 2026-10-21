@@ -1,6 +1,7 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowUpRight, ArrowLeft, FileText, Search, ChevronDown, Calendar } from 'lucide-react';
 import { useState } from 'react';
+import { todayIso, formatDate, formatTime, timeZoneNames } from '../regional.js';
 
 export const Pill = ({ tone = '', children }) => <span className={`pill ${tone}`}>{children}</span>;
 
@@ -27,7 +28,8 @@ export function downloadCsv(base, header, rows) {
 const TERM = { name: 'Term 1', start: '2026-08-31', end: '2026-12-18', breaks: [['2026-10-26', '2026-10-30']] };
 const atNoon = (iso) => new Date(`${iso}T12:00:00`);
 const isoOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-export const todayIso = () => isoOf(new Date());
+// Today in the school's time zone (Settings → Regional preferences)
+export { todayIso };
 const inBreak = (iso) => TERM.breaks.some(([a, b]) => iso >= a && iso <= b);
 /** Teaching weeks (Monday dates) of the term, half-term excluded. */
 const termWeeks = () => {
@@ -38,7 +40,7 @@ const termWeeks = () => {
 /** Term, week and whether school is open on a date: { date, week, weeks, status, open }. */
 export function schoolDay(iso) {
   const d = atNoon(iso);
-  const date = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const date = formatDate(iso, { weekday: 'long' });
   const weeks = termWeeks();
   const week = weeks.filter((w) => w <= iso).length;
   const inTerm = iso >= TERM.start && iso <= TERM.end;
@@ -48,7 +50,7 @@ export function schoolDay(iso) {
 
 /** Read-only "Today · 18 Oct 2026" with a calendar icon (Overview header). */
 export function TodayLabel() {
-  const short = atNoon(todayIso()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const short = formatDate(todayIso());
   return <span className="today-label"><Calendar size={15} />Today · {short}</span>;
 }
 
@@ -223,8 +225,8 @@ export const Docs = ({ items }) => (
 
 export const Footer = () => (
   <div className="footnote">
-    <span>All times in British Summer Time (BST)</span>
-    <span className="live"><i />Last synced today at 09:42 · Next update in 5 min</span>
+    <span>All times in {timeZoneNames().long} ({timeZoneNames().short})</span>
+    <span className="live"><i />Last synced today at {formatTime(new Date())}</span>
   </div>
 );
 
