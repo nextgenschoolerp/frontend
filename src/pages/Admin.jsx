@@ -1,15 +1,20 @@
-import { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Download, Plus, Upload, Check, ChevronLeft, ChevronRight, Search, FileText, Users, ClipboardCheck, Wallet,
   GraduationCap, FolderOpen, Settings as Cog, ShieldCheck, Folder, Bold, Italic, Underline, AlignLeft, Paperclip, Send,
 } from 'lucide-react';
 import {
-  PageHeader, Metrics, Card, SectionHead, Tabs, SearchBox, Select, DataTable, Pager, Pill, Footer, Field, FieldGrid, KV, downloadFile, downloadCsv, schoolDay, todayIso,
+  PageHeader, Metrics, Card, SectionHead, useBackLink, Tabs, SearchBox, Select, DataTable, Pager, Pill, Footer, Field, FieldGrid, KV, downloadFile, downloadCsv, schoolDay, todayIso,
 } from '../components/ui.jsx';
 import { AttendanceChart } from './Overview.jsx';
+import { ApiErr, ApiNote } from '../components/Admissions.jsx';
+import { SchoolProfileCard, AcademicSetupCard, AlertPreferencesCard } from '../components/SettingsCards.jsx';
 import { useAttendanceWeek } from '../components/AttendanceLive.jsx';
-import { RolesCard, SecurityCard } from '../components/AuthSettings.jsx';
+import { RolesCard, SecurityCard, Modal } from '../components/AuthSettings.jsx';
+import CommunicationsLive from '../components/CommunicationsLive.jsx';
+import * as commApi from '../api/communicationService.js';
+import { useApi } from '../api/useApi.js';
 import { useAuth } from '../auth.jsx';
 import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
 import { getRegional, applyServerRegional, version, zoneName, TIME_ZONES, CURRENCIES, DATE_FORMATS, LANGUAGES, DEFAULT_REGIONAL } from '../regional.js';
@@ -18,179 +23,13 @@ import { saveRegionalSettings } from '../api/authService.js';
 const act = (t) => <span className="act">{t}</span>;
 
 /* ---------- Calendar ---------- */
-const WEEKS = [
-  [28, 29, 30, 1, 2, 3, 4], [5, 6, 7, 8, 9, 10, 11], [12, 13, 14, 15, 16, 17, 18], [19, 20, 21, 22, 23, 24, 25], [26, 27, 28, 29, 30, 31, 1],
-];
-const EVENTS = {
-  19: ['15:30 · Parent–teacher meetings', ''],
-  21: ['09:00 · Autumn sports day', 'green'],
-  23: ['16:00 · Reports due', 'amber'],
-};
-
-/** "Export calendar": the month's events as an iCalendar file (Outlook, Google Calendar, Apple Calendar). */
-function exportCalendar() {
-  const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
-  const events = Object.entries(EVENTS).map(([day, [text]]) => {
-    const [time, title] = text.split(' · ');
-    const [h, m] = time.split(':');
-    const start = `202610${String(day).padStart(2, '0')}T${h}${m}00`;
-    return ['BEGIN:VEVENT', `UID:oakridge-202610${day}@school-erp`, `DTSTAMP:${stamp}`, `DTSTART:${start}`, `DURATION:PT1H`, `SUMMARY:${title}`, 'LOCATION:Main campus', 'END:VEVENT'].join('\r\n');
-  });
-  downloadFile('oakridge-calendar-2026-10.ics',
-    ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Oakridge Academy//School ERP//EN', ...events, 'END:VCALENDAR'].join('\r\n'), 'text/calendar');
-}
-
-export function Calendar() {
-  const [sel, setSel] = useState(19);
-  return (
-    <>
-      <PageHeader
-        title="Calendar"
-        desc="Plan school events, deadlines and term dates across Main campus."
-        actions={[{ label: 'Export calendar', icon: <Download size={15} />, onClick: exportCalendar }, { label: 'Add event', icon: <Plus size={15} />, primary: true }]}
-      />
-      <div className="cols s354">
-        <Card style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div className="row">
-            <div className="row" style={{ gap: 12 }}>
-              <button className="iconbtn"><ChevronLeft size={15} /></button>
-              <b style={{ fontSize: 20, fontWeight: 600 }}>October 2026</b>
-              <button className="iconbtn"><ChevronRight size={15} /></button>
-              <button className="btn">Today</button>
-            </div>
-            <div className="filters"><Select>All event types</Select><Select>Main campus</Select>
-              <span className="seg"><button className="on">Month</button><button>Week</button><button>List</button></span>
-            </div>
-          </div>
-          <div className="calgrid">
-            {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map((d) => <div className="dow" key={d}>{d}</div>)}
-            {WEEKS.flat().map((n, i) => {
-              const off = (i < 3 && n > 20) || (i > 28 && n < 10);
-              const day = off ? null : n;
-              const today = day === 16;
-              const ev = day && EVENTS[day];
-              const half = day && day >= 26 && day <= 30;
-              return (
-                <div key={i} className={`cell${off ? ' off' : ''}${today ? ' today' : ''}${sel === day ? ' sel' : ''}`} onClick={() => day && setSel(day)}>
-                  <span className="n">{n}</span>
-                  {today && <span className="chip green">Today</span>}
-                  {ev && <span className={`chip ${ev[1]}`}>{ev[0]}</span>}
-                  {half && <span className="chip">Half-term</span>}
-                </div>
-              );
-            })}
-          </div>
-          <div className="pills"><Pill tone="purple">School events</Pill><Pill tone="green">Sports & activities</Pill><Pill tone="amber">Deadlines</Pill><Pill>School closed</Pill></div>
-        </Card>
-        <div className="stack">
-          <Card>
-            <div className="row" style={{ alignItems: 'flex-start' }}>
-              <div><h3 style={{ fontSize: 15, fontWeight: 600 }}>Year 10 parent–teacher meetings</h3><p className="small muted" style={{ marginTop: 4 }}>Monday, 19 October 2026</p></div>
-              <span className="link">Edit</span>
-            </div>
-            <div style={{ margin: '14px 0 4px' }}><Pill tone="purple">School event</Pill></div>
-            <KV rows={[['Time', '15:30–18:00 BST'], ['Location', 'Main hall'], ['Audience', 'Year 10 families & teachers'], ['Organiser', 'Michael Brooks']]} />
-            <p className="body-s" style={{ margin: '8px 0 14px' }}>Meet subject teachers to discuss progress, learning goals and support before the mid-term reports are published.</p>
-            <div className="pills"><Pill tone="green">84 families confirmed</Pill><Pill>16 teachers</Pill></div>
-            <button className="btn primary" style={{ marginTop: 16 }}>View appointments</button>
-            <div style={{ marginTop: 14 }}><span className="link">Message attendees →</span></div>
-          </Card>
-          <Card>
-            <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Term dates</h3>
-            <KV rows={[['Half-term', '26–30 October'], ['School reopens', 'Monday, 2 November'], ['Term ends', 'Friday, 18 December']]} />
-            <span className="link" style={{ marginTop: 10 }}>View academic year →</span>
-          </Card>
-        </div>
-      </div>
-      <Card>
-        <SectionHead title="Coming up" sub="School events and deadlines" link="View all events →" />
-        <div style={{ marginTop: 18 }}>
-          <DataTable boxed cols={[
-            { label: 'Date', key: 0 }, { label: 'Event', key: 1, className: 'num' }, { label: 'Time', key: 2 }, { label: 'Location / audience', key: 3 },
-          ]} rows={[
-            ['19 Oct · Mon', 'Year 10 parent–teacher meetings', '15:30–18:00', 'Main hall'],
-            ['21 Oct · Wed', 'Autumn sports day', '09:00–14:00', 'Sports grounds'],
-            ['23 Oct · Fri', 'Mid-term progress reports due', '16:00', 'All teaching staff'],
-          ]} />
-        </div>
-      </Card>
-      <Footer />
-    </>
-  );
-}
+export { Calendar } from '../components/CalendarPage.jsx';
 
 /* ---------- Communications ---------- */
 export function Communications() {
   return (
     <>
-      <PageHeader
-        title="Communications"
-        desc="Keep families, students and staff informed with timely school updates."
-        actions={[{ label: 'Message inbox' }, { label: 'New announcement', icon: <Plus size={15} />, primary: true }]}
-      />
-      <Metrics items={[
-        ['Active notices', '2', 'Published to school audiences'],
-        ['Unread messages', '3', 'School office inbox'],
-        ['Scheduled', '2', 'Next send: 19 Oct at 08:00'],
-        ['Notice delivery', '99.4%', 'Last 30 days · Email & portal'],
-      ]} />
-      <div className="cols">
-        <div className="stack">
-          <Card>
-            <SectionHead title="Notice board" sub="Published school announcements" link="View all notices →" />
-            <div style={{ margin: '18px 0' }}><Tabs items={['Published (2)', 'Scheduled (2)', 'Drafts (1)']} /></div>
-            <div className="filters" style={{ marginBottom: 14 }}><SearchBox placeholder="Search notices" width={300} /><Select>All audiences</Select></div>
-            {[['School update', 'purple', 'All staff & parents', 'Half-term break: 26–30 October', 'School reopens Monday, 2 November. Please share with families and check the updated term calendar.', 'School office · 15 Oct 2026', '1,326 recipients · 98% delivered'],
-              ['Action required', 'purple', 'All staff', 'Safeguarding refresher training', 'All staff to complete the online module by Friday, 23 October. Certificates should be uploaded to your staff record.', 'Principal’s office · 14 Oct 2026', '92 recipients · 100% delivered']].map(([tag, tone, aud, t, body, by, stat]) => (
-              <div key={t} style={{ border: '1px solid var(--bd)', borderRadius: 10, padding: 16, marginTop: 12 }}>
-                <div className="row"><Pill tone={tone}>{tag}</Pill><span className="xs muted">{aud}</span></div>
-                <h4 style={{ fontSize: 14, fontWeight: 600, margin: '10px 0 6px' }}>{t}</h4>
-                <p className="body-s">{body}</p>
-                <div className="row" style={{ marginTop: 10 }}><span className="xs faint">{by}</span><span className="link">View notice →</span></div>
-                <span className="xs" style={{ color: 'var(--gr)' }}>{stat}</span>
-              </div>
-            ))}
-          </Card>
-          <Card>
-            <SectionHead title="School office inbox" sub="3 unread messages" link="Open inbox →" />
-            <div style={{ marginTop: 18 }}>
-              <DataTable boxed cols={[
-                { label: 'From', key: 0 }, { label: 'Message', render: (r) => <span><b style={{ fontWeight: 500 }}>{r[1]}</b> <span className="muted">{r[2]}</span></span> }, { label: 'Received', key: 3 },
-              ]} rows={[
-                ['Sarah Thompson · Parent · Year 10A', 'Parent–teacher appointment', 'Can we confirm our 16:00 slot?', '09:18'],
-                ['Eleanor Hughes · Mathematics', 'Year 10 assessment schedule', 'Updated marks are ready to review.', '08:54'],
-                ['James Bennett · Parent · Year 10A', 'Sports day permission', 'Consent form attached. Thank you.', '08:41'],
-              ]} />
-            </div>
-          </Card>
-        </div>
-        <div className="stack">
-          <Card>
-            <h3 style={{ fontSize: 15, fontWeight: 600 }}>Compose announcement</h3>
-            <p className="small muted" style={{ margin: '4px 0 14px' }}>Draft · Only visible to you</p>
-            <div className="fieldlist">
-              <Field box label="Title" required value="Autumn sports day: final reminders" />
-              <Field box label="Audience" required select value="All parents & students" options={['All parents & students', 'All staff', 'Year 10 families']} />
-            </div>
-            <div className="pills" style={{ margin: '14px 0' }}><Pill tone="purple">✓ Parent portal</Pill><Pill tone="purple">✓ Email</Pill></div>
-            <b style={{ fontSize: 12 }}>Message *</b>
-            <div className="editor" style={{ marginTop: 8 }}>
-              <div className="tb"><Bold size={14} /><Italic size={14} /><Underline size={14} /><AlignLeft size={14} /><span className="link">Add link</span></div>
-              <textarea defaultValue={'Our Autumn sports day takes place on Wednesday, 21 October, from 09:00–14:00 at the Sports grounds.\n\nPlease ensure students bring their PE kit, a water bottle and a packed lunch. We look forward to a great day together.'} />
-            </div>
-            <span className="link" style={{ margin: '14px 0' }}><Paperclip size={13} />Attach file</span>
-            <Field box label="Publish" select value="Send now" options={['Send now', 'Schedule for later']} />
-            <p className="xs muted" style={{ margin: '14px 0' }}>Estimated audience: 1,248 students and their primary guardians. Preview before publishing.</p>
-            <div className="actions"><button className="btn">Save draft</button><button className="btn primary"><Send size={14} />Preview & publish</button></div>
-          </Card>
-          <Card>
-            <SectionHead title="Audience groups" link="Manage →" />
-            {[['All staff', '92'], ['Year 10 families', '116'], ['All parents & guardians', '1,326']].map(([a, b]) => (
-              <div className="attrow" key={a}><span>{a}</span><Pill>{b}</Pill></div>
-            ))}
-          </Card>
-        </div>
-      </div>
+      <CommunicationsLive />
       <Footer />
     </>
   );
@@ -282,70 +121,359 @@ export function Reports() {
 }
 
 /* ---------- Documents ---------- */
-const FILES = [
-  ['Safeguarding policy 2026.pdf', 'Helen Morris', '01 Sep 2026', 'All staff', '1.2 MB'],
-  ['Staff handbook 2026–27.pdf', 'Michael Brooks', '28 Aug 2026', 'Staff & parents', '684 KB'],
-  ['Autumn term newsletter.pdf', 'Sarah Williams', '15 Oct 2026', 'Public', '248 KB'],
-  ['Behaviour policy.pdf', 'Sarah Williams', '01 Sep 2026', 'All staff', '892 KB'],
-  ['Admissions policy.pdf', 'Michael Brooks', '02 Sep 2026', 'Staff & parents', '764 KB'],
-  ['First aid procedures.pdf', 'Grace Taylor', '05 Sep 2026', 'All staff', '2.4 MB'],
-  ['Attendance policy.pdf', 'Sarah Williams', '10 Oct 2026', 'All staff', '86 KB'],
+// Sample library, shown when communicationservice's document library cannot be reached (same rows as its module09 seed)
+const ACCESS = ['All staff', 'Staff & parents', 'Public', 'School administrators'];
+const PER_PAGE = 7;
+const FOLDERS = [
+  { name: 'Student records', sub: '1,248 folders', access: 'School administrators' },
+  { name: 'Staff records', sub: '92 folders', access: 'School administrators' },
+  { name: 'School policies', sub: '24 documents', access: 'All staff' },
+  { name: 'Finance & billing', sub: '186 documents', access: 'School administrators' },
 ];
+const doc = (id, folder, name, owner, modified, access, size, extra) => ({ id, folder, name, owner, modified, access, size, version: '1.0', ...extra });
+const POLICIES = [
+  ['Safeguarding policy 2026.pdf', 'Helen Morris', '2026-09-01', 'All staff', '1.2 MB', { version: '3.0', shared: true }],
+  ['Staff handbook 2026–27.pdf', 'Michael Brooks', '2026-08-28', 'Staff & parents', '684 KB', { version: '2.1' }],
+  ['Autumn term newsletter.pdf', 'Sarah Williams', '2026-10-15', 'Public', '248 KB', { shared: true }],
+  ['Behaviour policy.pdf', 'Sarah Williams', '2026-09-01', 'All staff', '892 KB', { version: '2.0' }],
+  ['Admissions policy.pdf', 'Michael Brooks', '2026-09-02', 'Staff & parents', '764 KB'],
+  ['First aid procedures.pdf', 'Grace Taylor', '2026-09-05', 'All staff', '2.4 MB', { shared: true }],
+  ['Attendance policy.pdf', 'Sarah Williams', '2026-10-10', 'All staff', '86 KB', { version: '1.4' }],
+  ['Anti-bullying policy.pdf', 'Helen Morris', '2026-09-03', 'Staff & parents', '412 KB'],
+  ['Online safety policy.pdf', 'David Chen', '2026-09-12', 'Staff & parents', '538 KB', { shared: true }],
+  ['Data protection policy.pdf', 'Michael Brooks', '2026-08-30', 'All staff', '1.1 MB', { version: '4.0' }],
+  ['Equality and diversity policy.pdf', 'Grace Taylor', '2026-09-08', 'Public', '356 KB'],
+  ['Health and safety policy.pdf', 'James Reid', '2026-09-15', 'All staff', '1.8 MB'],
+  ['SEND policy.pdf', 'Laura Bennett', '2026-09-20', 'Staff & parents', '944 KB', { shared: true }],
+  ['Uniform policy.pdf', 'Sarah Williams', '2026-08-25', 'Public', '212 KB'],
+  ['Homework policy.pdf', 'David Chen', '2026-09-24', 'Staff & parents', '178 KB'],
+  ['Complaints procedure.pdf', 'Michael Brooks', '2026-09-10', 'Public', '298 KB'],
+  ['Whistleblowing policy.pdf', 'Helen Morris', '2026-08-29', 'All staff', '264 KB'],
+  ['Exams policy 2026–27.pdf', 'James Reid', '2026-10-02', 'Staff & parents', '622 KB', { version: '1.2' }],
+  ['Educational visits policy.pdf', 'Laura Bennett', '2026-09-18', 'All staff', '476 KB'],
+  ['Mobile phone policy.pdf', 'Sarah Williams', '2026-10-06', 'Staff & parents', '134 KB', { shared: true }],
+  ['Staff code of conduct.pdf', 'Helen Morris', '2026-08-27', 'All staff', '388 KB', { version: '2.0' }],
+  ['Fire evacuation plan.pdf', 'James Reid', '2026-09-28', 'All staff', '1.5 MB'],
+  ['Policy review schedule.csv', 'Michael Brooks', '2026-10-12', 'School administrators', '18 KB'],
+  ['Medicines in school policy.pdf', 'Grace Taylor', '2026-10-08', 'Staff & parents', '402 KB'],
+  ['Behaviour policy 2025.pdf', 'Sarah Williams', '2025-09-01', 'All staff', '860 KB', { archived: true }],
+  ['Safeguarding policy 2025.pdf', 'Helen Morris', '2025-09-01', 'All staff', '1.1 MB', { archived: true, version: '2.0' }],
+  ['Staff handbook 2025–26.pdf', 'Michael Brooks', '2025-08-28', 'Staff & parents', '652 KB', { archived: true }],
+];
+const DOCS = [
+  ...POLICIES.map(([n, o, m, a, s, x], i) => doc(`pol-${i + 1}`, 'School policies', n, o, m, a, s, x)),
+  doc('stu-1', 'Student records', 'Admissions register 2026–27.csv', 'Michael Brooks', '2026-10-14', 'School administrators', '96 KB'),
+  doc('stu-2', 'Student records', 'Year 10 options summary.pdf', 'David Chen', '2026-10-05', 'All staff', '312 KB', { shared: true }),
+  doc('stu-3', 'Student records', 'Consent forms tracker.csv', 'Grace Taylor', '2026-09-22', 'School administrators', '41 KB'),
+  doc('stf-1', 'Staff records', 'Staff training log 2026.csv', 'Helen Morris', '2026-10-09', 'School administrators', '58 KB'),
+  doc('stf-2', 'Staff records', 'DBS check register.pdf', 'Helen Morris', '2026-09-04', 'School administrators', '204 KB'),
+  doc('fin-1', 'Finance & billing', 'Term 1 fee schedule.pdf', 'Michael Brooks', '2026-08-20', 'Staff & parents', '146 KB', { shared: true }),
+  doc('fin-2', 'Finance & billing', 'Outstanding balances October.csv', 'Michael Brooks', '2026-10-16', 'School administrators', '72 KB'),
+];
+const TYPES = { pdf: 'PDF document', csv: 'Spreadsheet', xlsx: 'Spreadsheet', xls: 'Spreadsheet', doc: 'Word document', docx: 'Word document', png: 'Image', jpg: 'Image', jpeg: 'Image' };
+const typeOf = (name) => TYPES[name.split('.').pop().toLowerCase()] || 'Other file';
+const sizeOf = (bytes) => (bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
+const ascii = (t) => t.replace(/[–—]/g, '-').replace(/[^\x20-\x7e]/g, '');
 
+/** A one-page PDF with a title and a few lines (stands in for the sample documents' contents). */
+function samplePdf(title, lines) {
+  const stream = [title, ...lines].map((t, i) => `BT /F1 ${i ? 11 : 16} Tf 72 ${740 - i * 22} Td (${ascii(t).replace(/[\\()]/g, '\\$&')}) Tj ET`).join('\n');
+  const objs = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 5 0 R /Resources << /Font << /F1 4 0 R >> >> >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>', `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`];
+  let out = '%PDF-1.4\n';
+  const offsets = objs.map((o, i) => { const at = out.length; out += `${i + 1} 0 obj\n${o}\nendobj\n`; return at; });
+  const xref = out.length;
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`;
+  return `${out}trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+}
+
+const stamp = () => formatDateTime(new Date());
+const FilterSelect = ({ label, value, onChange, options }) => (
+  <select className="select" aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}>
+    {options.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+  </select>
+);
+// communicationservice access codes <-> the labels the page shows
+const ACCESS_CODES = { 'All staff': 'ALL_STAFF', 'Staff & parents': 'STAFF_AND_PARENTS', Public: 'PUBLIC', 'School administrators': 'ADMINISTRATORS' };
+const accessLabel = (code) => Object.keys(ACCESS_CODES).find((k) => ACCESS_CODES[k] === code) || code;
+const isoOfDaysAgo = (n) => { const d = new Date(`${todayIso()}T12:00:00`); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
+
+/**
+ * Documents: the school document library in communicationservice (GET/POST /api/v1/communication/documents…).
+ * When the service cannot be reached the page falls back to the sample library above, and changes last until the page is left.
+ */
 export function Documents() {
-  const [sel, setSel] = useState(0);
-  const f = FILES[sel];
+  const { user, hasRole } = useAuth();
+  const tenantId = user?.tenantId;
+  const canManage = hasRole(...commApi.ROLES.documents);
+  const [params, setParams] = useSearchParams();
+  const liveFolders = useApi(() => commApi.listDocumentFolders(tenantId), [tenantId]);
+  const liveDocs = useApi(() => commApi.listSchoolDocuments(tenantId), [tenantId]);
+  const live = Array.isArray(liveFolders.data) && Array.isArray(liveDocs.data);
+  const [sampleDocs, setSampleDocs] = useState(DOCS);
+  const [sampleFolders, setSampleFolders] = useState(FOLDERS);
+  const [sampleLog, setSampleLog] = useState({}); // doc id -> actions taken on the sample library, newest first
+
+  const folders = live
+    ? liveFolders.data.map((x) => ({ id: x.folderId, name: x.name, sub: x.summary || `${x.documentCount} document${x.documentCount === 1 ? '' : 's'}`, access: accessLabel(x.defaultAccess) }))
+    : sampleFolders;
+  const docs = live
+    ? liveDocs.data.map((d) => ({
+      id: d.documentId, folder: liveFolders.data.find((x) => x.folderId === d.folderId)?.name, name: d.fileName, owner: d.ownerName,
+      modified: d.modifiedOn, access: accessLabel(d.accessLevel), size: sizeOf(d.sizeBytes), version: d.docVersion,
+      shared: d.isShared, archived: d.isArchived, hasContent: d.hasContent,
+    }))
+    : sampleDocs;
+
+  const [folder, setFolder] = useState(null); // folder name; null until chosen (the linked document's folder, else School policies)
+  const [sel, setSel] = useState(params.get('doc'));
+  const [tab, setTab] = useState(0);
+  const [q, setQ] = useState('');
+  const [type, setType] = useState('');
+  const [access, setAccess] = useState('');
+  const [page, setPage] = useState(1);
+  const [modal, setModal] = useState(null); // 'share' | 'manage' | 'history' | 'folder' | 'newfolder'
+  const [notice, setNotice] = useState(null);
+  const [error, setError] = useState(null);
+  const uploadRef = useRef(null);
+
+  const linked = docs.find((d) => d.id === params.get('doc'));
+  const shownFolder = folder || linked?.folder || 'School policies';
+  const current = folders.find((x) => x.name === shownFolder);
+  const actor = user?.name || 'Staff member';
+  const recordSample = (id, action) => setSampleLog((l) => ({ ...l, [id]: [[stamp(), actor, action], ...(l[id] || [])] }));
+  const updateSample = (id, change) => setSampleDocs((all) => all.map((d) => (d.id === id ? { ...d, ...change } : d)));
+  const filter = (fn) => (v) => { fn(v); setPage(1); };
+  const reload = () => { liveFolders.reload(); liveDocs.reload(); };
+  // Activity that belongs in the access history: the service's log when live, else this page's
+  const record = (d, action, shared) => (live
+    ? commApi.recordDocumentActivity(d.id, { actorName: actor, action, shared }).then(() => shared && liveDocs.reload()).catch(() => {})
+    : (recordSample(d.id, action), shared && updateSample(d.id, { shared: true })));
+
+  const recentFrom = isoOfDaysAgo(30);
+  const inTab = [(d) => !d.archived, (d) => !d.archived && d.modified >= recentFrom, (d) => !d.archived && d.shared, (d) => d.archived][tab];
+  const needle = q.trim().toLowerCase();
+  const rows = docs
+    .filter((d) => d.folder === shownFolder && inTab(d))
+    .filter((d) => !needle || d.name.toLowerCase().includes(needle) || d.owner.toLowerCase().includes(needle))
+    .filter((d) => (!type || typeOf(d.name) === type) && (!access || d.access === access))
+    .sort((a, b) => (tab === 1 ? b.modified.localeCompare(a.modified) : 0));
+  const pages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
+  const at = Math.min(page, pages);
+  const shown = rows.slice((at - 1) * PER_PAGE, at * PER_PAGE);
+  const types = [...new Set(docs.filter((d) => d.folder === shownFolder).map((d) => typeOf(d.name)))].sort();
+  const f = docs.find((d) => d.id === sel) || rows[0] || docs.find((d) => d.folder === shownFolder) || docs[0];
+
+  const open = (d) => { setSel(d.id); setParams({ doc: d.id }, { replace: true }); };
+  const pickFolder = (name) => { setFolder(name); setTab(0); setQ(''); setType(''); setAccess(''); setPage(1); setNotice(null); setError(null); };
+  const download = async (d) => {
+    setError(null);
+    try {
+      if (d.file) downloadFile(d.name, d.file, d.file.type);
+      else if (live && d.hasContent) { const blob = await commApi.downloadSchoolDocument(d.id); downloadFile(d.name, blob, blob.type); }
+      else if (typeOf(d.name) === 'Spreadsheet') downloadCsv(d.name.replace(/\.\w+$/, ''), ['Item', 'Owner', 'Updated'], [[d.name, d.owner, formatDate(d.modified)]]);
+      else downloadFile(d.name, samplePdf(d.name.replace(/\.\w+$/, ''), ['Oakridge Academy · 2026-2027', `Owner: ${d.owner}`, `Version ${d.version}`, `Access: ${d.access}`]), 'application/pdf');
+      record(d, 'Downloaded');
+    } catch (e) { setError(e); }
+  };
+  const upload = async (files) => {
+    const list = [...files];
+    if (!list.length) return;
+    setError(null);
+    const defaultAccess = current?.access || 'All staff';
+    try {
+      let added;
+      if (live) {
+        added = [];
+        for (const file of list) added.push(await commApi.uploadSchoolDocument(current.id, file, user?.userId, actor));
+        reload();
+        added = added.map((d) => ({ id: d.documentId, name: d.fileName }));
+      } else {
+        added = list.map((file, i) => doc(`up-${Date.now()}-${i}`, shownFolder, file.name, actor, todayIso(), defaultAccess, sizeOf(file.size), { file }));
+        setSampleDocs((all) => [...added, ...all]);
+        added.forEach((d) => recordSample(d.id, 'Uploaded version 1.0'));
+      }
+      pickFolder(shownFolder);
+      open(added[0]);
+      setNotice(`${added.length === 1 ? `“${added[0].name}”` : `${added.length} files`} added to ${shownFolder} (${defaultAccess.toLowerCase()} can view).`);
+    } catch (e) { setError(e); }
+  };
+  const saveAccess = async (a) => {
+    if (live) await commApi.changeDocumentAccess(f.id, { accessLevel: ACCESS_CODES[a], actorName: actor });
+    else { updateSample(f.id, { access: a }); recordSample(f.id, `Access changed to ${a}`); }
+    if (live) liveDocs.reload();
+    setNotice(`“${f.name}” is now visible to ${a.toLowerCase()}.`); setModal(null);
+  };
+  const saveFolder = async (x) => {
+    if (live) { await commApi.updateDocumentFolder(current.id, { tenantId, defaultAccess: ACCESS_CODES[x.access] }); liveFolders.reload(); }
+    else setSampleFolders((all) => all.map((y) => (y.name === shownFolder ? { ...y, ...x } : y)));
+    setNotice(`New files in ${shownFolder} will be visible to ${x.access.toLowerCase()}.`); setModal(null);
+  };
+  const createFolder = async (x) => {
+    if (live) { await commApi.createDocumentFolder({ tenantId, name: x.name, defaultAccess: ACCESS_CODES[x.access] }); liveFolders.reload(); }
+    else setSampleFolders((all) => [...all, x]);
+    pickFolder(x.name); setNotice(`Folder “${x.name}” created.`); setModal(null);
+  };
+  const manageTitle = canManage ? undefined : 'Only school administrators, principals and communication staff can change documents';
+
   return (
     <>
       <PageHeader
         title="Documents"
         desc="Organise school files, control access and keep essential records easy to find."
-        actions={[{ label: 'New folder' }, { label: 'Upload files', icon: <Upload size={15} />, primary: true }]}
+        actions={[
+          { label: 'New folder', onClick: () => setModal('newfolder'), disabled: !canManage, title: manageTitle },
+          { label: 'Upload files', icon: <Upload size={15} />, primary: true, onClick: () => uploadRef.current?.click(), disabled: !canManage || (live && !current), title: manageTitle },
+        ]}
         context
       />
+      <input ref={uploadRef} type="file" multiple hidden onChange={(e) => { upload(e.target.files); e.target.value = ''; }} />
+      {!live && (liveFolders.error || liveDocs.error) && <ApiNote>Showing sample documents: the document library could not be loaded ({(liveFolders.error || liveDocs.error).detail}).</ApiNote>}
       <div className="grid4">
-        {[['Student records', '1,248 folders'], ['Staff records', '92 folders'], ['School policies', '24 documents'], ['Finance & billing', '186 documents']].map(([a, b]) => (
-          <Card key={a}><div className="row" style={{ justifyContent: 'flex-start', gap: 12 }}><div className="sym" style={{ width: 34, height: 34, borderRadius: 8, background: 'var(--tint)', color: 'var(--pr)', display: 'grid', placeItems: 'center' }}><Folder size={16} /></div><div><b style={{ fontSize: 13 }}>{a}</b><div className="xs muted">{b}</div></div></div></Card>
+        {folders.map((x) => (
+          <button type="button" key={x.name} className="card" aria-pressed={x.name === shownFolder} onClick={() => pickFolder(x.name)}
+            style={{ textAlign: 'left', borderColor: x.name === shownFolder ? 'var(--pr)' : undefined }}>
+            <div className="row" style={{ justifyContent: 'flex-start', gap: 12 }}><div className="sym" style={{ width: 34, height: 34, borderRadius: 8, background: 'var(--tint)', color: 'var(--pr)', display: 'grid', placeItems: 'center' }}><Folder size={16} /></div>
+              <div><b style={{ fontSize: 13 }}>{x.name}</b><div className="xs muted">{x.sub || `${docs.filter((d) => d.folder === x.name && !d.archived).length} documents`}</div></div></div>
+          </button>
         ))}
       </div>
+      {notice && <div className="api-note ok"><Check size={14} style={{ flex: 'none' }} /><span>{notice}</span></div>}
+      {error && <ApiErr error={error} />}
       <div className="cols s354">
         <Card style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <div className="sh"><div><h3>School policies</h3><p>School documents / School policies</p></div><span className="link">Folder settings</span></div>
-          <Tabs items={['All files', 'Recent', 'Shared with me', 'Archived']} />
-          <div className="filters"><SearchBox placeholder="Search file name or owner" width={300} /><Select>All file types</Select><Select>All permissions</Select></div>
+          <div className="sh"><div><h3>{shownFolder}</h3><p>School documents / {shownFolder}</p></div>
+            <button type="button" className="link" onClick={() => setModal('folder')} disabled={!canManage || !current} title={manageTitle}>Folder settings</button></div>
+          <Tabs items={['All files', 'Recent', 'Shared with me', 'Archived']} value={tab} onChange={filter(setTab)} />
+          <div className="filters">
+            <SearchBox placeholder="Search file name or owner" width={300} value={q} onChange={filter(setQ)} />
+            <FilterSelect label="File type" value={type} onChange={filter(setType)} options={[['', 'All file types'], ...types.map((t) => [t, t])]} />
+            <FilterSelect label="Permissions" value={access} onChange={filter(setAccess)} options={[['', 'All permissions'], ...ACCESS.map((a) => [a, a])]} />
+          </div>
           <div className="tablebox">
             <DataTable cols={[
-              { label: 'Name', render: (r) => <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}><FileText size={16} style={{ color: 'var(--pr)' }} /><b style={{ fontWeight: 500 }}>{r[0]}</b></span> },
-              { label: 'Owner', key: 1 }, { label: 'Modified', key: 2 }, { label: 'Access', key: 3 }, { label: 'Size', key: 4 },
-              { label: 'Action', render: (r) => <span className="act" onClick={() => setSel(FILES.indexOf(r))}>Open</span> },
-            ]} rows={FILES} />
-            <Pager text="Showing 1–7 of 24 documents" />
+              { label: 'Name', render: (r) => <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}><FileText size={16} style={{ color: 'var(--pr)' }} /><b style={{ fontWeight: r.id === f?.id ? 600 : 500 }}>{r.name}</b></span> },
+              { label: 'Owner', key: 'owner' }, { label: 'Modified', render: (r) => formatDate(r.modified) }, { label: 'Access', key: 'access' }, { label: 'Size', key: 'size' },
+              { label: 'Action', render: (r) => <button type="button" className="act" onClick={() => open(r)}>Open</button> },
+            ]} rows={shown} />
+            {!rows.length && <p className="xs muted" style={{ padding: 16 }}>{liveDocs.loading && !live ? 'Loading…' : 'No documents match these filters.'}</p>}
+            <Pager text={rows.length ? `Showing ${(at - 1) * PER_PAGE + 1}–${(at - 1) * PER_PAGE + shown.length} of ${rows.length} document${rows.length === 1 ? '' : 's'}` : 'No documents'}
+              page={at} pages={pages} onPage={setPage} />
           </div>
         </Card>
-        <div className="stack">
-          <Card>
-            <h3 style={{ fontSize: 15, fontWeight: 600 }}>Document details</h3>
-            <p className="small muted" style={{ marginTop: 4 }}>{f[0]}</p>
-            <div style={{ margin: '16px 0', border: '1px solid var(--bd)', borderRadius: 8, padding: 24, background: 'var(--sb)', textAlign: 'center' }}>
-              <FileText size={28} style={{ color: 'var(--pr)' }} /><b style={{ display: 'block', margin: '8px 0 2px', fontSize: 12 }}>Oakridge Academy</b><span className="xs muted">{f[0].replace('.pdf', '')}<br />2026–2027</span>
-            </div>
-            <KV rows={[['File type', 'PDF document'], ['Size', f[4]], ['Owner', f[1]], ['Modified', f[2]], ['Version', '3.0 · Current']]} />
-            <div className="actions" style={{ marginTop: 14 }}><button className="btn primary"><Download size={14} />Download</button><button className="btn">Share</button></div>
-          </Card>
-          <Card>
-            <SectionHead title="Permissions" link="Manage →" />
-            <div className="pills" style={{ margin: '14px 0 10px', flexDirection: 'column', alignItems: 'flex-start' }}><Pill tone="purple">{f[3]} · Can view</Pill><Pill>School administrators · Can edit</Pill></div>
-            <p className="body-s">External access is disabled. This file is included in staff induction and safeguarding training.</p>
-            <span className="link" style={{ marginTop: 12 }}>View access history →</span>
-          </Card>
-        </div>
+        {f && (
+          <div className="stack">
+            <Card>
+              <h3 style={{ fontSize: 15, fontWeight: 600 }}>Document details</h3>
+              <p className="small muted" style={{ marginTop: 4 }}>{f.name}</p>
+              <div style={{ margin: '16px 0', border: '1px solid var(--bd)', borderRadius: 8, padding: 24, background: 'var(--sb)', textAlign: 'center' }}>
+                <FileText size={28} style={{ color: 'var(--pr)' }} /><b style={{ display: 'block', margin: '8px 0 2px', fontSize: 12 }}>Oakridge Academy</b><span className="xs muted">{f.name.replace(/\.\w+$/, '')}<br />2026–2027</span>
+              </div>
+              <KV rows={[['File type', typeOf(f.name)], ['Size', f.size], ['Owner', f.owner], ['Modified', formatDate(f.modified)], ['Version', `${f.version} · ${f.archived ? 'Archived' : 'Current'}`]]} />
+              <div className="actions" style={{ marginTop: 14 }}>
+                <button className="btn primary" onClick={() => download(f)}><Download size={14} />Download</button>
+                <button className="btn" onClick={() => setModal('share')}>Share</button>
+              </div>
+            </Card>
+            <Card>
+              <SectionHead title="Permissions" link={canManage ? 'Manage →' : undefined} onClick={() => setModal('manage')} />
+              <div className="pills" style={{ margin: '14px 0 10px', flexDirection: 'column', alignItems: 'flex-start' }}>
+                <Pill tone="purple">{f.access} · Can view</Pill>{f.access !== 'School administrators' && <Pill>School administrators · Can edit</Pill>}
+              </div>
+              <p className="body-s">{f.access === 'Public' ? 'Anyone with the link can view this file.' : 'External access is disabled. Shared links only open for people who already have access.'}</p>
+              <button type="button" className="link" style={{ marginTop: 12 }} onClick={() => setModal('history')}>View access history →</button>
+            </Card>
+          </div>
+        )}
       </div>
       <Card className="notice" style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
         <ShieldCheck size={18} style={{ color: 'var(--pr)' }} />
         <div><h4>Secure by default</h4><p>Student and staff records are restricted to authorised teams. Shared links respect existing permissions and access is logged.</p></div>
       </Card>
+      {modal === 'share' && <ShareModal d={f} onClose={() => setModal(null)} onShared={(how) => record(f, how, true)} />}
+      {modal === 'manage' && <AccessModal d={f} onClose={() => setModal(null)} onSave={saveAccess} />}
+      {modal === 'history' && <HistoryModal d={f} live={live} sample={sampleLog[f.id] || []} onClose={() => setModal(null)} />}
+      {modal === 'folder' && <FolderModal folder={current} onClose={() => setModal(null)} onSave={saveFolder} />}
+      {modal === 'newfolder' && <FolderModal taken={folders.map((x) => x.name.toLowerCase())} onClose={() => setModal(null)} onSave={createFolder} />}
       <Footer />
     </>
+  );
+}
+
+/** Runs a modal's save; a failure stays in the modal. */
+function useSave(fn) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const run = async (...args) => {
+    setBusy(true); setError(null);
+    try { await fn(...args); } catch (e) { setError(e); } finally { setBusy(false); }
+  };
+  return { busy, error, run };
+}
+
+function ShareModal({ d, onClose, onShared }) {
+  const link = `${window.location.origin}/documents?doc=${encodeURIComponent(d.id)}`;
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(link); } catch { /* clipboard blocked: the link stays selectable */ }
+    setCopied(true); onShared('Share link copied');
+  };
+  const email = () => { onShared('Shared by email'); window.location.href = `mailto:?subject=${encodeURIComponent(d.name)}&body=${encodeURIComponent(link)}`; };
+  return (
+    <Modal title="Share" sub={d.name} onClose={onClose}
+      footer={<><button className="btn" onClick={email}>Email link</button><button className="btn primary" onClick={copy}>{copied ? <Check size={14} /> : null}{copied ? 'Copied' : 'Copy link'}</button></>}>
+      <div className="field box"><label htmlFor="share-link">LINK</label><input id="share-link" readOnly value={link} onFocus={(e) => e.target.select()} /></div>
+      <p className="xs muted" style={{ marginTop: 12 }}>Only people who can already view this file can open the link ({d.access.toLowerCase()}). Change who can view it under Permissions → Manage.</p>
+    </Modal>
+  );
+}
+
+function AccessModal({ d, onClose, onSave }) {
+  const [a, setA] = useState(d.access);
+  const save = useSave(onSave);
+  return (
+    <Modal title="Manage permissions" sub={d.name} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={a === d.access || save.busy} onClick={() => save.run(a)}>Save</button></>}>
+      <div className="field box"><label htmlFor="doc-access">CAN VIEW</label>
+        <select id="doc-access" value={a} onChange={(e) => setA(e.target.value)}>{ACCESS.map((x) => <option key={x}>{x}</option>)}</select></div>
+      <p className="xs muted" style={{ marginTop: 12 }}>School administrators can always edit. Changes are recorded in the access history.</p>
+      {save.error && <ApiErr error={save.error} />}
+    </Modal>
+  );
+}
+
+function HistoryModal({ d, live, sample, onClose }) {
+  const log = useApi(() => commApi.getDocumentAccessLog(d.id), [d.id], live);
+  const rows = live
+    ? (log.data || []).map((l) => [formatDateTime(l.occurredAt), l.actorName, l.action])
+    : [...sample, [formatDate(d.modified), d.owner, `Uploaded version ${d.version}`]];
+  return (
+    <Modal title="Access history" sub={d.name} onClose={onClose} footer={<button className="btn primary" onClick={onClose}>Done</button>}>
+      {log.error ? <ApiErr error={log.error} />
+        : live && !log.data ? <p className="xs muted">Loading…</p>
+          : rows.length ? <DataTable boxed cols={[{ label: 'When', key: 0 }, { label: 'Who', key: 1 }, { label: 'Action', key: 2 }]} rows={rows} />
+            : <p className="xs muted">No activity has been recorded for this file yet.</p>}
+    </Modal>
+  );
+}
+
+/** Folder settings (folder given) or a new folder (no folder). */
+function FolderModal({ folder, taken = [], onClose, onSave }) {
+  const [name, setName] = useState(folder?.name || '');
+  const [a, setA] = useState(folder?.access || 'All staff');
+  const save = useSave(onSave);
+  const clash = !folder && taken.includes(name.trim().toLowerCase());
+  return (
+    <Modal title={folder ? 'Folder settings' : 'New folder'} sub={folder ? folder.name : 'School documents'} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn primary" disabled={!name.trim() || clash || save.busy} onClick={() => save.run(folder ? { access: a } : { name: name.trim(), access: a })}>{folder ? 'Save' : 'Create folder'}</button></>}>
+      {!folder && <div className="field box"><label htmlFor="folder-name">FOLDER NAME *</label><input id="folder-name" autoFocus maxLength={150} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Governors' minutes" /></div>}
+      {clash && <p className="xs" style={{ color: 'var(--rd)', marginTop: 6 }}>A folder with this name already exists.</p>}
+      <div className="field box"><label htmlFor="folder-access">NEW FILES CAN BE VIEWED BY</label>
+        <select id="folder-access" value={a} onChange={(e) => setA(e.target.value)}>{ACCESS.map((x) => <option key={x}>{x}</option>)}</select></div>
+      {save.error && <ApiErr error={save.error} />}
+    </Modal>
   );
 }
 
@@ -410,8 +538,6 @@ const SETTINGS_TABS = [
   ['general', 'General'], ['academic', 'Academic setup'], ['users', 'Users & permissions'],
   ['notifications', 'Notifications'], ['security', 'Security & audit'], ['integrations', 'Integrations'],
 ];
-// Tabs whose fields are saved with the page-level Save / Discard buttons (the others save inside their cards)
-const FORM_TABS = ['general', 'academic', 'notifications'];
 
 export function Settings() {
   const [params, setParams] = useSearchParams();
@@ -443,27 +569,14 @@ export function Settings() {
       <PageHeader
         title="Settings"
         desc="Manage your school profile, academic setup and workspace preferences."
-        actions={FORM_TABS.includes(tab) ? [
-          { label: 'Discard changes', onClick: () => setRegional(getRegional()), disabled: tab === 'general' && (!regionalChanged || regionalSaving) },
-          { label: 'Save changes', icon: <Check size={15} />, primary: true, onClick: tab === 'general' ? saveRegional : undefined, disabled: tab === 'general' && (!canEditRegional || !regionalChanged || regionalSaving) },
-        ] : []}
       />
       <Tabs items={SETTINGS_TABS.map(([, label]) => label)} value={index} onChange={setTab} />
 
+      {/* Each card saves itself: school profile (authservice), regional preferences (authservice) */}
       {tab === 'general' && (
         <div className="cols s404">
           <div className="stack">
-            <Card>
-              <div className="cardhead"><h3>School profile</h3><p>Used across the parent portal, documents and communications.</p></div>
-              <div className="photo"><div className="bigavatar" style={{ borderRadius: 14 }}><Cog size={22} /></div>
-                <div><button className="btn"><Upload size={15} />Change school crest</button><small>SVG or PNG · Recommended 256 × 256 px</small></div></div>
-              <FieldGrid cols={[
-                [{ label: 'School name', required: true, value: 'Oakridge Academy' }, { label: 'School email', required: true, value: 'office@oakridge.ac.uk' }],
-                [{ label: 'Campus name', required: true, value: 'Main campus' }, { label: 'School phone', required: true, value: '+44 1865 555 100' }],
-                [{ label: 'School reference', value: 'OA-00482' }, { label: 'Website', value: 'www.oakridge.ac.uk' }],
-              ]} />
-              <Field box label="School address" required value="12 Oakridge Road, Oxford, OX2 7AA, United Kingdom" />
-            </Card>
+            <SchoolProfileCard />
           </div>
           <div className="stack">
             <RegionalCard draft={regional} setDraft={setRegional} onSave={saveRegional} onDiscard={() => { setRegional(getRegional()); setRegionalError(''); }}
@@ -472,34 +585,14 @@ export function Settings() {
         </div>
       )}
 
-      {tab === 'academic' && (
-        <div className="stack">
-          <Card>
-            <SectionHead title="Academic year & term" sub="Current school calendar and operational dates." link="Manage term dates →" />
-            <FieldGrid cols={[
-              [{ label: 'Academic year', required: true, select: true, value: '2026–2027' }, { label: 'Year starts', select: true, value: '01 September 2026' }],
-              [{ label: 'Current term', required: true, select: true, value: 'Term 1', options: ['Term 1', 'Term 2', 'Term 3'] }, { label: 'Year ends', select: true, value: '23 July 2027' }],
-              [{ label: 'Current week', value: `Week ${schoolDay(todayIso()).week} of ${schoolDay(todayIso()).weeks}` }, { label: 'Week structure', select: true, value: 'Monday–Friday' }],
-            ]} />
-            <Card className="notice" style={{ marginTop: 16, padding: 14 }}><h4>Half-term: 26–30 October</h4><p>School reopens Monday, 2 November. Attendance registers and recurring lessons pause during the break.</p></Card>
-          </Card>
-        </div>
-      )}
+      {/* studentservice: GET /api/v1/academic/calendar, PUT /api/v1/academic/sessions/{id}[/terms] */}
+      {tab === 'academic' && <div className="stack"><AcademicSetupCard /></div>}
 
       {/* authservice: GET /api/v1/roles, GET|POST /api/v1/roles/{roleId}/permissions */}
       {tab === 'users' && <div className="stack"><RolesCard /></div>}
 
-      {tab === 'notifications' && (
-        <div className="stack">
-          <Card>
-            <div className="cardhead"><h3>Notifications</h3><p>Your administrator notification preferences.</p></div>
-            {[['Attendance alerts', 'Unexcused absences and late registers'], ['Fee reminders', 'Overdue accounts and reconciliations'], ['Leave requests', 'New staff requests awaiting approval'], ['Daily school digest', 'A summary at 16:30 each school day']].map(([a, b]) => (
-              <div className="attrow" key={a}><div><b style={{ fontWeight: 500 }}>{a}</b><div className="xs muted">{b}</div></div><span className="toggle" /></div>
-            ))}
-            <span className="link" style={{ marginTop: 10 }}>Manage school-wide notifications →</span>
-          </Card>
-        </div>
-      )}
+      {/* communicationservice: GET|PUT /api/v1/communication/staff-alerts/preferences */}
+      {tab === 'notifications' && <div className="stack"><AlertPreferencesCard /></div>}
 
       {/* authservice: GET /api/v1/mfa/config, GET /api/v1/security/session-config, GET /api/v1/audit/logs */}
       {tab === 'security' && <div className="stack"><SecurityCard /></div>}
@@ -518,71 +611,4 @@ export function Settings() {
 }
 
 /* ---------- Help ---------- */
-export function Help() {
-  const { user } = useAuth();
-  const topics = [[GraduationCap, 'Students & admissions', 'Create records, enrol students and update guardians.', 12], [Users, 'Staff & faculty', 'Manage employment, teaching assignments and leave.', 9],
-    [ClipboardCheck, 'Attendance', 'Complete registers and follow up on absences.', 8], [Wallet, 'Fees & payments', 'Record payments, reconcile invoices and send reminders.', 11],
-    [FolderOpen, 'Academics & reports', 'Build timetables, enter grades and export reports.', 14], [Cog, 'Settings & security', 'Manage users, permissions and school preferences.', 7]];
-  return (
-    <>
-      <PageHeader title="Help & support" desc="Find answers, learn school workflows and get help from our support team."
-        actions={[{ label: 'Create support ticket', icon: <Plus size={15} />, primary: true }]} />
-      <div className="cols s404">
-        <div className="stack">
-          <Card className="helphero">
-            <h2>How can we help you, {user.name.split(' ')[0]}?</h2>
-            <p className="small muted">Search step-by-step guides for your Oakridge Academy workspace.</p>
-            <SearchBox placeholder="Search help articles, workflows or a question..." />
-            <p className="small muted">Popular: <span className="link">Add a student</span> · <span className="link">Record a payment</span> · <span className="link">Reset a user’s access</span></p>
-          </Card>
-          <Card>
-            <div className="cardhead"><h3>Browse help topics</h3><p>Practical guides for your school’s day-to-day work</p></div>
-            <div className="topics">
-              {topics.map(([Icon, t, d, n]) => (
-                <div className="topic" key={t}><div className="sym"><Icon size={16} /></div><div><b>{t}</b><p>{d}</p><span className="link">{n} articles →</span></div></div>
-              ))}
-            </div>
-          </Card>
-          <Card>
-            <SectionHead title="Your support tickets" sub="Track requests from the school office." link="View all tickets →" />
-            <div style={{ marginTop: 18 }}>
-              <DataTable boxed cols={[
-                { label: 'Ticket / subject', render: (r) => <span className="cell-id"><b>{r[0]}</b><small>{r[1]}</small></span> },
-                { label: 'Status', render: (r) => <Pill tone={r[2] === 'Resolved' ? 'green' : 'purple'}>{r[2]}</Pill> },
-                { label: 'Updated', key: 3 }, { label: 'Action', render: () => act('View ticket') },
-              ]} rows={[
-                ['Fee statement export formatting', '#SUP-1048 · Finance & billing', 'In progress', 'Today · 09:12'],
-                ['Update parent portal email', '#SUP-1032 · Account access', 'Resolved', '14 Oct 2026'],
-              ]} />
-            </div>
-          </Card>
-        </div>
-        <div className="stack">
-          <Card>
-            <h3 style={{ fontSize: 15, fontWeight: 600 }}>Contact support</h3>
-            <p className="small muted" style={{ margin: '4px 0 14px' }}>Our team is here to help.</p>
-            <Pill tone="green">Support team online</Pill>
-            <KV rows={[['Hours', 'Mon–Fri · 08:00–18:00 BST'], ['Response time', 'Usually within 2 hours']]} />
-            <p className="link" style={{ display: 'block', margin: '8px 0 4px' }}>support@schoolworkspace.co.uk</p>
-            <p className="small muted">+44 20 7946 0320</p>
-            <button className="btn primary" style={{ margin: '16px 0 14px' }}>Start a conversation</button>
-            <p className="xs muted">For urgent safeguarding concerns, follow your school’s safeguarding policy and contact the designated lead.</p>
-          </Card>
-          <Card>
-            <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Recommended guides</h3>
-            {['Admit a new student: step by step →', 'Correct an attendance register →', 'Set up term fee reminders →', 'Prepare mid-term progress reports →'].map((g) => (
-              <div key={g} style={{ marginTop: 12 }}><span className="link">{g}</span></div>
-            ))}
-          </Card>
-          <Card>
-            <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>System status</h3>
-            <Pill tone="green">All systems operational</Pill>
-            <p className="body-s" style={{ margin: '12px 0' }}>Student records, payments and communications are running normally.</p>
-            <span className="link">View service status →</span>
-          </Card>
-        </div>
-      </div>
-      <Footer />
-    </>
-  );
-}
+export { Help } from '../components/HelpCenter.jsx';

@@ -35,6 +35,10 @@ export const listGrades = (tenantId) => api.get(`${ACADEMIC}/grades`, { query: {
 export const listSections = (gradeId) => api.get(`${ACADEMIC}/sections`, { query: { gradeId } });
 export const listHouses = (tenantId) => api.get(`${ACADEMIC}/houses`, { query: { tenantId } });
 export const listSessions = (tenantId) => api.get(`${ACADEMIC}/sessions`, { query: { tenantId } });
+// Settings → Academic setup, Calendar → Term dates: academic years with their terms
+export const getAcademicCalendar = (tenantId) => api.get(`${ACADEMIC}/calendar`, { query: { tenantId } });
+export const updateAcademicSession = (academicYearId, body) => api.put(`${ACADEMIC}/sessions/${academicYearId}`, body);
+export const saveAcademicTerms = (academicYearId, terms) => api.put(`${ACADEMIC}/sessions/${academicYearId}/terms`, { terms });
 export const createSession = (body) => api.post(`${ACADEMIC}/sessions`, body);
 export const promoteBatch = (body) => api.post(`${ACADEMIC}/batch-promotion`, body); // US-03005
 

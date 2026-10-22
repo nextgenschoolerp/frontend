@@ -584,14 +584,14 @@ export function StudentProfile() {
   );
   const guardiansCard = (
     <Card>
-      <SectionHead title="Guardians & emergency contacts" link={s ? undefined : 'Manage contacts →'} />
+      <SectionHead title="Guardians & emergency contacts" />
       <div className="contacts" style={{ marginTop: 18 }}>
         {s ? (s.guardians?.length ? s.guardians.map((g) => (
           <div key={g.guardianId}><h4>{g.fullName}</h4>
             <Pill tone={g.primaryContact ? 'purple' : ''}>{g.relationship}{g.primaryContact ? ' · Primary contact' : ' · Emergency contact'}</Pill>
-            <p>{g.mobileNumber}</p>{g.email && <p className="link" style={{ display: 'block' }}>{g.email}</p>}</div>
+            <p>{g.mobileNumber && <a href={`tel:${g.mobileNumber}`}>{g.mobileNumber}</a>}</p>{g.email && <a className="link" style={{ display: 'block' }} href={`mailto:${g.email}`}>{g.email}</a>}</div>
         )) : <ApiNote>No guardian on record. Edit the student to add one.</ApiNote>) : (<>
-          <div><h4>Sarah Thompson</h4><Pill tone="purple">Mother · Primary contact</Pill><p>+44 7700 900 142</p><p className="link" style={{ display: 'block' }}>s.thompson@example.com</p></div>
+          <div><h4>Sarah Thompson</h4><Pill tone="purple">Mother · Primary contact</Pill><p>+44 7700 900 142</p><a className="link" style={{ display: 'block' }} href="mailto:s.thompson@example.com">s.thompson@example.com</a></div>
           <div><h4>David Thompson</h4><Pill>Father · Emergency contact</Pill><p>+44 7700 900 143</p><p>Authorised for collection</p></div></>)}
       </div>
       {s?.emergencyContactPhone && <p className="xs muted" style={{ marginTop: 12 }}>Emergency phone on the record: {s.emergencyContactPhone}</p>}
@@ -624,7 +624,7 @@ export function StudentProfile() {
   );
   const documentsCard = s ? <CertificatesCard student={s} onStudentChanged={record.reload} /> : (
     <Card>
-      <SectionHead title="Documents" link="View all →" />
+      <SectionHead title="Documents" link={tab === 'documents' ? undefined : 'View all →'} onClick={() => setTab(5)} />
       <div style={{ marginTop: 14 }}>
         <Docs items={[['Birth certificate.pdf', '284 KB · 02 Sep 2024 · Verified'], ['Proof of address.pdf', '196 KB · 02 Sep 2024 · Verified'], ['Medical care plan.pdf', '312 KB · 01 Sep 2026 · Verified']]} />
       </div>
@@ -635,6 +635,8 @@ export function StudentProfile() {
       <div style={{ marginTop: 14 }}><ApiNote>This is a sample record. Open a student from the directory to see conduct records.</ApiNote></div></Card>
   );
   const name = s ? fullName(s) : 'Amara Thompson';
+  // "Message guardian": an email to the primary contact (else the first guardian with an email)
+  const guardianEmail = s ? ([...(s.guardians || [])].sort((a, b) => Number(!!b.primaryContact) - Number(!!a.primaryContact)).find((g) => g.email)?.email) : 's.thompson@example.com';
   // "Download record": the student's record as shown on this page, one field per row
   const downloadRecord = () => downloadCsv(`student-record-${s ? s.studentUid : 'ST-2024-106'}`, ['Section', 'Field', 'Value'], s ? [
     ['Student', 'Name', fullName(s)], ['Student', 'Student UID', s.studentUid], ['Student', 'Status', (studentApi.STUDENT_STATUS[s.studentStatus] || [s.studentStatus])[0]],
@@ -665,7 +667,9 @@ export function StudentProfile() {
         <div className="side">
           {s ? <><span>{s.rollNumber ? `Roll number ${s.rollNumber}` : 'Roll number not assigned'}</span><span>Record created {fmtDate(s.createdAt)}</span></>
             : <><span>Form tutor: Eleanor Hughes</span><span>Admitted 02 September 2024</span></>}
-          <span className="link strong">Message guardian →</span>
+          {guardianEmail
+            ? <a className="link strong" href={`mailto:${guardianEmail}?subject=${encodeURIComponent(`${name} · Oakridge Academy`)}`}>Message guardian →</a>
+            : <span className="xs muted">No guardian email on record</span>}
         </div>
       </Card>
       <Tabs items={PROFILE_TABS.map(([, label]) => label)} value={index} onChange={setTab} />

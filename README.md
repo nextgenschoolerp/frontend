@@ -15,11 +15,13 @@ npm run build:production
 
 Vite loads `.env.development`, `.env.qa`, or `.env.production` for the matching mode. Local development proxies each API route to the service URLs in `.env.development`; shell environment variables can override those targets. QA and production builds use `VITE_API_BASE_URL` and default to same-origin API paths, which work with the frontend Nginx reverse proxy or an ingress routing `/api` to the UI. Set `VITE_API_BASE_URL` at build time only when that environment uses a separate API gateway origin; configure CORS on the gateway in that case.
 
+`VITE_SESSION_IDLE_TIMEOUT_MINUTES` configures the frontend inactivity logout threshold per environment. It must be a positive whole number; the supplied development, QA, and production files use 15 minutes. Pointer, keyboard, touch, and mouse activity resets the timer. JWT expiration remains an independent hard limit, and this frontend setting does not change authservice's server-side token expiration or tenant session policy.
+
 Example environment-specific container builds:
 
 ```bash
-docker build --build-arg BUILD_MODE=qa --build-arg VITE_API_BASE_URL=https://qa-api.example.com -t schoolerp-frontend:qa .
-docker build --build-arg BUILD_MODE=production --build-arg VITE_API_BASE_URL=https://api.example.com -t schoolerp-frontend:production .
+docker build --build-arg BUILD_MODE=qa --build-arg VITE_API_BASE_URL=https://qa-api.example.com --build-arg VITE_SESSION_IDLE_TIMEOUT_MINUTES=15 -t schoolerp-frontend:qa .
+docker build --build-arg BUILD_MODE=production --build-arg VITE_API_BASE_URL=https://api.example.com --build-arg VITE_SESSION_IDLE_TIMEOUT_MINUTES=15 -t schoolerp-frontend:production .
 ```
 
 Only expose public frontend configuration through `VITE_*` variables; never put credentials, signing keys, or other secrets in a Vite env file because these values are compiled into browser assets. Sign-in and auth screens call **authservice** through the same-origin `/api` route in development proxy and deployed reverse proxy configurations.

@@ -21,6 +21,8 @@ export default defineConfig(({ mode }) => {
   const academic = env.ACADEMIC_SERVICE_URL || 'http://localhost:8087/academicservice';
   // hrservice (Module 07, staff HR, attendance & payroll) is served under the /hrservice context path
   const hr = env.HR_SERVICE_URL || 'http://localhost:8088/hrservice';
+  // communicationservice (Module 09, communication, parent portal & app) is served under /communicationservice
+  const communication = env.COMMUNICATION_SERVICE_URL || 'http://localhost:8090/communicationservice';
 
   return {
     plugins: [react()],
@@ -35,6 +37,7 @@ export default defineConfig(({ mode }) => {
         '/api/v1/exams': { target: exams, changeOrigin: true },
         '/api/v1/lms': { target: academic, changeOrigin: true },
         '/api/v1/hr': { target: hr, changeOrigin: true },
+        '/api/v1/communication': { target: communication, changeOrigin: true },
         '/api': { target: auth, changeOrigin: true },
       },
     },

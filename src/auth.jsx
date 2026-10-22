@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { SESSION_KEY, setUnauthorizedHandler } from './api/client.js';
 import * as authApi from './api/authService.js';
@@ -18,6 +18,12 @@ const ROLE_LABELS = {
 
 const AuthContext = createContext(null);
 const BRANCH_KEY = 'oakridge.branch';
+const sessionIdleTimeoutMinutes = Number(import.meta.env.VITE_SESSION_IDLE_TIMEOUT_MINUTES || 15);
+
+if (!Number.isInteger(sessionIdleTimeoutMinutes) || sessionIdleTimeoutMinutes < 1) {
+  throw new Error('VITE_SESSION_IDLE_TIMEOUT_MINUTES must be a positive integer.');
+}
+const SESSION_IDLE_TIMEOUT_MS = sessionIdleTimeoutMinutes * 60 * 1000;
 
 const normaliseRole = (r) => String(r || '').replace(/^ROLE_/, '');
 
@@ -43,6 +49,7 @@ export function sessionFrom(res) {
   return {
     token: res.accessToken,
     expiresAt: tokenExpiry(res.accessToken),
+    lastActivityAt: Date.now(),
     userId: res.userId,
     username: res.username,
     email: res.email,
@@ -77,6 +84,7 @@ function persist(session, remember) {
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(readSession);
+  const lastActivityAt = useRef(user?.lastActivityAt || Date.now());
   const [notice, setNotice] = useState('');
   // Campus picked in the sidebar switcher (super admins); otherwise the user's own branch from the login response
   const [pickedBranch, setPickedBranch] = useState(() => { try { return localStorage.getItem(BRANCH_KEY) || ''; } catch { return ''; } });
@@ -104,11 +112,80 @@ export function AuthProvider({ children }) {
     return () => clearTimeout(t);
   }, [user, signOut]);
 
+  // Enforce the environment-configured idle timeout, independent of the JWT maximum lifetime.
+  useEffect(() => {
+    if (!user) return undefined;
+
+    let idleTimer;
+    const clearIdleTimer = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+    };
+    const scheduleIdleTimeout = () => {
+      clearIdleTimer();
+      const remaining = SESSION_IDLE_TIMEOUT_MS - (Date.now() - lastActivityAt.current);
+      if (remaining <= 0) {
+        signOut('You have been signed out due to inactivity. Please sign in again.');
+      } else {
+        idleTimer = setTimeout(
+          () => signOut('You have been signed out due to inactivity. Please sign in again.'),
+          remaining,
+        );
+      }
+    };
+    const recordActivity = () => {
+      const now = Date.now();
+      if (now - lastActivityAt.current < 1000) return;
+      lastActivityAt.current = now;
+      try {
+        const remembered = localStorage.getItem(SESSION_KEY);
+        const stored = remembered || sessionStorage.getItem(SESSION_KEY);
+        if (stored) {
+          const session = JSON.parse(stored);
+          session.lastActivityAt = now;
+          (remembered ? localStorage : sessionStorage).setItem(SESSION_KEY, JSON.stringify(session));
+        }
+      } catch (error) {
+        console.error('Unable to persist the session activity timestamp.', error);
+      }
+      scheduleIdleTimeout();
+    };
+    const recordVisibleActivity = () => {
+      if (document.visibilityState === 'visible') recordActivity();
+    };
+    const syncActivity = (event) => {
+      if (event.key !== SESSION_KEY || !event.newValue) return;
+      try {
+        const session = JSON.parse(event.newValue);
+        if (session?.token === user.token && session.lastActivityAt > lastActivityAt.current) {
+          lastActivityAt.current = session.lastActivityAt;
+          scheduleIdleTimeout();
+        }
+      } catch {
+        // Ignore unrelated or malformed cross-tab storage updates.
+      }
+    };
+
+    lastActivityAt.current = Math.max(lastActivityAt.current, user.lastActivityAt || 0);
+    scheduleIdleTimeout();
+    const activityEvents = ['pointerdown', 'keydown', 'touchstart', 'mousemove', 'focus'];
+    activityEvents.forEach((eventName) => window.addEventListener(eventName, recordActivity, { passive: true }));
+    document.addEventListener('visibilitychange', recordVisibleActivity);
+    window.addEventListener('storage', syncActivity);
+
+    return () => {
+      clearIdleTimer();
+      activityEvents.forEach((eventName) => window.removeEventListener(eventName, recordActivity));
+      document.removeEventListener('visibilitychange', recordVisibleActivity);
+      window.removeEventListener('storage', syncActivity);
+    };
+  }, [user, signOut]);
+
   async function signIn(identifier, password, remember) {
     // One span per signed-in session (X-Span-Id), starting with the sign-in call itself
     const span = startSpan();
     const res = await authApi.login(identifier.trim(), password);
     const session = { ...sessionFrom(res), spanId: span };
+    lastActivityAt.current = session.lastActivityAt;
     persist(session, remember);
     setNotice('');
     // A new sign-in starts on the user's own campus, even if an earlier session ended without signing out

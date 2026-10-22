@@ -1,5 +1,5 @@
 // authservice endpoints used by the UI. See docs/authservice-api-mapping.md for the screen-by-screen map.
-import { api } from './client.js';
+import { api, upload, fetchBlob } from './client.js';
 
 // --- Sign-in & password lifecycle (US-00000, US-01001 .. US-01005) ---------------------------------
 export const login = (username, password) => api.post('/api/v1/auth/login', { username, password }, { auth: false });
@@ -26,3 +26,9 @@ export const listBranches = (tenantId) => api.get(`/api/v1/tenants/${tenantId}/b
 // --- Regional preferences (Settings → General) -------------------------------------------------------
 export const getRegionalSettings = (tenantId) => api.get(`/api/v1/tenants/${tenantId}/regional-settings`);
 export const saveRegionalSettings = (tenantId, settings) => api.put(`/api/v1/tenants/${tenantId}/regional-settings`, settings);
+
+// --- Settings → General → School profile and crest -----------------------------------------------------
+export const getSchoolProfile = (tenantId) => api.get(`/api/v1/tenants/${tenantId}/school-profile`);
+export const saveSchoolProfile = (tenantId, body) => api.put(`/api/v1/tenants/${tenantId}/school-profile`, body);
+export const fetchSchoolCrest = (tenantId) => fetchBlob(`/api/v1/tenants/${tenantId}/school-profile/crest`);
+export const uploadSchoolCrest = (tenantId, file) => { const f = new FormData(); f.append('file', file); return upload(`/api/v1/tenants/${tenantId}/school-profile/crest`, f, { method: 'PUT' }); };

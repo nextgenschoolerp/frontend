@@ -10,6 +10,7 @@ import { listBranches, getRegionalSettings } from '../api/authService.js';
 import { useApi } from '../api/useApi.js';
 import { THEMES, getTheme, applyTheme } from '../theme.js';
 import { useRegional, version, applyServerRegional } from '../regional.js';
+import { GlobalSearch, NotificationBell } from './ShellTools.jsx';
 
 const GROUPS = [
   ['WORKSPACE', [
@@ -148,10 +149,9 @@ export default function Layout() {
   const [navOpen, setNavOpen] = useState(false);
   const logout = () => { signOut(); navigate('/login', { replace: true }); };
   // The school's saved preferences replace this browser's cached copy; if authservice is unreachable the cache stays in force
-  useEffect(() => {
-    if (!user?.tenantId) return;
-    getRegionalSettings(user.tenantId).then(applyServerRegional).catch(() => { /* offline: keep the cached preferences */ });
-  }, [user?.tenantId]);
+  // (useApi, so StrictMode's double mount sends the request once; an error leaves the cache as it is)
+  const { data: serverRegional } = useApi(() => getRegionalSettings(user.tenantId), [user?.tenantId], !!user?.tenantId);
+  useEffect(() => { if (serverRegional) applyServerRegional(serverRegional); }, [serverRegional]);
   useEffect(() => { window.scrollTo(0, 0); document.title = `Oakridge Academy – ${crumbs[crumbs.length - 1]}`; }, [pathname]);
 
   useEffect(() => setNavOpen(false), [pathname]);
@@ -214,9 +214,9 @@ export default function Layout() {
             ))}
           </div>
           <div className="tools">
-            <label className="gsearch"><Search size={15} /><input placeholder="Search students, staff, records..." /><small>⌘ K</small></label>
+            <GlobalSearch />
             <CampusSwitcher />
-            <div className="bell"><Bell size={19} /></div>
+            <NotificationBell />
             <AccountMenu onSignOut={logout} />
           </div>
         </header>

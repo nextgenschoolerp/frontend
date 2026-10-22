@@ -179,7 +179,8 @@ export default function Overview() {
 
       <div className="cols ov">
         <Card flush>
-          <SectionHead pad title="Needs your attention" sub="A clear queue for the day ahead" link="All tasks" />
+          <SectionHead pad title="Needs your attention" sub="A clear queue for the day ahead" link="Export tasks"
+            onClick={() => downloadCsv('tasks', ['Work item', 'Detail', 'Quantity', 'Status', 'Assigned team'], work.map(([n, s, q, , st, team]) => [n, s, q, st, team]))} />
           <div className="tablewrap">
             <table className="t">
               <thead><tr><th>Work item</th><th>Qty</th><th>Status</th><th>Assigned team</th><th>Action</th></tr></thead>

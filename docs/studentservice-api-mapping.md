@@ -147,10 +147,12 @@ Backend changes for this (studentservice `StudentService.batchPromoteStudents`):
 
 ## Notes for the backend
 
-All three issues below are fixed in studentservice (covered by `TenantIsolationIntegrationTest`):
+All the issues below are fixed in studentservice (covered by `TenantIsolationIntegrationTest`):
 
 - **Fixed:** SCHOOL_NURSE may now call `GET /api/v1/students` (read-only), so a nurse can find students from the list instead of needing a direct profile link.
 - **Fixed:** tenant isolation. The per-student endpoints (`/api/v1/students/{id}`, `/uid/{uid}`, `/medical`, `/siblings`, `/allocation`, `/id-card`, `/certificates…`, `/disciplinary`) and `GET /api/v1/alumni/{studentUid}` check the student against the `tenantId` claim of the JWT and answer 404 for another tenant's student. `GET /api/v1/students?tenantId=` answers 403 for a tenant other than the caller's. SUPER_ADMIN may cross tenants; a token without a `tenantId` claim reaches no student.
+- **Fixed:** tenants and ids sent in request bodies. `POST /api/v1/students` answers 403 when `tenantId` is not the caller's, and 404 when `gradeId`, `sectionId` or `houseId` belongs to another tenant (`PUT …/allocation` checks the class, section and house the same way). `POST /api/v1/alumni/archive` and `POST /api/v1/academic/batch-promotion` answer 404 for another tenant's student or classes.
+- **Fixed:** academic structure. `GET /api/v1/academic/{sessions,grades,houses}?tenantId=` and `POST` of sessions, grades and houses answer 403 for another tenant; `GET /api/v1/academic/sections?gradeId=` and `POST /api/v1/academic/sections` answer 404 for another tenant's class.
 - **Fixed:** certificate numbers. The counter still restarts at 1001 on every start, but certificate numbers now skip numbers already in the database (as the UID already did), so a restart no longer causes a unique-key error.
 
 ## Access rules (tools)

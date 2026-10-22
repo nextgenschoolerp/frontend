@@ -91,8 +91,8 @@ export async function fetchBlob(path) {
   return res.blob();
 }
 
-/** multipart/form-data upload (the browser sets the boundary header). */
-export async function upload(path, formData, { query } = {}) {
+/** multipart/form-data upload (the browser sets the boundary header); POST unless `method` says otherwise. */
+export async function upload(path, formData, { query, method = 'POST' } = {}) {
   const url = apiUrl(path);
   Object.entries(query || {}).forEach(([k, v]) => v !== undefined && v !== null && v !== '' && url.searchParams.set(k, v));
   const trace = traceHeaders();
@@ -101,7 +101,7 @@ export async function upload(path, formData, { query } = {}) {
   if (bearer) headers.Authorization = `Bearer ${bearer}`;
   let res;
   try {
-    res = await fetch(url.href, { method: 'POST', headers, body: formData });
+    res = await fetch(url.href, { method, headers, body: formData });
   } catch {
     throw new ApiError(0, null, trace[TRACE_HEADER]);
   }

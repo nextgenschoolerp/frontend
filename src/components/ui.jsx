@@ -120,11 +120,12 @@ export const Metrics = ({ items }) => (
   </div>
 );
 
-export const SectionHead = ({ title, sub, link, to, pad }) => {
+export const SectionHead = ({ title, sub, link, to, onClick, pad }) => {
   const onBack = useBackLink(to);
   const L = link && (to
     ? <Link to={to} onClick={onBack} className="link">{link}<ArrowUpRight size={13} /></Link>
-    : <span className="link">{link}<ArrowUpRight size={13} /></span>);
+    : onClick ? <button type="button" className="link" onClick={onClick}>{link}</button>
+      : <span className="link">{link}<ArrowUpRight size={13} /></span>);
   return (
     <div className={'sh' + (pad ? ' pad' : '')}>
       <div><h3>{title}</h3>{sub && <p>{sub}</p>}</div>

@@ -51,7 +51,7 @@ svg.lucide{flex:none}
 .gsearch small{font-size:10px;color:var(--fa)}
 .year{display:flex;align-items:center;gap:7px;font-weight:500}
 .bell{position:relative;display:flex}
-.bell:after{content:"";position:absolute;top:-2px;right:-3px;width:5px;height:5px;border-radius:5px;background:var(--pr)}
+.bell.unread:after{content:"";position:absolute;top:-2px;right:-3px;width:5px;height:5px;border-radius:5px;background:var(--pr)}
 .page{padding:28px 32px 24px;display:flex;flex-direction:column;gap:24px}
 
 /* page heading */
@@ -532,3 +532,19 @@ body.noscroll{overflow:hidden}
 .ttgrid tr.ttbreak td:first-child{text-align:left}
 /* Trace id under an API error, for looking the request up in the service logs */
 .api-error .trace-ref{display:block;margin-top:2px;opacity:.75;font-family:ui-monospace,Consolas,monospace;font-size:10px;user-select:all}
+
+/* Top bar: global search results and notifications */
+.gsearch-wrap{position:relative}
+.bellwrap{position:relative;display:flex}
+.bell{color:inherit;padding:0}
+.acctmenu.searchmenu{left:0;right:auto;width:340px}
+.acctmenu.notifmenu{width:320px}
+.searchmenu>button span,.notifmenu>button span{display:flex;flex-direction:column;min-width:0;line-height:1.35}
+.searchmenu>button small,.notifmenu>button small{color:var(--mu);font-size:10px}
+.searchmenu>button.on{background:var(--gl)}
+.notifmenu .acctmenu-head{display:flex;justify-content:space-between;align-items:center}
+.notifmenu i.dot{display:inline-block;width:6px;height:6px;border-radius:6px;background:var(--pr);margin-right:6px;vertical-align:middle}
+.toggle{border:0;cursor:pointer;transition:background .15s}
+.toggle.off{background:var(--fa)}
+.toggle.off:after{right:auto;left:2px}
+.toggle:disabled{opacity:.5;cursor:not-allowed}
