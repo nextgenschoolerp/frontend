@@ -1,22 +1,21 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Download, Plus, Upload, Check, ChevronLeft, ChevronRight, Search, FileText, Users, ClipboardCheck, Wallet,
-  GraduationCap, FolderOpen, Settings as Cog, ShieldCheck, Folder, Bold, Italic, Underline, AlignLeft, Paperclip, Send,
+  Download, Plus, Upload, Check, ChevronLeft, ChevronRight, Search, FileText, Users,
+  FolderOpen, Settings as Cog, ShieldCheck, Folder, Bold, Italic, Underline, AlignLeft, Paperclip, Send,
 } from 'lucide-react';
 import {
   PageHeader, Metrics, Card, SectionHead, useBackLink, Tabs, SearchBox, Select, DataTable, Pager, Pill, Footer, Field, FieldGrid, KV, downloadFile, downloadCsv, schoolDay, todayIso,
 } from '../components/ui.jsx';
-import { AttendanceChart } from './Overview.jsx';
 import { ApiErr, ApiNote } from '../components/Admissions.jsx';
 import { SchoolProfileCard, AcademicSetupCard, AlertPreferencesCard } from '../components/SettingsCards.jsx';
-import { useAttendanceWeek } from '../components/AttendanceLive.jsx';
 import { RolesCard, SecurityCard, Modal } from '../components/AuthSettings.jsx';
 import CommunicationsLive from '../components/CommunicationsLive.jsx';
+import ReportsLive from '../components/ReportsLive.jsx';
 import * as commApi from '../api/communicationService.js';
 import { useApi } from '../api/useApi.js';
 import { useAuth } from '../auth.jsx';
-import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
+import { formatDate, formatDateTime, formatTime } from '../regional.js';
 import { getRegional, applyServerRegional, version, zoneName, TIME_ZONES, CURRENCIES, DATE_FORMATS, LANGUAGES, DEFAULT_REGIONAL } from '../regional.js';
 import { saveRegionalSettings } from '../api/authService.js';
 
@@ -37,84 +36,9 @@ export function Communications() {
 
 /* ---------- Reports ---------- */
 export function Reports() {
-  const cats = [[GraduationCap, 'Student reports', 'Enrolment, admissions & demographics', 8], [ClipboardCheck, 'Attendance', 'Daily registers, trends & persistent absence', 6],
-    [Wallet, 'Finance', 'Fee collection, outstanding balances & billing', 5], [Users, 'Staff & academics', 'Staffing, class performance & assessments', 7]];
-  // Weekly attendance report: GET /api/v1/attendance/summary and /trend (studentservice); the sample week for other roles
-  const att = useAttendanceWeek();
-  const t = att.live ? att.today : null;
-  const share = (n) => (t && t.totalStudents ? `${((n / t.totalStudents) * 100).toFixed(1)}%` : '—');
-  const week = att.live
-    ? { period: att.period || 'This week', avg: att.weekAvg === null ? '—' : `${att.weekAvg.toFixed(1)}%`,
-      change: att.change === null ? '—' : `${att.change >= 0 ? '+' : ''}${att.change.toFixed(1)} pp`, up: att.change === null || att.change >= 0,
-      onTarget: att.weekAvg !== null && att.weekAvg >= 95,
-      rows: [['Present', formatNumber(t.present), share(t.present)], ['Excused', String(t.excused), share(t.excused)], ['Unexcused', String(t.unexcused), share(t.unexcused)],
-        ['Not yet marked', String(t.unmarked), share(t.unmarked)]],
-      updated: formatDateTime(new Date()) }
-    : { period: '12–16 October 2026', avg: '95.2%', change: '+0.5 pp', up: true, onTarget: true,
-      rows: [['Present', '1,188', '95.2%'], ['Excused', '42', '3.4%'], ['Unexcused', '18', '1.4%']], updated: '16 Oct 2026 · 09:42' };
   return (
     <>
-      <PageHeader
-        title="Reports"
-        desc="Turn school information into clear, shareable reports for confident decisions."
-        actions={[{ label: 'Scheduled reports' }, { label: 'Create report', icon: <Plus size={15} />, primary: true }]}
-      />
-      <Card>
-        <div className="filters"><SearchBox placeholder="Search reports" width={300} /><Select>2026–2027</Select><Select>Term 1</Select><Select>12–16 October 2026</Select><Select>Main campus</Select></div>
-      </Card>
-      <div className="grid4">
-        {cats.map(([Icon, t, d, n]) => (
-          <Card key={t} className="reportcard"><div className="sym"><Icon size={16} /></div><b>{t}</b><span className="xs muted">{d}</span><span className="link" style={{ marginTop: 6 }}>{n} reports · Browse →</span></Card>
-        ))}
-      </div>
-      <div className="cols s404">
-        <Card>
-          <SectionHead title="Weekly attendance report" sub={`Preview · ${week.period} · Main campus`} link="Open full report →" to="/attendance" />
-          <div className="row" style={{ justifyContent: 'flex-start', gap: 50, margin: '18px 0 20px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-            <div><div className="bignum">{week.avg}</div><span className="small muted">Weekly average</span></div>
-            <div><div style={{ fontSize: 24, fontWeight: 600, color: week.up ? 'var(--gr)' : 'var(--rd)' }}>{week.change}</div><span className="small muted">Compared with last week</span></div>
-            <Pill tone={week.onTarget ? 'green' : 'amber'}>{week.onTarget ? 'Above 95% target' : 'Below 95% target'}</Pill>
-          </div>
-          {att.live ? <AttendanceChart points={att.points} /> : <AttendanceChart />}
-          <div style={{ marginTop: 18 }}>
-            <DataTable boxed cols={[{ label: 'Today’s status', key: 0 }, { label: 'Students', key: 1 }, { label: 'Proportion', key: 2 }]} rows={week.rows} />
-          </div>
-        </Card>
-        <div className="stack">
-          <Card>
-            <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Report options</h3>
-            <KV rows={[['Period', week.period], ['Audience', 'All year groups'], ['Data source', 'Daily attendance registers'], ['Updated', week.updated]]} />
-            <div className="actions" style={{ margin: '12px 0' }}>
-              {/* PDF: the browser's print dialog ("Save as PDF"); CSV: the preview figures */}
-              <button className="btn primary" onClick={() => window.print()}><Download size={14} />Export PDF</button>
-              <button className="btn" onClick={() => downloadCsv('weekly-attendance', ['Status', 'Students', 'Proportion'],
-                [...week.rows.map(([a, b, c]) => [a, b.replace(/,/g, ''), c]), ...(att.live ? att.week.map((d) => [`Present ${d.date}`, String(d.present), `${Number(d.presentRate || 0).toFixed(1)}%`]) : []),
-                  ['Weekly average', '', week.avg], ['Change vs last week', '', week.change]])}>
-                <Download size={14} />CSV</button>
-            </div>
-            <button className="btn">Schedule weekly email</button>
-            <p className="xs muted" style={{ marginTop: 14 }}>Reports respect your role permissions. Personal student data is only included for authorised users.</p>
-          </Card>
-          <Card>
-            <SectionHead title="Saved reports" link="Manage →" />
-            {[['Term 1 fee collection →', 'Saved by Sarah Williams · 14 Oct'], ['Year 10 academic progress →', 'Saved by Michael Brooks · 12 Oct']].map(([a, b]) => (
-              <div key={a} style={{ marginTop: 14 }}><span className="link">{a}</span><p className="xs muted">{b}</p></div>
-            ))}
-          </Card>
-        </div>
-      </div>
-      <Card>
-        <SectionHead title="Recently generated" link="View report history →" />
-        <div style={{ marginTop: 18 }}>
-          <DataTable boxed cols={[
-            { label: 'Report', key: 0, className: 'num' }, { label: 'Generated by', key: 1 }, { label: 'Date', key: 2 }, { label: 'Format', key: 3 }, { label: 'Action', render: () => act('Download') },
-          ]} rows={[
-            ['Term 1 fee collection summary', 'Sarah Williams', '15 Oct 2026', 'PDF'],
-            ['Staff leave & cover report', 'Sarah Williams', '14 Oct 2026', 'XLSX'],
-            ['Year 10 student progress', 'Michael Brooks', '12 Oct 2026', 'PDF'],
-          ]} />
-        </div>
-      </Card>
+      <ReportsLive />
       <Footer />
     </>
   );

@@ -4,7 +4,7 @@ import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as exam from '../api/examService.js';
 import * as studentApi from '../api/studentService.js';
-import { PageHeader, Metrics, Card, SectionHead, Tabs, DataTable, Pill, Footer, downloadCsv } from './ui.jsx';
+import { PageHeader, Metrics, Card, SectionHead, Tabs, DataTable, Pill, Footer, downloadCsv, useTabParam } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
 import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
@@ -29,7 +29,7 @@ export function AssessmentsLive() {
   const [termId, setTermId] = useState('');
   const [gradeId, setGradeId] = useState('');
   const [sectionId, setSectionId] = useState('');
-  const [tab, setTab] = useState(0);
+  const [tab, setTab] = useTabParam(TABS);
   const sections = useApi(() => studentApi.listSections(gradeId), [gradeId], !!gradeId);
   const term = (terms.data || []).find((t) => t.examTermId === termId);
   const overall = useApi(() => exam.completeness(termId, { branchId }), [termId, branchId], !!termId);

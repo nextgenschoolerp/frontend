@@ -14,8 +14,10 @@ import { formatDateTime } from '../regional.js';
  * /api/v1/communication/support/tickets) and a live check of every backend service behind the Vite proxy.
  */
 
-const SUPPORT_EMAIL = 'support@schoolworkspace.co.uk';
-const SUPPORT_PHONE = '+44 20 7946 0320';
+// Set per deployment (.env.*); the email and phone lines are hidden until they are set, tickets always work
+const SUPPORT_EMAIL = (import.meta.env.VITE_SUPPORT_EMAIL || '').trim();
+const SUPPORT_PHONE = (import.meta.env.VITE_SUPPORT_PHONE || '').trim();
+const SUPPORT_HOURS = (import.meta.env.VITE_SUPPORT_HOURS || '').trim() || 'Mon–Fri · school hours';
 
 const TOPICS = [
   ['students', GraduationCap, 'Students & admissions', 'Create records, enrol students and update guardians.'],
@@ -37,23 +39,23 @@ const ARTICLES = [
   ['add-staff', 'staff', 'Add a staff member', 'Create an employee record and assign a role.',
     ['Open Staff & faculty and choose Add staff member.', 'Enter employment details and the role.', 'Save; the staff member can then be given teaching assignments.'], '/staff/new'],
   ['approve-leave', 'staff', 'Approve a leave request', 'Review and approve or decline staff leave.',
-    ['Open Staff & faculty.', 'Pending requests are listed under leave; open one.', 'Approve or decline it. Cover is arranged in Teaching & learning.'], '/staff'],
+    ['Open Staff & faculty; the Leave requests figure and the Leave & cover card show how many requests are pending.', 'Open the staff member’s profile (View profile) and choose the Leave & attendance tab.', 'Approve or decline the pending request. Cover for their lessons is arranged in Teaching & learning → Cover.'], '/staff'],
   ['correct-register', 'attendance', 'Correct an attendance register', 'Change a mark after the register was submitted.',
-    ['Open Attendance and pick the date and class.', 'Change the student’s mark (present, excused, unexcused).', 'Save. The change is logged with your name.'], '/attendance'],
+    ['Open Attendance → Daily register.', 'Pick the date, the class and the section, then the morning or afternoon register.', 'Change the student’s mark and save the register again.'], '/attendance'],
   ['absence-follow-up', 'attendance', 'Follow up an unexplained absence', 'Contact families about unexcused absences.',
-    ['Open Attendance → absences.', 'Open the student and record the follow-up.', 'Absence alerts to families are sent from Communications.'], '/attendance'],
+    ['Open Attendance → Absence history and pick the class and dates.', 'Check which absences are unexcused.', 'Contact the families from Communications → Absence alerts.'], '/attendance?tab=absence-history'],
   ['record-payment', 'fees', 'Record a payment', 'Record a fee payment and issue a receipt.',
-    ['Open Fees & payments and find the student’s account.', 'Choose Record payment and enter the amount and method.', 'Save. A receipt is issued and the balance updates.'], '/fees'],
-  ['fee-reminders', 'fees', 'Set up term fee reminders', 'Remind families with overdue balances.',
-    ['Open Fees & payments → defaulters.', 'Select the overdue accounts.', 'Send reminders; only accounts with an overdue balance are contacted.'], '/fees'],
+    ['Open Fees & payments and choose Record payment (or Record payment next to an account under Outstanding accounts).', 'Pick the student, then enter the amount and payment method.', 'Save. A receipt is issued, appears under Recent transactions and the balance updates.'], '/fees'],
+  ['fee-reminders', 'fees', 'Follow up overdue fees', 'Find families with overdue balances and remind them.',
+    ['Open Fees & payments and scroll to Outstanding accounts.', 'Filter by class to see each student’s overdue amount and installments.', 'Send the families a reminder as a circular from Communications → Circulars, and record payments as they come in.'], '/fees'],
   ['progress-reports', 'academics', 'Prepare mid-term progress reports', 'Collect grades and publish reports.',
-    ['Open Academics and pick the assessment term.', 'Check which classes have submitted marks.', 'Publish results once every class is complete.'], '/academics'],
-  ['timetable', 'academics', 'Build a class timetable', 'Assign lessons to periods and rooms.',
-    ['Open Teaching & learning → Timetable.', 'Pick the class and drag subjects into periods.', 'Resolve any clashes shown, then publish.'], '/teaching'],
+    ['Open Academics and pick the assessment term, class and section.', 'Check Incomplete entries: publishing is blocked until every mark is in.', 'Open Broadsheet and choose Publish progress cards.'], '/academics?tab=broadsheet'],
+  ['timetable', 'academics', 'Build a class timetable', 'Allocate teachers and generate the week’s periods.',
+    ['Open Teaching & learning → Allocations and give each subject of the class a teacher.', 'Choose Generate timetables, pick the classes and run it (timetable in-charge).', 'Check the result in the Timetable tab, by class or by teacher.'], '/teaching?tab=allocations'],
   ['reset-access', 'settings', 'Reset a user’s access', 'Help a colleague who cannot sign in.',
-    ['Ask them to use “Forgot password?” on the sign-in page.', 'If the account is locked, an administrator can unlock it in Settings → Users & permissions.', 'Check the audit log in Settings → Security & audit if access looks wrong.'], '/settings?tab=users'],
+    ['Ask them to use “Forgot password?” on the sign-in page to get a reset link.', 'After too many failed attempts the account locks for a short time and unlocks on its own; wait, then try again.', 'If access still looks wrong, check their roles in Settings → Users & permissions and the audit log in Settings → Security & audit.'], '/settings?tab=security'],
   ['regional', 'settings', 'Change time zone, currency or date format', 'Regional preferences for the whole school.',
-    ['Open Settings → General.', 'Change the regional preferences and check the preview.', 'Save; every screen uses the new settings.'], '/settings'],
+    ['Open Settings → General and find Regional preferences.', 'Change the time zone, currency or date format.', 'Save; every screen uses the new settings.'], '/settings'],
   ['term-dates', 'settings', 'Set term dates and half-terms', 'Keep the academic calendar up to date.',
     ['Open Settings → Academic setup.', 'Choose Manage term dates.', 'Edit each term and its half-term, mark the current term and save.'], '/settings?tab=academic'],
 ].map(([id, topic, title, summary, steps, to]) => ({ id, topic, title, summary, steps, to }));
@@ -66,23 +68,19 @@ const categoryLabel = (c) => CATEGORIES.find(([v]) => v === c)?.[1] || c;
 const STATUS = { OPEN: ['Open', 'amber'], IN_PROGRESS: ['In progress', 'purple'], RESOLVED: ['Resolved', 'green'] };
 const statusPill = (s) => <Pill tone={(STATUS[s] || [s, ''])[1]}>{(STATUS[s] || [s])[0]}</Pill>;
 
-// Services behind the Vite proxy; a service is up when it answers with its JSON envelope (any status)
+// Services behind the Vite proxy, each probed on an endpoint every signed-in role may call; a service is up when it answers 2xx
 const SERVICES = [
-  ['Sign-in & settings', 'authservice', '/api/v1/auth/me'], ['Admissions', 'admissionservice', '/api/v1/admissions/enquiries'],
-  ['Student records & attendance', 'studentservice', '/api/v1/academic/grades'], ['Fees & payments', 'financeservice', '/api/v1/finance/status-check'],
-  ['Examinations', 'examservice', '/api/v1/exams/status-check'], ['Teaching & learning', 'academicservice', '/api/v1/lms/status-check'],
-  ['Staff & HR', 'hrservice', '/api/v1/hr/employees'], ['Communications & documents', 'communicationservice', '/api/v1/communication/broadcasts'],
+  ['Sign-in & settings', 'authservice', '/api/v1/auth/me'], ['Admissions', 'admissionservice', '/api/v1/admissions/access-rules'],
+  ['Student records & attendance', 'studentservice', '/api/v1/academic/access-rules'], ['Fees & payments', 'financeservice', '/api/v1/finance/access-rules'],
+  ['Examinations', 'examservice', '/api/v1/exams/access-rules'], ['Teaching & learning', 'academicservice', '/api/v1/lms/access-rules'],
+  ['Staff & HR', 'hrservice', '/api/v1/hr/access-rules'], ['Communications & documents', 'communicationservice', (u) => `/api/v1/communication/support/tickets?requesterUserId=${encodeURIComponent(u.userId)}`],
 ];
 async function probe(path, tenantId) {
   const token = (() => { try { const k = Object.keys(localStorage).concat(Object.keys(sessionStorage)).find((x) => { try { return JSON.parse(localStorage.getItem(x) || sessionStorage.getItem(x))?.token; } catch { return false; } }); return JSON.parse(localStorage.getItem(k) || sessionStorage.getItem(k)).token; } catch { return null; } })();
   const started = performance.now();
   try {
     const res = await fetch(`${path}${path.includes('?') ? '&' : '?'}tenantId=${encodeURIComponent(tenantId)}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-    const text = await res.text();
-    let json = null;
-    try { json = JSON.parse(text); } catch { /* proxy error page */ }
-    const up = !!json && ('success' in json || 'status' in json);
-    return { up, ms: Math.round(performance.now() - started) };
+    return { up: res.ok, ms: Math.round(performance.now() - started) };
   } catch {
     return { up: false, ms: null };
   }
@@ -100,7 +98,7 @@ export function Help() {
   const [status, setStatus] = useState(null); // { [service]: { up, ms } }
   const checkStatus = async () => {
     setStatus(null);
-    const results = await Promise.all(SERVICES.map(([, svc, path]) => probe(path, user.tenantId).then((r) => [svc, r])));
+    const results = await Promise.all(SERVICES.map(([, svc, path]) => probe(typeof path === 'function' ? path(user) : path, user.tenantId).then((r) => [svc, r])));
     setStatus(Object.fromEntries(results));
   };
   useEffect(() => { checkStatus(); }, []);
@@ -160,9 +158,10 @@ export function Help() {
             <h3 style={{ fontSize: 15, fontWeight: 600 }}>Contact support</h3>
             <p className="small muted" style={{ margin: '4px 0 14px' }}>Our team is here to help.</p>
             <Pill tone="green">Support team online</Pill>
-            <KV rows={[['Hours', 'Mon–Fri · 08:00–18:00 BST'], ['Response time', 'Usually within 2 hours']]} />
-            <a className="link" style={{ display: 'block', margin: '8px 0 4px' }} href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
-            <a className="small muted" href={`tel:${SUPPORT_PHONE.replace(/\s/g, '')}`}>{SUPPORT_PHONE}</a>
+            <KV rows={[['Hours', SUPPORT_HOURS], ['Response time', 'Usually within 2 hours']]} />
+            {SUPPORT_EMAIL && <a className="link" style={{ display: 'block', margin: '8px 0 4px' }} href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>}
+            {SUPPORT_PHONE && <a className="small muted" href={`tel:${SUPPORT_PHONE.replace(/[^\d+]/g, '')}`}>{SUPPORT_PHONE}</a>}
+            {!SUPPORT_EMAIL && !SUPPORT_PHONE && <p className="small muted" style={{ marginTop: 8 }}>Create a support ticket or start a conversation; replies arrive here and by email.</p>}
             <button className="btn primary" style={{ margin: '16px 0 14px', display: 'flex' }} onClick={() => setModal('conversation')}>Start a conversation</button>
             <p className="xs muted">For urgent safeguarding concerns, follow your school’s safeguarding policy and contact the designated lead.</p>
           </Card>

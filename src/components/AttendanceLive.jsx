@@ -3,7 +3,7 @@ import { Check, Download, LoaderCircle, Phone } from 'lucide-react';
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as studentApi from '../api/studentService.js';
-import { PageHeader, Metrics, Card, DataTable, Tabs, SectionHead, Pill, Person, KV, Footer, downloadCsv, todayIso } from './ui.jsx';
+import { PageHeader, Metrics, Card, DataTable, Tabs, SectionHead, Pill, Person, KV, Footer, downloadCsv, todayIso, useTabParam } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
 import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
@@ -96,7 +96,7 @@ export function AttendanceLive() {
   const [gradeId, setGradeId] = useState(() => lastClass().gradeId || '');
   const [sectionId, setSectionId] = useState(() => lastClass().sectionId || '');
   useEffect(() => { if (gradeId && sectionId) rememberClass({ gradeId, sectionId }); }, [gradeId, sectionId]);
-  const [tab, setTab] = useState(0);
+  const [tab, setTab] = useTabParam(['Daily register', 'Absence history', 'Staff attendance']);
   const [notice, setNotice] = useState(null);
 
   const grades = useApi(() => studentApi.listGrades(user.tenantId), [user.tenantId], canClasses);

@@ -4,7 +4,7 @@ import { Plus, QrCode, ShieldAlert, LoaderCircle, Check, Send } from 'lucide-rea
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as comm from '../api/communicationService.js';
-import { PageHeader, Metrics, Card, Tabs, DataTable, Pill, todayIso } from './ui.jsx';
+import { PageHeader, Metrics, Card, Tabs, DataTable, Pill, todayIso, useTabParam } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
 import { formatDate, formatDateTime, formatTime } from '../regional.js';
@@ -50,7 +50,7 @@ export default function CommunicationsLive() {
     Messages: can.messaging, 'Gate passes': can.gatePass || can.security, Visitors: can.reception,
     Grievances: can.reception || can.parent, Preferences: can.parent,
   })[t] ?? true);
-  const [tab, setTab] = useState(0);
+  const [tab, setTab] = useTabParam(tabs);
   const [msg, setMsg] = useState(null);
   // Another page can open a prefilled circular (Calendar's "Message attendees")
   const draft = useLocation().state?.circular;

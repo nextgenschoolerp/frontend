@@ -1,4 +1,4 @@
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowUpRight, ArrowLeft, FileText, Search, ChevronDown, Calendar } from 'lucide-react';
 import { useState } from 'react';
 import { todayIso, formatDate, formatTime, timeZoneNames } from '../regional.js';
@@ -135,6 +135,13 @@ export const SectionHead = ({ title, sub, link, to, onClick, pad }) => {
 };
 
 /** Uncontrolled by default; pass `value` + `onChange` to control the selected tab. */
+/** Tab state that opens on the tab named by ?tab= (its label as a slug, e.g. /attendance?tab=absence-history), so guides and other pages can link to a tab. */
+export function useTabParam(labels) {
+  const [params] = useSearchParams();
+  const slug = (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return useState(() => Math.max(0, labels.findIndex((t) => slug(t) === params.get('tab'))));
+}
+
 export function Tabs({ items, initial = 0, value, onChange }) {
   const [own, setOwn] = useState(initial);
   const on = value ?? own;

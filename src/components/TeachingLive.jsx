@@ -3,7 +3,7 @@ import { Download, LoaderCircle, Wand2, UserX, Shuffle, Plus, Check, Send, Calen
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as lms from '../api/academicService.js';
-import { PageHeader, Metrics, Card, Tabs, DataTable, Pill, Footer, SectionHead, downloadFile, todayIso } from './ui.jsx';
+import { PageHeader, Metrics, Card, Tabs, DataTable, Pill, Footer, SectionHead, downloadFile, todayIso, useTabParam } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
 import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
@@ -35,7 +35,7 @@ export function TeachingLive() {
   const workloads = useApi(() => lms.listWorkloads(), []);
   const today = useApi(() => lms.daySheet(nextSchoolDay()), []);
   const classes = useApi(() => lms.listClasses(), []);
-  const [tab, setTab] = useState(0);
+  const [tab, setTab] = useTabParam(TABS);
   const [sectionId, setSectionId] = useState('');
   const [generating, setGenerating] = useState(false);
   const [pdf, setPdf] = useState(null);

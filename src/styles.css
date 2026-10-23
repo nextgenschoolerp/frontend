@@ -255,6 +255,17 @@ select.select{appearance:none;padding-right:26px;background:var(--card) url("dat
 .reportcard{display:flex;flex-direction:column;gap:6px}
 .reportcard .sym{width:30px;height:30px;border-radius:8px;background:var(--tint);color:var(--pr);display:grid;place-items:center;margin-bottom:6px}
 .reportcard b{font-size:13px;font-weight:600}
+.reportcard{text-align:left;font:inherit;color:inherit;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+button.reportcard:disabled{cursor:default}
+button.reportcard:not(:disabled):hover{border-color:var(--tint2)}
+.reportcard.on{border-color:var(--pr);box-shadow:0 0 0 3px var(--tint)}
+.savedlist{display:flex;flex-direction:column}
+.saved{display:flex;gap:12px;align-items:center;padding:12px 0;border-top:1px solid var(--bd)}
+.saved:first-child{border-top:0;padding-top:0}
+.saved .sym{width:32px;height:32px;border-radius:8px;background:var(--tint);color:var(--pr);display:grid;place-items:center;flex:none}
+.saved .sv{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+.saved .sv b{font-weight:500;font-size:12px}
+.saved .btn{height:32px}
 .toggle{width:30px;height:18px;border-radius:18px;background:var(--pr);position:relative;flex:none}
 .toggle:after{content:"";position:absolute;right:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff}
 .row{display:flex;justify-content:space-between;align-items:center;gap:12px}
