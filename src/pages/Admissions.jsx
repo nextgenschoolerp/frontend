@@ -45,6 +45,8 @@ const STAGE_ORDER = [...STAGES, ...EXITS].map((s) => s.key);
 const CLASSES = ['Nursery', 'LKG', 'UKG', ...Array.from({ length: 12 }, (_, i) => `Class ${i + 1}`)];
 const YEARS = ['2026–2027', '2027–2028'];
 const OUTCOME_TONE = { CONNECTED: 'green', CALLBACK_REQUESTED: 'amber', NOT_INTERESTED: 'red', NO_ANSWER: '', BUSY: '', WRONG_NUMBER: 'red' };
+/** Overdue callbacks in red: they are the most urgent figure on the page; zero is shown quietly. */
+const overdueLabel = (n) => (n ? <span className="overdue-text">{formatNumber(n)} overdue</span> : <span className="muted">None overdue</span>);
 const localDateTime = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 
 const In = ({ label: l, name, required, ...rest }) => (
@@ -172,23 +174,24 @@ function LogSessionModal({ enquiry, onClose, onSaved }) {
 function PipelineFlow({ counts, total, stage, onPick, loading }) {
   // "Reached" counts everyone now at this stage or later, so the connector shows how many of those who got here moved on
   const reached = STAGES.map((_, i) => STAGES.slice(i).reduce((n, s) => n + (counts[s.key] || 0), 0));
+  // Each stage card: icon and count on one row, the stage name below. The description moves to the tooltip.
   const node = (s, extra = '') => {
     const n = counts[s.key] || 0;
     const Icon = s.icon;
     return (
       <button type="button" className={`flownode ${s.tone} ${extra}${stage === s.key ? ' on' : ''}`} aria-pressed={stage === s.key}
-        onClick={() => onPick(stage === s.key ? '' : s.key)} title={`Show applications ${stage === s.key ? '' : 'at '}${s.title.toLowerCase()}`}>
-        <span className="flowicon"><Icon size={16} aria-hidden="true" /></span>
+        onClick={() => onPick(stage === s.key ? '' : s.key)} title={`${s.title}${s.hint ? ` · ${s.hint}` : ''}. ${stage === s.key ? 'Showing these applications' : 'Show these applications'}`}>
+        <span className="flowtop">
+          <span className="flowicon"><Icon size={16} aria-hidden="true" /></span>
+          <b className="flowcount">{loading ? '…' : formatNumber(n)}</b>
+        </span>
         <span className="flowlabel">{s.title}</span>
-        <b className="flowcount">{loading ? '…' : formatNumber(n)}</b>
-        {s.hint && <span className="flowsub">{s.hint}</span>}
-        {s.hint && <span className="flowbar" aria-hidden="true"><i style={{ width: `${total ? Math.max(n ? 6 : 0, (n / total) * 100) : 0}%` }} /></span>}
       </button>
     );
   };
   return (
     <Card id="admission-pipeline">
-      <SectionHead title="Admission pipeline" sub="Applications now at each stage · select a stage to filter the list below" />
+      <SectionHead title="Admission pipeline" sub="Applications now at each stage · select a stage to filter the list · percentages show how many moved on to the next stage" />
       <ol className="flow" aria-label="Admission pipeline stages">
         {STAGES.map((s, i) => (
           <Fragment key={s.key}>
@@ -197,14 +200,17 @@ function PipelineFlow({ counts, total, stage, onPick, loading }) {
               <li className="flowarrow" aria-hidden="true">
                 <ChevronRight size={18} />
                 <small>{loading || !reached[i] ? '' : `${Math.round((reached[i + 1] / reached[i]) * 100)}%`}</small>
+                <em>moved on</em>
               </li>
             )}
           </Fragment>
         ))}
       </ol>
       <div className="flowexits">
-        <span className="xs muted">Left the pipeline</span>
-        {EXITS.map((s) => <Fragment key={s.key}>{node(s, 'exit')}</Fragment>)}
+        <span className="flowexitlabel">Left the pipeline</span>
+        <div className="flowexitrow">
+          {EXITS.map((s) => <Fragment key={s.key}>{node(s, 'exit')}</Fragment>)}
+        </div>
       </div>
     </Card>
   );
@@ -291,7 +297,7 @@ export default function AdmissionsWorkspace() {
   const callbackCount = callbacks.data?.length;
   const noAccess = 'Not available for your role';
   const metrics = [
-    ['Total enquiries', loading ? '…' : formatNumber(all.length), live ? 'Walk-ins, calls and web, this campus' : noAccess, null, false, null,
+    ['Total enquiries', loading ? '…' : formatNumber(all.length), live ? 'All sources, this campus' : noAccess, null, false, null,
       live && { onClick: () => { clearAll(); toApplications(); }, hint: 'Show every application', active: !stage && !walkInsOnly }],
     ['In progress', loading ? '…' : formatNumber(all.filter((e) => OPEN.includes(e.enquiryStatus)).length), live ? 'Awaiting a decision' : noAccess, null, false, null,
       live && { onClick: () => { setFilter({ stage: 'open', source: '' }); toApplications(); }, hint: 'Show applications still open', active: stage === 'open' && !walkInsOnly }],
@@ -299,7 +305,7 @@ export default function AdmissionsWorkspace() {
       live && { onClick: () => { setFilter({ stage: '', source: 'walk-in' }); toApplications(); }, hint: 'Show walk-in enquiries', active: walkInsOnly && !stage }],
     canReadCalls
       ? ['Callbacks scheduled', callbackCount === undefined ? '…' : formatNumber(callbackCount),
-        callbacks.data ? `${callbacks.data.filter((c) => c.overdue).length} overdue` : 'Counseling follow-ups', null, false, null,
+        callbacks.data ? overdueLabel(callbacks.data.filter((c) => c.overdue).length) : 'Counseling follow-ups', null, false, null,
         { onClick: () => { setTab(2); scrollToId('admission-list'); }, hint: 'Open the callbacks', active: tab === 2 }]
       : ['Enrolled', loading ? '…' : formatNumber(counts.ENROLLED || 0), live ? 'Converted to students' : noAccess],
   ];
@@ -326,7 +332,7 @@ export default function AdmissionsWorkspace() {
               <Metrics items={metrics} />
               {apps.error ? <Card><ApiErr error={apps.error} onRetry={apps.reload} /></Card>
                 : <PipelineFlow counts={counts} total={all.length} stage={stage} loading={loading} onPick={(k) => { setFilter({ stage: k }); toApplications(); }} />}
-              <Card id="admission-list" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+              <Card id="admission-list" style={{ display: 'flex', flexDirection: 'column', gap: 18, marginTop: 28 }}>
                 <Tabs items={tabItems} value={tab} onChange={setTab} />
                 {tab === 0 && (
                   <>

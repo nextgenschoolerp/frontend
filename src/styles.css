@@ -85,6 +85,7 @@ svg.lucide{flex:none}
 .metric .mv{font-size:29px;font-weight:600;line-height:1.1}
 .metric .mc{font-size:11px;font-weight:500;color:var(--mu)}
 .metric .mc.good{color:var(--gr)}
+.mc .overdue-text{color:var(--rd);font-weight:600}
 .metric.clickable{text-align:left;font:inherit;color:inherit;cursor:pointer;text-decoration:none;transition:border-color .15s,box-shadow .15s,transform .15s}
 .metric.clickable:hover{border-color:var(--pr);box-shadow:0 2px 10px rgba(0,0,0,.06)}
 .metric.clickable:focus-visible{outline:none;border-color:var(--pr);box-shadow:0 0 0 3px var(--tint)}
@@ -655,7 +656,7 @@ body.noscroll{overflow:hidden}
 .flow{display:flex;align-items:stretch;list-style:none;margin:18px 0 0;padding:0}
 .flow > li{display:flex}
 .flow > li:not(.flowarrow){flex:1 1 0;min-width:0}
-.flownode{width:100%;display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:14px;border:1px solid var(--bd);border-radius:12px;background:var(--card);text-align:left;font:inherit;color:inherit;cursor:pointer;transition:border-color .15s,box-shadow .15s,background .15s}
+.flownode{width:100%;display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:12px;min-height:96px;border:1px solid var(--bd);border-radius:12px;background:var(--card);text-align:left;font:inherit;color:inherit;cursor:pointer;transition:border-color .15s,box-shadow .15s,background .15s}
 .flownode:hover{border-color:var(--pr)}
 .flownode:focus-visible{outline:none;box-shadow:0 0 0 3px var(--tint2)}
 .flownode.on{border-color:var(--pr);background:var(--tint);box-shadow:0 0 0 3px var(--tint2)}
@@ -665,16 +666,17 @@ body.noscroll{overflow:hidden}
 .flownode.red .flowicon{background:var(--rdbg);color:var(--rd)}
 .flownode.grey .flowicon{background:var(--gl);color:var(--mu)}
 .flowlabel{font-size:12px;font-weight:600}
-.flowcount{font-size:28px;font-weight:600;line-height:1.1}
-.flowsub{font-size:11px;color:var(--mu)}
-.flowbar{display:block;width:100%;height:5px;border-radius:3px;background:var(--gl);overflow:hidden;margin-top:2px}
-.flowbar i{display:block;height:100%;background:var(--pr);border-radius:3px}
-.flownode.amber .flowbar i{background:var(--am)}
-.flownode.green .flowbar i{background:var(--gr)}
-.flowarrow{flex:none;width:54px;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:var(--fa)}
-.flowarrow small{font-size:10px;font-weight:500;color:var(--mu);min-height:12px}
-.flowexits{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:16px;padding-top:16px;border-top:1px dashed var(--bd)}
-.flownode.exit{width:auto;flex-direction:row;align-items:center;gap:10px;padding:10px 14px}
+.flowtop{display:flex;align-items:center;justify-content:space-between;width:100%}
+.flowcount{font-size:24px;font-weight:600;line-height:1}
+.flowarrow{flex:none;width:58px;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:var(--fa)}
+.flowarrow small{font-size:11px;font-weight:600;color:var(--mu)}
+.flowarrow em{font-style:normal;font-size:9px;color:var(--fa);text-align:center;line-height:1.2}
+.flowexits{margin-top:16px;padding-top:14px;border-top:1px dashed var(--bd)}
+.flowexitlabel{display:block;font-size:11px;color:var(--mu);margin-bottom:8px}
+.flowexitrow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.flownode.exit{flex-direction:row;align-items:center;justify-content:space-between;padding:10px 14px;min-height:0}
+.flownode.exit .flowtop{width:auto;gap:10px}
+.flownode.exit .flowlabel{font-size:12px}
 .flownode.exit .flowcount{font-size:18px}
 @media (max-width:900px){
   .flow{flex-direction:column}
@@ -686,3 +688,4 @@ body.noscroll{overflow:hidden}
 .formhead{font-size:12px;font-weight:600;margin:14px 0 8px}
 .formhead:first-child{margin-top:0}
 .checkrow{display:flex;align-items:center;gap:8px;margin:16px 0 10px;font-size:12px;font-weight:500;cursor:pointer}
+

@@ -160,7 +160,7 @@ export const Metrics = ({ items }) => (
     {items.map(([label, value, sub, ctx, good, Icon, go]) => {
       const body = (
         <>
-          <div className="mt">{label}{go ? (go.active ? <Check size={15} className="go" aria-hidden="true" /> : <ArrowUpRight size={15} className="go" aria-hidden="true" />) : Icon ? <Icon size={17} style={{ color: 'var(--pr)' }} /> : null}</div>
+          <div className="mt">{label}{go ? <ArrowUpRight size={15} className="go" aria-hidden="true" /> : Icon ? <Icon size={17} style={{ color: 'var(--pr)' }} /> : null}</div>
           <div className="mv">{value}</div>
           <div className={'mc' + (good ? ' good' : '')}>{ctx || sub}{ctx && <small>{sub}</small>}</div>
         </>
