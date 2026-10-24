@@ -3,7 +3,7 @@ import { LoaderCircle, FileText, Pencil, TrendingUp, TrendingDown, Minus } from 
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as exam from '../api/examService.js';
-import { Card, SectionHead, DataTable, Pill, KV } from './ui.jsx';
+import { Card, SectionHead, DataTable, Pill } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
 import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
@@ -119,7 +119,9 @@ function CardSkeleton({ rows }) {
     <div aria-busy="true" aria-label="Loading progress card">
       <DataTable boxed cols={[{ label: 'Subject', render: () => line('60%') }, { label: 'Marks', className: 'num', render: () => line(56) }, { label: 'Grade', render: () => line(24) }, { label: '', render: () => null }]}
         rows={Array.from({ length: rows }, (_, i) => ({ i }))} />
-      <KV rows={['Total', 'Grade', 'Result', 'Section rank', 'Published to parents'].map((k, i) => [k, line(i % 2 ? 90 : 130)])} />
+      <dl className="pcsum" aria-hidden="true">
+        {['Total', 'Grade', 'Result', 'Section rank'].map((k, i) => <div key={k}><dt>{k}</dt><dd>{line(i % 2 ? 64 : 88)}</dd></div>)}
+      </dl>
     </div>
   );
 }
@@ -155,16 +157,16 @@ function ProgressCardModal({ student, terms, termId, onTerm, onClose, onChanged 
         <DataTable boxed cols={[
           { label: 'Subject', render: (r) => r.subjectName },
           { label: 'Marks', className: 'num', render: (r) => (!r.entered ? '—' : r.absent ? 'AB' : `${Number(r.marksObtained)} / ${Number(r.maxMarks)}`) },
-          { label: 'Grade', render: (r) => r.grade || '—' },
+          { label: 'Grade', render: (r) => (r.grade ? <Pill tone={r.grade.startsWith('A') ? 'green' : ''}>{r.grade}</Pill> : '—') },
           { label: '', render: (r) => (r.entered && !r.passed ? <Pill tone="amber">Below pass</Pill> : null) },
         ]} rows={c.scholastic} />
-        <KV rows={[
-          ['Total', `${Number(c.totalObtained)} / ${Number(c.totalMax)} · ${pct(c.percentage)}`],
-          ['Grade', `${c.grade || '—'}${c.gradePoint !== null && c.gradePoint !== undefined ? ` · grade point ${c.gradePoint}` : ''}`],
-          ['Result', (RESULT[c.result] || [c.result])[0]],
-          ['Section rank', c.sectionRank ? `${c.sectionRank} of ${c.sectionSize}` : '—'],
-          ['Published to parents', c.published ? fmtDate(c.publishedAt) : 'Not yet'],
-        ]} />
+        <dl className="pcsum">
+          <div><dt>Total</dt><dd>{Number(c.totalObtained)} / {Number(c.totalMax)}</dd><small>{pct(c.percentage)}</small></div>
+          <div><dt>Grade</dt><dd>{c.grade || '—'}</dd><small>{c.gradePoint !== null && c.gradePoint !== undefined ? `Grade point ${c.gradePoint}` : 'No grade point'}</small></div>
+          <div><dt>Result</dt><dd>{pill(RESULT, c.result)}</dd></div>
+          <div><dt>Section rank</dt><dd>{c.sectionRank ? `${c.sectionRank} of ${c.sectionSize}` : '—'}</dd></div>
+        </dl>
+        <p className="xs muted" style={{ margin: '8px 0 0' }}>{c.published ? `Published to parents on ${fmtDate(c.publishedAt)}` : 'Not yet published to parents'}</p>
         <h4 style={{ fontSize: 13, fontWeight: 600, margin: '14px 0 8px' }}>Co-scholastic areas</h4>
         {c.coScholastic.length ? <div className="pills">{c.coScholastic.map((g) => <Pill key={g.area} tone={g.grade.startsWith('A') ? 'green' : ''}>{AREAS[g.area] || g.area}: {g.grade}{g.remarks ? ` · ${g.remarks}` : ''}</Pill>)}</div>
           : <p className="xs muted">Not graded for this term.</p>}

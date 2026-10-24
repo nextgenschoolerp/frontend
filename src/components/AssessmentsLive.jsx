@@ -4,7 +4,7 @@ import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as exam from '../api/examService.js';
 import * as studentApi from '../api/studentService.js';
-import { PageHeader, Metrics, scrollToId, Card, SectionHead, Tabs, DataTable, Pill, Footer, downloadCsv, useTabParam } from './ui.jsx';
+import { PageHeader, Metrics, scrollToId, Card, SectionHead, Tabs, DataTable, Pill, Footer, EmptyState, downloadCsv, useTabParam } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
 import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
@@ -60,6 +60,8 @@ export function AssessmentsLive() {
   const pending = (tickets.data || []).filter((t) => t.status === 'PENDING').length;
   const o = overall.data;
   const ready = term && gradeId && classSections.some((s) => s.sectionId === sectionId);
+  // Nothing set up yet (no terms or classes): show a dash, not a loader that never ends
+  const noData = terms.loading || grades.loading ? '…' : '—';
 
   return (
     <>
@@ -72,12 +74,12 @@ export function AssessmentsLive() {
       />
       {locking && locking !== 'busy' && <Card><ApiErr error={locking} /></Card>}
       <Metrics items={[
-        ['Term', term ? term.termName : '…', term ? `${term.termType === 'FORMATIVE' ? 'Formative' : 'Summative'} · ${term.weightagePercent}% of the year` : ''],
-        ['Mark entry', term ? (term.locked ? 'Locked' : 'Open') : '…', term ? (term.locked ? (term.lockedAt ? `Locked ${when(term.lockedAt)}` : `Closed ${when(term.markEntryDeadline)} (T_lock)`) : `Closes ${when(term.markEntryDeadline)}`) : '', null, false, null,
+        ['Term', term ? term.termName : noData, term ? `${term.termType === 'FORMATIVE' ? 'Formative' : 'Summative'} · ${term.weightagePercent}% of the year` : ''],
+        ['Mark entry', term ? (term.locked ? 'Locked' : 'Open') : noData, term ? (term.locked ? (term.lockedAt ? `Locked ${when(term.lockedAt)}` : `Closed ${when(term.markEntryDeadline)} (T_lock)`) : `Closes ${when(term.markEntryDeadline)}`) : '', null, false, null,
           term && { onClick: () => { setTab(0); scrollToId('academics-tabs'); }, hint: 'Open mark entry', active: tab === 0 }],
-        ['Entries complete', o ? `${o.enteredEntries} / ${o.expectedEntries}` : '…', o ? (o.complete ? 'Ready for report cards' : `${o.missingEntries} still missing`) : '', null, false, null,
+        ['Entries complete', o ? `${o.enteredEntries} / ${o.expectedEntries}` : noData, o ? (o.complete ? 'Ready for report cards' : `${o.missingEntries} still missing`) : '', null, false, null,
           o && { onClick: () => { setTab(3); scrollToId('academics-tabs'); }, hint: 'Open incomplete entries', active: tab === 3 }],
-        ['Unlock tickets', tickets.data ? String(pending) : '…', pending ? 'Waiting for a decision' : 'None pending', null, false, null,
+        ['Unlock tickets', tickets.data ? String(pending) : noData, pending ? 'Waiting for a decision' : 'None pending', null, false, null,
           tickets.data && { onClick: () => { setTab(4); scrollToId('academics-tabs'); }, hint: 'Open unlock tickets', active: tab === 4 }],
       ]} />
       <Card id="academics-tabs">
@@ -88,7 +90,10 @@ export function AssessmentsLive() {
         </div>
         <Tabs items={TABS.map((t, i) => (i === 4 && pending ? `${t} (${pending})` : t))} value={tab} onChange={setTab} />
         <div style={{ marginTop: 16 }}>
-          {!ready ? <Loading />
+          {!ready && (terms.loading || grades.loading) ? <Loading />
+            : !ready && !term ? <EmptyState title="No assessment terms yet">Set up the academic year and its terms in Settings → Academic setup, then pick a term here.</EmptyState>
+            : !ready && !(grades.data || []).length ? <EmptyState title="No classes yet">Add classes and sections in Settings → Academic setup to enter marks.</EmptyState>
+            : !ready ? <EmptyState title="Choose a class and section">Pick a class and section above to see its mark entry.</EmptyState>
             : tab === 0 ? <MarkEntryTab term={term} gradeId={gradeId} sectionId={sectionId} branchId={branchId} onChanged={() => { overall.reload(); tickets.reload(); }} />
               : tab === 1 ? <BroadsheetTab term={term} sectionId={sectionId} branchId={branchId} />
                 : tab === 2 ? <RankTab term={term} gradeId={gradeId} branchId={branchId} />

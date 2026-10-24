@@ -10,6 +10,8 @@ import { useStudents } from '../components/StudentRecords.jsx';
 import { useState } from 'react';
 import { useAttendanceWeek, ATTENDANCE_RANGES } from '../components/AttendanceLive.jsx';
 import { useFeeOverview } from '../components/FeesLive.jsx';
+import * as hr from '../api/hrService.js';
+import { useApi } from '../api/useApi.js';
 import { money, moneyShort } from '../api/financeService.js';
 import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
 
@@ -66,12 +68,20 @@ const WORK = [
 const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; };
 
 export default function Overview() {
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
   // "Admission applications" row: live count from GET /api/v1/admissions/enquiries (admissionservice)
   const apps = useApplications();
   const live = apps.canRead && !apps.missingBranch && !apps.error && apps.data;
   // "Total students" and "Incomplete student records": GET /api/v1/students (studentservice); static for other roles
   const students = useStudents();
+  // Staff on campus: live from hrservice (staff records and today's biometric summary); only roles that can read them see it
+  const today = new Date().toISOString().slice(0, 10);
+  const canStaff = hasRole(...hr.HR_ROLES.attendance);
+  const staff = useApi(() => hr.listEmployees(user.branchId ? { branchId: user.branchId } : {}), [user.branchId], canStaff);
+  const staffToday = useApi(() => hr.attendanceSummary(today), [today], canStaff);
+  const leaves = useApi(() => hr.listLeaves(), [], canStaff);
+  const pendingLeave = (leaves.data || []).filter((l) => l.status === 'PENDING').length;
+  const staffCount = (staff.data || []).filter((s) => s.isActive !== false && !['RESIGNED', 'RETIRED', 'TERMINATED'].includes(s.employmentStatus)).length;
   // "Student attendance" and "Attendance trends": GET /api/v1/attendance/summary and /trend (studentservice)
   const att = useAttendanceWeek();
   const t = att.today;
@@ -86,6 +96,10 @@ export default function Overview() {
   const pp = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)} pp vs last week`;
   const work = WORK.map((row) => (row[0] === 'Admission applications'
     ? [row[0], row[1], live ? apps.open.length : (apps.loading ? '…' : '—'), row[3], row[4], row[5], row[6], '/admissions']
+    : row[0] === 'Staff leave requests'
+      ? [row[0], row[1], canStaff && leaves.data ? pendingLeave : (canStaff && leaves.loading ? '…' : '—'),
+        canStaff && leaves.data && pendingLeave === 0 ? 'green' : 'amber',
+        canStaff && leaves.data ? (pendingLeave ? 'Approval needed' : 'All clear') : 'Not available for your role', row[5], row[6], row[7]]
     : row[0] === 'Overdue fee accounts'
       ? [row[0], `${moneyShort(fee.overdue)} overdue`, fees.allowed && !fees.live ? '…' : fee.accounts, row[3], row[4], row[5], row[6], row[7]]
     : row[0] === 'Incomplete student records' && students.live
@@ -99,7 +113,10 @@ export default function Overview() {
       ? ['Student attendance', t.presentRate === null ? '—' : `${Number(t.presentRate).toFixed(1)}%`, `${formatNumber(t.present)} of ${formatNumber(t.totalStudents - t.unmarked)} marked present`,
         att.change !== null ? pp(att.change) : `${t.amRegistersSubmitted} / ${t.registersExpected} registers in`, att.change === null || att.change >= 0, ClipboardCheck, '/attendance']
       : ['Student attendance', att.allowed ? '…' : '95.2%', att.allowed ? '' : '1,188 of 1,248 present', att.allowed ? '' : '+0.5 pp vs last week', true, ClipboardCheck, att.allowed && '/attendance'],
-    ['Staff on campus', '86 / 92', 'All lessons covered', '6 on approved leave', false, Users, '/staff'],
+    canStaff && staff.data && staffToday.data
+      ? ['Staff on campus', `${formatNumber(staffToday.data.presentCount)} / ${formatNumber(staffCount)}`,
+        staffCount ? `${formatNumber(staffToday.data.attendancePercentage)}% punched in` : 'No staff records yet', '', false, Users, '/staff']
+      : ['Staff on campus', canStaff && (staff.loading || staffToday.loading) ? '…' : '—', canStaff ? '' : 'Not available for your role', '', false, Users, canStaff && '/staff'],
     fees.allowed && !fees.live
       ? ['Fees collected', fees.error ? '—' : '…', fees.error ? 'Could not load fee figures' : '', '', true, Wallet]
       : ['Fees collected', moneyShort(fee.collected), `${moneyShort(fee.outstanding)} outstanding`, `${fee.collectedPct.toFixed(1)}% of billing`, fee.collectedPct >= 85, Wallet, '/fees'],

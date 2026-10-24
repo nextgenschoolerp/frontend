@@ -13,7 +13,7 @@ import {
   Actions, useSort, sortRows, scrollToId, useTabParam,
 } from '../components/ui.jsx';
 import { Modal } from '../components/AuthSettings.jsx';
-import { ApplicationModal, ApiErr, ApiNote, statusPill, gradeLabel, useApplications, exportApplicationsCsv } from '../components/Admissions.jsx';
+import { ApplicationModal, ApplicantCell, ApiErr, ApiNote, statusPill, gradeLabel, useApplications, exportApplicationsCsv } from '../components/Admissions.jsx';
 import { useCaptureAllowed, gradeCode, academicYearCode } from '../components/NewAdmission.jsx';
 import { formatDate, formatDateTime, formatNumber } from '../regional.js';
 
@@ -171,7 +171,7 @@ function LogSessionModal({ enquiry, onClose, onSaved }) {
 }
 
 /** The pipeline as a flow: a node per stage with the applications now there, and the share that moved on to the next stage. */
-function PipelineFlow({ counts, total, stage, onPick, loading }) {
+function PipelineFlow({ counts, total, scope, stage, onPick, loading }) {
   // "Reached" counts everyone now at this stage or later, so the connector shows how many of those who got here moved on
   const reached = STAGES.map((_, i) => STAGES.slice(i).reduce((n, s) => n + (counts[s.key] || 0), 0));
   // Each stage card: icon and count on one row, the stage name below. The description moves to the tooltip.
@@ -191,7 +191,7 @@ function PipelineFlow({ counts, total, stage, onPick, loading }) {
   };
   return (
     <Card id="admission-pipeline">
-      <SectionHead title="Admission pipeline" sub="Applications now at each stage · select a stage to filter the list · percentages show how many moved on to the next stage" />
+      <SectionHead title="Admission pipeline" sub={`${scope ? `${scope} · ` : ''}Applications now at each stage · select a stage to filter the list · percentages show how many moved on to the next stage`} />
       <ol className="flow" aria-label="Admission pipeline stages">
         {STAGES.map((s, i) => (
           <Fragment key={s.key}>
@@ -199,8 +199,7 @@ function PipelineFlow({ counts, total, stage, onPick, loading }) {
             {i < STAGES.length - 1 && (
               <li className="flowarrow" aria-hidden="true">
                 <ChevronRight size={18} />
-                <small>{loading || !reached[i] ? '' : `${Math.round((reached[i + 1] / reached[i]) * 100)}%`}</small>
-                <em>moved on</em>
+                {!loading && !!reached[i] && <span className="flowpill">{`${Math.round((reached[i + 1] / reached[i]) * 100)}%`}</span>}
               </li>
             )}
           </Fragment>
@@ -242,7 +241,9 @@ export default function AdmissionsWorkspace() {
   const loading = apps.loading && !apps.data;
   const live = apps.canRead && !apps.missingBranch && !apps.error;
   const all = apps.rows;
-  const counts = useMemo(() => all.reduce((m, e) => ({ ...m, [e.enquiryStatus]: (m[e.enquiryStatus] || 0) + 1 }), {}), [all]);
+  // The pipeline counts the applications the list shows (the walk-in filter applies to both), so the numbers always agree
+  const scoped = useMemo(() => (walkInsOnly ? all.filter((e) => e.referralSource === 'WALK_IN') : all), [all, walkInsOnly]);
+  const counts = useMemo(() => scoped.reduce((m, e) => ({ ...m, [e.enquiryStatus]: (m[e.enquiryStatus] || 0) + 1 }), {}), [scoped]);
   const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
   const walkIns = all.filter((e) => e.referralSource === 'WALK_IN');
   const walkInsThisMonth = walkIns.filter((e) => new Date(e.createdAt) >= monthStart).length;
@@ -276,7 +277,7 @@ export default function AdmissionsWorkspace() {
   const toApplications = () => { setTab(0); scrollToId('admission-list'); };
 
   const cols = [
-    { label: 'Applicant', sortBy: (e) => `${e.candidateFirstName} ${e.candidateLastName}`, render: (e) => <Person name={`${e.candidateFirstName} ${e.candidateLastName}`} sub={e.applicationNumber} /> },
+    { label: 'Applicant', sortBy: (e) => `${e.candidateFirstName} ${e.candidateLastName}`, render: (e) => <ApplicantCell enquiry={e} /> },
     { label: 'Applying for', sortBy: (e) => gradeLabel(e.targetGradeId), render: (e) => `${gradeLabel(e.targetGradeId)} · ${e.academicYearId}` },
     { label: 'Guardian', hideOnCards: true, render: (e) => <span className="cell-id"><b>{e.guardianName}</b><small>{e.guardianPhone}</small></span> },
     { label: 'Source', hideOnCards: true, sortBy: (e) => e.referralSource,
@@ -331,7 +332,7 @@ export default function AdmissionsWorkspace() {
             <>
               <Metrics items={metrics} />
               {apps.error ? <Card><ApiErr error={apps.error} onRetry={apps.reload} /></Card>
-                : <PipelineFlow counts={counts} total={all.length} stage={stage} loading={loading} onPick={(k) => { setFilter({ stage: k }); toApplications(); }} />}
+                : <PipelineFlow counts={counts} total={scoped.length} scope={walkInsOnly ? 'Walk-ins only' : ''} stage={stage} loading={loading} onPick={(k) => { setFilter({ stage: k }); toApplications(); }} />}
               <Card id="admission-list" style={{ display: 'flex', flexDirection: 'column', gap: 18, marginTop: 28 }}>
                 <Tabs items={tabItems} value={tab} onChange={setTab} />
                 {tab === 0 && (

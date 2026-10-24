@@ -27,8 +27,17 @@ export const listBranches = (tenantId) => api.get(`/api/v1/tenants/${tenantId}/b
 export const getRegionalSettings = (tenantId) => api.get(`/api/v1/tenants/${tenantId}/regional-settings`);
 export const saveRegionalSettings = (tenantId, settings) => api.put(`/api/v1/tenants/${tenantId}/regional-settings`, settings);
 
-// --- Settings → General → School profile and crest -----------------------------------------------------
 export const getSchoolProfile = (tenantId) => api.get(`/api/v1/tenants/${tenantId}/school-profile`);
 export const saveSchoolProfile = (tenantId, body) => api.put(`/api/v1/tenants/${tenantId}/school-profile`, body);
 export const fetchSchoolCrest = (tenantId) => fetchBlob(`/api/v1/tenants/${tenantId}/school-profile/crest`);
 export const uploadSchoolCrest = (tenantId, file) => { const f = new FormData(); f.append('file', file); return upload(`/api/v1/tenants/${tenantId}/school-profile/crest`, f, { method: 'PUT' }); };
+
+// --- System Bootstrap & Zero-State Onboarding ---------------------------------------------------------
+export const getBootstrapStatus = () => api.get('/api/v1/auth/bootstrap/status', { auth: false });
+export const downloadBootstrapTemplate = () => fetchBlob('/api/v1/auth/bootstrap/template');
+export const bootstrapJson = (data) => api.post('/api/v1/auth/bootstrap', data, { auth: false });
+export const bootstrapUpload = (file) => {
+  const f = new FormData();
+  f.append('file', file);
+  return upload('/api/v1/auth/bootstrap/upload', f);
+};

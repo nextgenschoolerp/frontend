@@ -647,6 +647,19 @@ body.noscroll{overflow:hidden}
 .factgrid dd{font-size:12px;font-weight:500;color:var(--tx);margin:0;overflow-wrap:anywhere}
 @media (max-width:520px){.factgrid{grid-template-columns:1fr}}
 
+/* Progress card summary: one bordered strip of tiles under the subject table */
+.pcsum{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin:12px 0 0;border:1px solid var(--bd);border-radius:10px;background:var(--card);overflow:hidden}
+.pcsum>div{padding:12px 14px;min-width:0}
+.pcsum>div+div{border-left:1px solid var(--bd)}
+.pcsum dt{font-size:10px;color:var(--mu);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+.pcsum dd{font-size:14px;font-weight:600;color:var(--tx);margin:0;overflow-wrap:anywhere}
+.pcsum small{display:block;font-size:11px;color:var(--mu);margin-top:2px}
+@media (max-width:620px){
+  .pcsum{grid-template-columns:1fr 1fr}
+  .pcsum>div:nth-child(odd){border-left:0}
+  .pcsum>div:nth-child(n+3){border-top:1px solid var(--bd)}
+}
+
 /* Page title with a back button beside it (student profile) */
 .pagehead .titlerow{display:inline-flex;align-items:center;gap:12px}
 .iconbtn{display:inline-grid;place-items:center;width:32px;height:32px;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--tx);flex:none}
@@ -656,25 +669,24 @@ body.noscroll{overflow:hidden}
 .flow{display:flex;align-items:stretch;list-style:none;margin:18px 0 0;padding:0}
 .flow > li{display:flex}
 .flow > li:not(.flowarrow){flex:1 1 0;min-width:0}
-.flownode{width:100%;display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:12px;min-height:96px;border:1px solid var(--bd);border-radius:12px;background:var(--card);text-align:left;font:inherit;color:inherit;cursor:pointer;transition:border-color .15s,box-shadow .15s,background .15s}
+.flownode{width:100%;display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:12px;height:104px;border:1px solid var(--bd);border-radius:12px;background:var(--card);text-align:left;font:inherit;color:inherit;cursor:pointer;transition:border-color .15s,box-shadow .15s,background .15s}
 .flownode:hover{border-color:var(--pr)}
 .flownode:focus-visible{outline:none;box-shadow:0 0 0 3px var(--tint2)}
-.flownode.on{border-color:var(--pr);background:var(--tint);box-shadow:0 0 0 3px var(--tint2)}
+.flownode.on{border:1.5px solid var(--pr);background:var(--card);box-shadow:none}
 .flowicon{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--tint);color:var(--pr)}
 .flownode.amber .flowicon{background:var(--ambg);color:var(--am)}
 .flownode.green .flowicon{background:var(--grbg);color:var(--gr)}
 .flownode.red .flowicon{background:var(--rdbg);color:var(--rd)}
 .flownode.grey .flowicon{background:var(--gl);color:var(--mu)}
-.flowlabel{font-size:12px;font-weight:600}
+.flowlabel{font-size:12px;font-weight:600;line-height:1.3;min-height:2.6em}
 .flowtop{display:flex;align-items:center;justify-content:space-between;width:100%}
 .flowcount{font-size:24px;font-weight:600;line-height:1}
 .flowarrow{flex:none;width:58px;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:var(--fa)}
-.flowarrow small{font-size:11px;font-weight:600;color:var(--mu)}
-.flowarrow em{font-style:normal;font-size:9px;color:var(--fa);text-align:center;line-height:1.2}
+.flowpill{display:inline-block;margin-top:2px;padding:2px 8px;border-radius:999px;background:var(--gl);color:var(--tx);font-size:11px;font-weight:600;white-space:nowrap}
 .flowexits{margin-top:16px;padding-top:14px;border-top:1px dashed var(--bd)}
 .flowexitlabel{display:block;font-size:11px;color:var(--mu);margin-bottom:8px}
-.flowexitrow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.flownode.exit{flex-direction:row;align-items:center;justify-content:space-between;padding:10px 14px;min-height:0}
+.flowexitrow{display:flex;flex-wrap:wrap;gap:12px}
+.flownode.exit{flex-direction:row;align-items:center;justify-content:space-between;gap:24px;padding:10px 14px;height:auto;min-width:200px;width:auto}
 .flownode.exit .flowtop{width:auto;gap:10px}
 .flownode.exit .flowlabel{font-size:12px}
 .flownode.exit .flowcount{font-size:18px}
@@ -689,3 +701,22 @@ body.noscroll{overflow:hidden}
 .formhead:first-child{margin-top:0}
 .checkrow{display:flex;align-items:center;gap:8px;margin:16px 0 10px;font-size:12px;font-weight:500;cursor:pointer}
 
+
+/* Application review panel */
+.review-facts{margin-top:14px}
+.contactlinks{display:flex;flex-wrap:wrap;gap:4px 12px}
+.contactlinks a,.review-facts dd a{color:var(--pr);text-decoration:none;font-weight:500}
+.contactlinks a:hover,.review-facts dd a:hover{text-decoration:underline}
+.lastcall{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:14px;padding:10px 12px;border-radius:8px;background:var(--sb);border:1px solid var(--bd);font-size:11px}
+.lastcall > span{color:var(--mu);font-weight:500}
+.lastcall em{flex-basis:100%;color:var(--mu);font-style:normal}
+.reviewnote{margin:14px 0 0;padding:8px 12px;border-left:3px solid var(--pr);background:var(--sb);border-radius:0 6px 6px 0;font-size:11px;color:var(--tx);line-height:1.5}
+.reviewnav{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;padding-top:14px;border-top:1px solid var(--bd)}
+.reviewnav button{height:28px;padding:0 12px;border:1px solid var(--bd);border-radius:999px;background:var(--card);font:inherit;font-size:11px;font-weight:500;color:var(--tx);cursor:pointer}
+.reviewnav button:hover{border-color:var(--pr);color:var(--pr)}
+.reviewsection{margin-top:20px;scroll-margin-top:8px}
+.reviewsection h4{display:flex;align-items:baseline;gap:6px;font-size:13px;font-weight:600;margin-bottom:8px}
+.reviewsection h4 small{font-size:11px;font-weight:500;color:var(--mu)}
+.btn.danger{color:var(--rd);border-color:var(--rd);background:var(--card)}
+.btn.danger:hover{background:var(--rdbg)}
+.steprow b{display:flex;align-items:center;gap:8px}

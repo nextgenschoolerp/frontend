@@ -48,6 +48,9 @@ export const STEPS = [
     effect: 'Closes the application with the reason', when: (s) => OPEN.includes(s) },
 ];
 
+/** Button text for each step: a verb, so it does not repeat the card title above it. */
+const ACTION_LABEL = { call: 'Log call', exam: 'Schedule exam', evaluation: 'Record assessment', offer: 'Issue offer', deposit: 'Collect deposit', enrol: 'Enrol student', close: 'Close application' };
+
 const In = ({ label: l, name, ...rest }) => (
   <div className="field box"><label htmlFor={`ns-${name}`}>{l.toUpperCase()}{rest.required ? ' *' : ''}</label><input id={`ns-${name}`} name={name} {...rest} /></div>
 );
@@ -72,6 +75,8 @@ export function NextStep({ enquiry, offers, onChanged }) {
       </div>
     );
   }
+  // The first step this role can take is the recommended one; closing is never recommended
+  const recommended = steps.find((s) => s.key !== 'close' && hasRole(...s.roles))?.key;
   return (
     <div className="nextstep" style={{ marginTop: 16 }}>
       <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Next step</h4>
@@ -82,10 +87,10 @@ export function NextStep({ enquiry, offers, onChanged }) {
           return (
             <div key={s.key} className={`step${open === s.key ? ' on' : ''}`}>
               <div className="steprow">
-                <div><b>{s.title}</b><small>{s.effect}</small></div>
+                <div><b>{s.title}{s.key === recommended && <Pill tone="purple">Recommended</Pill>}</b><small>{s.effect}</small></div>
                 {allowed
-                  ? <button type="button" className={`btn${s.key === 'close' ? '' : ' primary'}`} onClick={() => setOpen(open === s.key ? null : s.key)}>
-                      {open === s.key ? 'Cancel' : <>{s.title}<ArrowRight size={14} /></>}</button>
+                  ? <button type="button" className={`btn ${s.key === 'close' ? 'danger' : s.key === recommended ? 'primary' : ''}`} onClick={() => setOpen(open === s.key ? null : s.key)}>
+                      {open === s.key ? 'Cancel' : <>{ACTION_LABEL[s.key] || s.title}<ArrowRight size={14} /></>}</button>
                   : <Pill>Done by {s.owner}</Pill>}
               </div>
               {open === s.key && (

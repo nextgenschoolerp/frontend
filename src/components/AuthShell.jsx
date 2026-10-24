@@ -1,26 +1,27 @@
 import { useState } from 'react';
 import { School, CircleAlert, CircleCheck, Lock, Eye, EyeOff } from 'lucide-react';
 
-/** Two-column layout shared by sign-in and the password screens. */
-export default function AuthShell({ children }) {
+/** Two-column layout shared by sign-in, the password screens and setup. `brand` names the product on the art panel. */
+export const SCHOOL_BRAND = { name: 'School ERP', tag: 'WORKSPACE', foot: '© 2026 School ERP' };
+export default function AuthShell({ children, brand = SCHOOL_BRAND }) {
   return (
     <div className="login">
       <section className="login-art">
         <div className="brand">
           <div className="crest"><School size={22} /></div>
-          <div><b>Oakridge</b><small>ACADEMY</small></div>
+          <div><b>{brand.name}</b><small>{brand.tag}</small></div>
         </div>
         <div className="login-quote">
           <h2>Everything your school runs on, in one place.</h2>
           <p>Students, staff, attendance, fees and communications — managed from a single workspace.</p>
         </div>
-        <small className="login-foot">© 2026 Oakridge Academy · Main campus</small>
+        <small className="login-foot">{brand.foot}</small>
       </section>
       <section className="login-panel">
         <div className="login-form">
           <div className="brand login-mobile-brand">
             <div className="crest"><School size={22} /></div>
-            <div><b>Oakridge</b><small>ACADEMY</small></div>
+            <div><b>{brand.name}</b><small>{brand.tag}</small></div>
           </div>
           {children}
         </div>

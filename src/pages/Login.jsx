@@ -1,21 +1,35 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Mail, LoaderCircle } from 'lucide-react';
 import { useAuth } from '../auth.jsx';
 import AuthShell, { AuthAlert, PasswordInput } from '../components/AuthShell.jsx';
+import { getBootstrapStatus } from '../api/authService.js';
 
 // Sign in -> POST /api/v1/auth/login (authservice, US-00000). Username or email is accepted.
 export default function Login() {
   const { user, signIn, notice } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [identifier, setIdentifier] = useState('');
+  const [identifier, setIdentifier] = useState(location.state?.prefilledUsername || '');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => { document.title = 'Oakridge Academy – Sign in'; }, []);
+  const statusChecked = useRef(false);
+  useEffect(() => {
+    document.title = 'Oakridge Academy – Sign in';
+    // If no tenants exist, route to the Initial Setup Wizard (checked once per visit)
+    if (statusChecked.current) return;
+    statusChecked.current = true;
+    getBootstrapStatus().then(status => {
+      if (status.bootstrapRequired) {
+        navigate('/setup', { replace: true });
+      }
+    }).catch(() => {
+      // Backend offline or normal flow
+    });
+  }, [navigate]);
 
   const dest = location.state?.from?.pathname || '/';
   if (user) return <Navigate to={user.mustChangePassword ? '/change-password' : dest} replace />;

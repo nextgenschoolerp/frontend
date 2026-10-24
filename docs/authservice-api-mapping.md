@@ -19,6 +19,10 @@ Code: [`src/api/client.js`](../src/api/client.js) (fetch wrapper, JWT, error env
 
 | Screen · action | Method & endpoint | Story | Roles | Status |
 |---|---|---|---|---|
+| Initial Setup · **Check bootstrap requirement** | `GET /api/v1/auth/bootstrap/status` | BOOTSTRAP | public | **Wired**. If database has 0 tenants, automatically routes `/login` to `/setup` |
+| Initial Setup · **Download Excel Template** | `GET /api/v1/auth/bootstrap/template` | BOOTSTRAP | public | **Wired**. Streams `School_ERP_Initial_Setup_Template.xlsx` |
+| Initial Setup · **Upload Excel spreadsheet** | `POST /api/v1/auth/bootstrap/upload` | BOOTSTRAP | public | **Wired**. Multipart file upload; provisions tenant, branch & IT admin (`must_change_password=true`) |
+| Initial Setup · **Quick setup form submit** | `POST /api/v1/auth/bootstrap` | BOOTSTRAP | public | **Wired**. JSON payload alternative for direct onboarding without Excel |
 | Login · **Sign in** (email or username + password) | `POST /api/v1/auth/login` | US-00000 | public | **Wired**. Stores `accessToken`, `tenantId`, `roles`; 401 shows the service message (wrong credentials, locked until …, inactive account) |
 | Login · **Keep me signed in** | — | — | — | **Client-only**: token kept in `localStorage` (checked) or `sessionStorage` |
 | Login · **Forgot password?** → Reset your password · **Send reset link** | `POST /api/v1/auth/forgot-password` `{identifier}` | US-01001 | public | **Wired**. Development builds return `resetToken`; the page then offers a development link to the reset screen |

@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout.jsx';
 import Login from './pages/Login.jsx';
+import Setup from './pages/Setup.jsx';
 import { ForgotPassword, ResetPassword, ChangePassword } from './pages/PasswordPages.jsx';
 import { RequireAuth } from './auth.jsx';
 import Overview from './pages/Overview.jsx';
@@ -13,6 +14,7 @@ import { Calendar, Communications, Reports, Documents, Settings, Help } from './
 export default function App() {
   return (
     <Routes>
+      <Route path="setup" element={<Setup />} />
       <Route path="login" element={<Login />} />
       <Route path="forgot-password" element={<ForgotPassword />} />
       <Route path="reset-password" element={<ResetPassword />} />
