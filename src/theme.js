@@ -24,3 +24,22 @@ export function applyTheme(id) {
   document.documentElement.dataset.theme = id;
   try { localStorage.setItem(KEY, id); } catch { /* storage unavailable */ }
 }
+
+const DENSITY_KEY = 'oakridge.density';
+export const DENSITIES = [
+  { id: 'comfortable', name: 'Comfortable' },
+  { id: 'compact', name: 'Compact' },
+];
+
+export function getDensity() {
+  try {
+    const id = localStorage.getItem(DENSITY_KEY);
+    if (DENSITIES.some((d) => d.id === id)) return id;
+  } catch { /* storage unavailable */ }
+  return DENSITIES[0].id;
+}
+
+export function applyDensity(id) {
+  document.documentElement.dataset.density = id;
+  try { localStorage.setItem(DENSITY_KEY, id); } catch { /* storage unavailable */ }
+}

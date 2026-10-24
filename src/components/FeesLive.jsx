@@ -3,10 +3,10 @@ import { Plus, Download, Timer, LoaderCircle } from 'lucide-react';
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as fin from '../api/financeService.js';
-import { PageHeader, Metrics, Card, SectionHead, DataTable, Pager, Pill, KV, Footer, SearchBox, downloadCsv, todayIso } from './ui.jsx';
+import { PageHeader, Metrics, scrollToId, Card, SectionHead, DataTable, Pager, Pill, KV, Footer, SearchBox, downloadCsv, todayIso, useSort, sortRows } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
-import { Loading, fmtDate, feePill, RecordPaymentModal, ReceiptsTable } from './FeeRecords.jsx';
+import { Loading, fmtDate, feePill, RecordPaymentModal, ReceiptsTable, receiptCols } from './FeeRecords.jsx';
 
 const { ROLES, money, moneyShort, PAYMENT_MODES, classOf } = fin;
 const PAGE = 8;
@@ -74,10 +74,10 @@ export function FeesLive() {
       />
       {summary.error ? <Card><ApiErr error={summary.error} /></Card> : (
         <Metrics items={[
-          ['Billed', s ? moneyShort(s.totalDemanded) : '…', 'Academic year fee demands'],
-          ['Collected', s ? moneyShort(s.totalCollected) : '…', s ? `${s.receiptCount} receipts since ${fmtDate(s.fromDate)}` : ''],
-          ['Outstanding', s ? moneyShort(s.totalOutstanding) : '…', pct !== null ? `${pct.toFixed(1)}% of billing collected` : ''],
-          ['Overdue', d ? moneyShort(d.totalOverdue) : '…', d ? `${d.totalDefaulters} student${d.totalDefaulters === 1 ? '' : 's'} need follow-up` : ''],
+          ['Billed', s ? moneyShort(s.totalDemanded) : '…', 'Academic year fee demands', null, false, null, s && { onClick: () => scrollToId('fees-overview'), hint: 'Jump to the collection overview' }],
+          ['Collected', s ? moneyShort(s.totalCollected) : '…', s ? `${s.receiptCount} receipts since ${fmtDate(s.fromDate)}` : '', null, false, null, s && { onClick: () => scrollToId('fees-transactions'), hint: 'Jump to recent transactions' }],
+          ['Outstanding', s ? moneyShort(s.totalOutstanding) : '…', pct !== null ? `${pct.toFixed(1)}% of billing collected` : '', null, false, null, d && { onClick: () => scrollToId('fees-outstanding'), hint: 'Jump to outstanding accounts' }],
+          ['Overdue', d ? moneyShort(d.totalOverdue) : '…', d ? `${d.totalDefaulters} student${d.totalDefaulters === 1 ? '' : 's'} need follow-up` : '', null, false, null, d && { onClick: () => scrollToId('fees-outstanding'), hint: 'Jump to outstanding accounts' }],
         ]} />
       )}
       <div className="cols s404">
@@ -86,7 +86,7 @@ export function FeesLive() {
           <DefaultersCard overdue={overdue} onPay={(acc) => setOpen({ kind: 'pay', account: acc })} />
         </div>
         <div className="stack">
-          <Card>
+          <Card id="fees-overview">
             <h3 style={{ fontSize: 15, fontWeight: 600 }}>Collection overview</h3>
             <p className="small muted" style={{ margin: '4px 0 14px' }}>{s ? `${fmtDate(s.fromDate)} – ${fmtDate(s.toDate)}` : 'Academic year to date'}</p>
             {summary.loading ? <Loading /> : s && (<>
@@ -124,13 +124,15 @@ function TransactionsCard({ receipts, onChanged }) {
   const [q, setQ] = useState('');
   const [mode, setMode] = useState('');
   const [page, setPage] = useState(1);
+  const sort = useSort();
+  const cols = receiptCols({ onChanged, showStudent: true });
   const all = receipts.data || [];
   const rows = all.filter((r) => (!mode || r.paymentMode === mode)
     && (!q || `${r.studentName} ${r.studentUid} ${r.receiptNumber}`.toLowerCase().includes(q.toLowerCase())));
   const pages = Math.max(1, Math.ceil(rows.length / PAGE));
   const current = Math.min(page, pages);
   return (
-    <Card>
+    <Card id="fees-transactions">
       <SectionHead title="Recent transactions" sub="Receipts of the academic year, newest first" />
       <div className="filters" style={{ margin: '18px 0' }}>
         <SearchBox placeholder="Search student or receipt number" width={300} value={q} onChange={(v) => { setQ(v); setPage(1); }} />
@@ -140,7 +142,7 @@ function TransactionsCard({ receipts, onChanged }) {
         </select>
       </div>
       {receipts.loading ? <Loading /> : receipts.error ? <ApiErr error={receipts.error} /> : !rows.length ? <p className="xs muted">No receipts match.</p> : (<>
-        <ReceiptsTable rows={rows.slice((current - 1) * PAGE, current * PAGE)} onChanged={onChanged} showStudent />
+        <ReceiptsTable rows={sortRows(rows, cols, sort).slice((current - 1) * PAGE, current * PAGE)} onChanged={onChanged} showStudent sort={sort} />
         <Pager page={current} pages={pages} onPage={setPage}
           text={`Showing ${(current - 1) * PAGE + 1}–${Math.min(current * PAGE, rows.length)} of ${rows.length} receipts${rows.length < all.length ? ` (filtered from ${all.length})` : ''}`} />
       </>)}
@@ -152,12 +154,22 @@ function TransactionsCard({ receipts, onChanged }) {
 function DefaultersCard({ overdue, onPay }) {
   const { hasRole } = useAuth();
   const [klass, setKlass] = useState('');
+  const sort = useSort();
+  const defaulterCols = [
+    { label: 'Student', sortBy: (r) => r.studentName, render: (r) => <span className="cell-id"><b>{r.studentName}</b><small>{r.studentUid} · {classOf(r)}</small></span> },
+    { label: 'Overdue since', sortBy: (r) => r.oldestDueDate, render: (r) => <span className="cell-id"><b>{fmtDate(r.oldestDueDate)}</b><small>{r.daysOverdue} days · {r.overdueInstallments} installment{r.overdueInstallments === 1 ? '' : 's'}</small></span> },
+    { label: 'Breakdown', render: (r) => <small className="xs">{r.heads.map((h) => `${h.headName} ${money(h.overdue)}`).join(' · ')}</small> },
+    { label: 'Overdue', className: 'num', sortBy: (r) => Number(r.overdueAmount), render: (r) => <b>{money(r.overdueAmount)}</b> },
+    { label: 'Action', render: (r) => (hasRole(...ROLES.collect)
+      ? <span className="act"><button type="button" className="link" onClick={() => onPay({ studentId: r.studentId, studentName: r.studentName, outstanding: r.totalOutstanding, overdueAmount: r.overdueAmount })}>Record payment</button></span>
+      : <small className="xs muted">{money(r.totalOutstanding)} total due</small>) },
+  ];
   const d = overdue.data;
   const rows = d ? d.classes.filter((c) => !klass || c.gradeName === klass)
     .flatMap((c) => c.defaulters.map((x) => ({ ...x, gradeName: c.gradeName, sectionName: c.sectionName }))) : [];
   const classes = d ? [...new Set(d.classes.map((c) => c.gradeName))] : [];
   return (
-    <Card>
+    <Card id="fees-outstanding">
       <SectionHead title="Outstanding accounts" sub={d ? `${d.totalDefaulters} students with overdue fees · ${money(d.totalOverdue)} overdue` : 'Students with fees past their due date'} />
       <div className="filters" style={{ margin: '18px 0' }}>
         <select className="select" value={klass} onChange={(e) => setKlass(e.target.value)} aria-label="Class">
@@ -166,15 +178,7 @@ function DefaultersCard({ overdue, onPay }) {
         </select>
       </div>
       {overdue.loading ? <Loading /> : overdue.error ? <ApiErr error={overdue.error} /> : !rows.length ? <p className="xs muted">No overdue accounts.</p> : (
-        <DataTable boxed cols={[
-          { label: 'Student', render: (r) => <span className="cell-id"><b>{r.studentName}</b><small>{r.studentUid} · {classOf(r)}</small></span> },
-          { label: 'Overdue since', render: (r) => <span className="cell-id"><b>{fmtDate(r.oldestDueDate)}</b><small>{r.daysOverdue} days · {r.overdueInstallments} installment{r.overdueInstallments === 1 ? '' : 's'}</small></span> },
-          { label: 'Breakdown', render: (r) => <small className="xs">{r.heads.map((h) => `${h.headName} ${money(h.overdue)}`).join(' · ')}</small> },
-          { label: 'Overdue', className: 'num', render: (r) => <b>{money(r.overdueAmount)}</b> },
-          { label: 'Action', render: (r) => (hasRole(...ROLES.collect)
-            ? <span className="act"><button type="button" className="link" onClick={() => onPay({ studentId: r.studentId, studentName: r.studentName, outstanding: r.totalOutstanding, overdueAmount: r.overdueAmount })}>Record payment</button></span>
-            : <small className="xs muted">{money(r.totalOutstanding)} total due</small>) },
-        ]} rows={rows} />
+        <DataTable boxed sort={sort} rows={sortRows(rows, defaulterCols, sort)} cols={defaulterCols} />
       )}
     </Card>
   );

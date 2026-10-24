@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Download, Plus, ArrowLeft, Pencil, Check, X, LoaderCircle } from 'lucide-react';
 import {
-  PageHeader, Metrics, Card, SectionHead, Tabs, SearchBox, DataTable, Pager, Person, Actions,
+  PageHeader, BackTitle, Metrics, scrollToId, useSort, sortRows, avatarTone, Card, SectionHead, Tabs, SearchBox, DataTable, Pager, Person, Actions,
   Pill, FieldGrid, Field, Footer, KV, downloadCsv, todayIso,
 } from '../components/ui.jsx';
 import { Modal } from '../components/AuthSettings.jsx';
@@ -48,6 +48,7 @@ export function StaffDirectory() {
   const [dept, setDept] = useState('');
   const [avail, setAvail] = useState('');
   const [page, setPage] = useState(1);
+  const sort = useSort();
 
   const all = staff.data || [];
   const current = all.filter(isCurrent);
@@ -64,7 +65,29 @@ export function StaffDirectory() {
     .filter((s) => !avail || (avail === 'leave' ? !!onLeave(leaves.data, s.staffId, today) : !onLeave(leaves.data, s.staffId, today)))
     .map((s) => ({ ...s, name: fullName(s), type: staffType(s), avail: availability(s, leaves.data, today) }));
   const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
-  const shown = rows.slice((Math.min(page, pages) - 1) * PAGE_SIZE, Math.min(page, pages) * PAGE_SIZE);
+  // Columns of the directory table: sorted before paging
+  const cols = [
+    // Initials on a colour per department, so each team reads as a block when scanning (staff have no photos yet)
+    { label: 'Staff member', sortBy: (s) => s.name, render: (s) => (
+      <>
+        <span className="avatar-sm" style={{ background: avatarTone(s.department)[0], color: avatarTone(s.department)[1] }} aria-hidden="true">
+          {s.name.split(' ').map((w) => w[0]).join('').slice(0, 2)}
+        </span>
+        <span className="cell-id"><b>{s.name}</b><small>{s.employeeCode}</small></span>
+      </>
+    ) },
+    { label: 'Role', sortBy: (s) => s.designation, key: 'designation' },
+    { label: 'Department', sortBy: (s) => s.department, key: 'department', hideOnCards: true },
+    { label: 'Type', sortBy: (s) => s.type, key: 'type', hideOnCards: true },
+    { label: 'Availability', sortBy: (s) => s.avail[0], render: (s) => <Pill tone={s.avail[1]}>{s.avail[0]}</Pill> },
+    { label: 'Actions', render: (s) => (
+      <Actions>
+        <Link to={`/staff/${s.staffId}`}>View profile</Link>
+        {hasRole(...hr.HR_ROLES.manage) && <Link to={`/staff/${s.staffId}/edit`}>Edit</Link>}
+      </Actions>
+    ) },
+  ];
+  const shown = sortRows(rows, cols, sort).slice((Math.min(page, pages) - 1) * PAGE_SIZE, Math.min(page, pages) * PAGE_SIZE);
   const n = (v) => (staff.data ? formatNumber(v) : staff.loading ? '…' : '—');
   const reset = (fn) => (v) => { fn(v); setPage(1); };
 
@@ -80,41 +103,35 @@ export function StaffDirectory() {
         ].filter(Boolean)}
       />
       <Metrics items={[
-        ['Total staff', n(current.length), `${n(teaching.length)} teaching · ${n(current.length - teaching.length)} support`],
+        ['Total staff', n(current.length), `${n(teaching.length)} teaching · ${n(current.length - teaching.length)} support`, null, false, null,
+          staff.data && { onClick: () => { setTab(0); setDept(''); setAvail(''); setQ(''); setPage(1); scrollToId('staff-directory'); }, hint: 'Show all current staff', active: tab === 0 && !dept && !avail && !q }],
         ['On campus today', summary.data ? formatNumber(summary.data.presentCount) : canSummary && summary.loading ? '…' : '—',
-          summary.data ? `${formatNumber(summary.data.attendancePercentage)}% punched in` : 'Biometric attendance · principal and HR'],
-        ['On leave today', leaves.data ? formatNumber(leaveToday.length) : '…', 'Approved leave'],
-        ['Leave requests', leaves.data ? formatNumber(pending.length) : '…', 'Awaiting approval'],
+          summary.data ? `${formatNumber(summary.data.attendancePercentage)}% punched in` : 'Biometric attendance · principal and HR', null, false, null,
+          summary.data && { to: '/attendance?tab=staff-attendance', hint: 'Open staff attendance' }],
+        ['On leave today', leaves.data ? formatNumber(leaveToday.length) : '…', 'Approved leave', null, false, null,
+          leaves.data && { onClick: () => { setTab(0); setAvail('leave'); setPage(1); scrollToId('staff-directory'); }, hint: 'Show staff on leave today', active: avail === 'leave' }],
+        ['Leave requests', leaves.data ? formatNumber(pending.length) : '…', 'Awaiting approval', null, false, null,
+          leaves.data && { onClick: () => scrollToId('staff-leave'), hint: 'Jump to leave and cover' }],
       ]} />
-      <Card style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <Card id="staff-directory" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
         <div className="sh"><div><h3>Staff directory</h3><p>{branchId || 'All campuses'} · from HR records</p></div></div>
         <Tabs items={[`All staff (${n(current.length)})`, `Teaching (${n(teaching.length)})`, `Support (${n(current.length - teaching.length)})`, `Archived (${n(all.length - current.length)})`]}
           value={tab} onChange={reset(setTab)} />
         <div className="filters">
           <SearchBox placeholder="Search name, employee code, role or email" value={q} onChange={reset(setQ)} />
-          <label className="select"><select aria-label="Department" value={dept} onChange={(e) => reset(setDept)(e.target.value)}>
+          <select className="select" aria-label="Department" value={dept} onChange={(e) => reset(setDept)(e.target.value)}>
             <option value="">All departments</option>{departments.map((d) => <option key={d}>{d}</option>)}
-          </select></label>
-          <label className="select"><select aria-label="Availability" value={avail} onChange={(e) => reset(setAvail)(e.target.value)}>
+          </select>
+          <select className="select" aria-label="Availability" value={avail} onChange={(e) => reset(setAvail)(e.target.value)}>
             <option value="">All availability</option><option value="available">Available</option><option value="leave">On leave today</option>
-          </select></label>
+          </select>
         </div>
         {staff.error ? <ApiErr error={staff.error} /> : staff.loading ? <Loading /> : (
           <div className="tablebox">
             <DataTable
-              cols={[
-                { label: 'Staff member', render: (s) => <Person name={s.name} sub={s.employeeCode} /> },
-                { label: 'Role', key: 'designation' },
-                { label: 'Department', key: 'department' },
-                { label: 'Type', key: 'type' },
-                { label: 'Availability', render: (s) => <Pill tone={s.avail[1]}>{s.avail[0]}</Pill> },
-                { label: 'Actions', render: (s) => (
-                  <Actions>
-                    <Link to={`/staff/${s.staffId}`}>View profile</Link>
-                    {hasRole(...hr.HR_ROLES.manage) && <Link to={`/staff/${s.staffId}/edit`}>Edit</Link>}
-                  </Actions>
-                ) },
-              ]}
+              cols={cols}
+              sort={sort}
+              cards
               rows={shown}
             />
             {!rows.length && <p className="small muted" style={{ padding: 16 }}>No staff match these filters.</p>}
@@ -124,7 +141,7 @@ export function StaffDirectory() {
         )}
       </Card>
       <div className="cols eq">
-        <Card>
+ <Card id="staff-leave">
           <SectionHead title="Leave & cover" link="Manage cover →" to="/teaching" />
           {leaves.error ? <ApiErr error={leaves.error} /> : !leaves.data ? <Loading /> : (<>
             <p className="body-s" style={{ marginTop: -6 }}>
@@ -255,12 +272,12 @@ export function StaffProfile() {
 
   if (emp.error) {
     return (<>
-      <PageHeader title="Staff profile" desc="Employment details, teaching responsibilities and staff records in one place." actions={[{ label: 'Back to staff', icon: <ArrowLeft size={15} />, to: '/staff' }]} />
+      <PageHeader context={false} title={<BackTitle to="/staff" label="Back to staff">Staff profile</BackTitle>} desc="Employment details, teaching responsibilities and staff records in one place." />
       {emp.error.status === 404 ? <ApiNote>{id === 'me' ? 'There is no HR record linked to your account yet. Ask HR to add one.' : 'This staff member was not found.'}</ApiNote> : <ApiErr error={emp.error} />}
       <Footer />
     </>);
   }
-  if (!s) return (<><PageHeader title="Staff profile" desc="Employment details, teaching responsibilities and staff records in one place." /><Loading /></>);
+  if (!s) return (<><PageHeader context={false} title="Staff profile" desc="Employment details, teaching responsibilities and staff records in one place." /><Loading /></>);
 
   const name = fullName(s);
   const [availText, availTone] = availability(s, leaves.data, today);
@@ -389,12 +406,11 @@ export function StaffProfile() {
 
   return (
     <>
-      <PageHeader
-        title={self ? 'My staff profile' : 'Staff profile'}
+      <PageHeader context={false}
+        title={<BackTitle to="/staff" label="Back to staff">{name}</BackTitle>}
         desc="Employment details, teaching responsibilities and staff records in one place."
         actions={[
-          { label: 'Back to staff', icon: <ArrowLeft size={15} />, to: '/staff' },
-          s.email && { label: 'Message staff', onClick: () => { window.location.href = `mailto:${s.email}`; } },
+          s.email && { label: 'More actions', more: [{ label: 'Message staff', onClick: () => { window.location.href = `mailto:${s.email}`; } }] },
           hasRole(...hr.HR_ROLES.manage) && { label: 'Edit staff details', icon: <Pencil size={14} />, primary: true, to: `/staff/${s.staffId}/edit` },
         ].filter(Boolean)}
       />
@@ -472,17 +488,16 @@ export function StaffForm() {
 
   if (!isNew && (emp.error || !s)) {
     return (<>
-      <PageHeader title="Edit staff details" desc="Maintain personal, employment and contract information." actions={[{ label: 'Back to staff', icon: <ArrowLeft size={15} />, to: '/staff' }]} />
+      <PageHeader context={false} title={<BackTitle to="/staff" label="Back to staff">Edit staff details</BackTitle>} desc="Maintain personal, employment and contract information." />
       {emp.error ? <ApiErr error={emp.error} /> : <Loading />}
     </>);
   }
 
   return (
     <form onSubmit={submit} noValidate style={{ display: 'contents' }} key={s.staffId || 'new'}>
-      <PageHeader
-        title={isNew ? 'Add staff member' : 'Edit staff details'}
+      <PageHeader context={false}
+        title={<BackTitle to={back} label={isNew ? 'Back to staff' : 'Back to profile'}>{isNew ? 'Add staff member' : 'Edit staff details'}</BackTitle>}
         desc={isNew ? 'Create an HR record with employment and contract details.' : `Maintain ${fullName(s)}’s personal, employment and contract information.`}
-        actions={[{ label: isNew ? 'Back to staff' : 'Back to profile', icon: <ArrowLeft size={15} />, to: back }]}
       />
       {!canManage && <ApiNote>Only HR, the principal or a super administrator can add or edit staff records.</ApiNote>}
       <div className="cols s404">

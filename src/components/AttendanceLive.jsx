@@ -3,7 +3,7 @@ import { Check, Download, LoaderCircle, Phone } from 'lucide-react';
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as studentApi from '../api/studentService.js';
-import { PageHeader, Metrics, Card, DataTable, Tabs, SectionHead, Pill, Person, KV, Footer, downloadCsv, todayIso, useTabParam } from './ui.jsx';
+import { PageHeader, Metrics, scrollToId, Card, DataTable, Tabs, SectionHead, Pill, Person, KV, Footer, downloadCsv, todayIso, useTabParam } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
 import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
@@ -128,14 +128,18 @@ export function AttendanceLive() {
       {summary.error ? <ApiErr error={summary.error} /> : (
         <Metrics items={s ? [
           [isToday ? 'Present today' : `Present on ${dayLabel(date, { day: 'numeric', month: 'short' })}`, formatNumber(s.present), s.unmarked === s.totalStudents ? `No registers in yet · ${formatNumber(s.totalStudents)} on roll`
-            : `${pctText(s.presentRate)} of ${formatNumber(s.totalStudents - s.unmarked)} marked${s.unmarked ? ` · ${formatNumber(s.unmarked)} not yet marked` : ''}`],
-          ['Excused absences', s.excused, s.excused ? 'Reasons recorded' : 'None recorded'],
-          ['Unexcused absences', s.unexcused, s.openFollowUps ? `${s.openFollowUps} awaiting guardian follow-up` : 'No follow-up pending'],
-          ['Class registers', `${s.amRegistersSubmitted} / ${s.registersExpected}`, `Morning registers submitted · ${s.pmRegistersSubmitted} afternoon`],
+            : `${pctText(s.presentRate)} of ${formatNumber(s.totalStudents - s.unmarked)} marked${s.unmarked ? ` · ${formatNumber(s.unmarked)} not yet marked` : ''}`,
+            null, false, null, { onClick: () => { setTab(0); setNotice(null); scrollToId('attendance-tabs'); }, hint: 'Open the daily register' }],
+          ['Excused absences', s.excused, s.excused ? 'Reasons recorded' : 'None recorded', null, false, null,
+            { onClick: () => { setTab(1); setNotice(null); scrollToId('attendance-tabs'); }, hint: 'Open absence history' }],
+          ['Unexcused absences', s.unexcused, s.openFollowUps ? `${s.openFollowUps} awaiting guardian follow-up` : 'No follow-up pending', null, false, null,
+            { onClick: () => { setTab(1); setNotice(null); scrollToId('attendance-tabs'); }, hint: 'Open absence history and follow-ups' }],
+          ['Class registers', `${s.amRegistersSubmitted} / ${s.registersExpected}`, `Morning registers submitted · ${s.pmRegistersSubmitted} afternoon`, null, false, null,
+            { onClick: () => { setTab(0); setNotice(null); scrollToId('attendance-tabs'); }, hint: 'Open the daily register' }],
         ] : [['Present today', '…', ''], ['Excused absences', '…', ''], ['Unexcused absences', '…', ''], ['Class registers', '…', '']]} />
       )}
       <div className="cols s354">
-        <Card style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <Card id="attendance-tabs" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <div className="sh"><div><h3>Class register</h3>
             <p>{reg ? `${reg.gradeName}-${reg.sectionName} · ${plural(reg.students.length, 'student')} · ${dayLabel(reg.date, { weekday: 'long', day: 'numeric', month: 'long' })}` : 'Choose a class'}</p></div></div>
           <div className="filters">

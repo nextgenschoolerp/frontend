@@ -3,7 +3,7 @@ import { ShieldAlert, Info, LoaderCircle } from 'lucide-react';
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as admissionApi from '../api/admissionService.js';
-import { DataTable, Person, Pill, KV, Actions, downloadCsv } from './ui.jsx';
+import { DataTable, Person, Pill, KV, Actions, downloadCsv, useSort, sortRows } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { NextStep } from './AdmissionActions.jsx';
 import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
@@ -12,11 +12,12 @@ import { formatDate, formatDateTime, formatTime, formatNumber } from '../regiona
 const READ_ROLES = ['FRONT_OFFICE_COUNSELOR', 'ADMISSION_OFFICER', 'REGISTRAR', 'ENTRANCE_EXAM_EVALUATOR', 'FINANCE_CASHIER', 'SCHOOL_PRINCIPAL', 'SUPER_ADMIN'];
 
 export const ApiNote = ({ children }) => <div className="api-note"><Info size={14} style={{ flex: 'none', marginTop: 1 }} /><span>{children}</span></div>;
-export const ApiErr = ({ error }) => (
+export const ApiErr = ({ error, onRetry }) => (
   <div className={error.status === 403 ? 'api-note' : 'api-error'}>
     <ShieldAlert size={14} style={{ flex: 'none' }} />
     <span>{error.status === 403 ? 'Not available for your role.' : error.detail}
       {error.status !== 403 && error.traceId && <small className="trace-ref" title="Trace id of this request in the service logs"> Ref {error.traceId}</small>}</span>
+    {onRetry && error.status !== 403 && <button type="button" className="link" onClick={onRetry} style={{ marginLeft: 'auto' }}>Try again</button>}
   </div>
 );
 const Loading = () => <p className="xs muted"><LoaderCircle size={12} className="spin" /> Loading…</p>;
@@ -67,6 +68,16 @@ export function exportApplicationsCsv(rows) {
 /** Students → Admissions tab. */
 export function ApplicationsTable({ apps }) {
   const [viewing, setViewing] = useState(null);
+  const sort = useSort();
+  const cols = [
+    { label: 'Applicant', sortBy: (e) => `${e.candidateFirstName} ${e.candidateLastName}`, render: (e) => <Person name={`${e.candidateFirstName} ${e.candidateLastName}`} sub={e.applicationNumber} /> },
+    { label: 'Applying for', sortBy: (e) => gradeLabel(e.targetGradeId), render: (e) => `${gradeLabel(e.targetGradeId)} · ${e.academicYearId}` },
+    { label: 'Guardian', sortBy: (e) => e.guardianName, render: (e) => <span className="cell-id"><b>{e.guardianName}</b><small>{e.guardianPhone}</small></span> },
+    { label: 'Source', sortBy: (e) => label(e.referralSource), render: (e) => label(e.referralSource) },
+    { label: 'Received', sortBy: (e) => e.createdAt, render: (e) => fmtDate(e.createdAt) },
+    { label: 'Status', sortBy: (e) => e.enquiryStatus, render: (e) => statusPill(e.enquiryStatus) },
+    { label: 'Actions', render: (e) => <Actions><button className="link" onClick={() => setViewing(e)}>Review application</button></Actions> },
+  ];
   if (!apps.canRead) return <ApiNote>Admission applications are visible to admissions staff: counselors, admission officers, registrars, evaluators, cashiers, principals and super administrators.</ApiNote>;
   if (apps.missingBranch) return <ApiNote>Select a campus to see its applications.</ApiNote>;
   // Only the first load shows the spinner: a reload after an action keeps the review modal open
@@ -77,16 +88,9 @@ export function ApplicationsTable({ apps }) {
     <>
       <div className="tablebox">
         <DataTable
-          cols={[
-            { label: 'Applicant', render: (e) => <Person name={`${e.candidateFirstName} ${e.candidateLastName}`} sub={e.applicationNumber} /> },
-            { label: 'Applying for', render: (e) => `${gradeLabel(e.targetGradeId)} · ${e.academicYearId}` },
-            { label: 'Guardian', render: (e) => <span className="cell-id"><b>{e.guardianName}</b><small>{e.guardianPhone}</small></span> },
-            { label: 'Source', render: (e) => label(e.referralSource) },
-            { label: 'Received', render: (e) => fmtDate(e.createdAt) },
-            { label: 'Status', render: (e) => statusPill(e.enquiryStatus) },
-            { label: 'Actions', render: (e) => <Actions><button className="link" onClick={() => setViewing(e)}>Review application</button></Actions> },
-          ]}
-          rows={apps.rows}
+          sort={sort}
+          cols={cols}
+          rows={sortRows(apps.rows, cols, sort)}
         />
       </div>
       {/* The modal shows the latest list row, so a status change made inside it is reflected straight away */}

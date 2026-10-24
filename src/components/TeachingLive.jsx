@@ -3,7 +3,7 @@ import { Download, LoaderCircle, Wand2, UserX, Shuffle, Plus, Check, Send, Calen
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as lms from '../api/academicService.js';
-import { PageHeader, Metrics, Card, Tabs, DataTable, Pill, Footer, SectionHead, downloadFile, todayIso, useTabParam } from './ui.jsx';
+import { PageHeader, Metrics, scrollToId, Card, Tabs, DataTable, Pill, Footer, SectionHead, downloadFile, todayIso, useTabParam } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
 import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
@@ -71,11 +71,14 @@ export function TeachingLive() {
       {pdf && pdf !== 'busy' && <Card><ApiErr error={pdf} /></Card>}
       <Metrics items={[
         ['Bell schedule', schedule ? schedule.scheduleName : schedules.loading ? '…' : 'None', schedule ? `${schedule.teachingPeriodsPerDay} periods a day · ${hhmm(schedule.schoolStart)}–${hhmm(schedule.schoolEnd)}` : ''],
-        ['Teachers', workloads.data ? String(teachers.length) : '…', workloads.data ? `Average load ${avgUse.toFixed(0)}% of weekly cap` : ''],
-        ['Classes', classes.data ? `${allocated.length} of ${sections.length}` : '…', 'With subject teachers allocated'],
-        [`Cover · ${t ? fmtDate(t.date) : '…'}`, t ? `${t.assigned} / ${t.periodsToCover}` : '…', t ? (t.periodsToCover ? `${t.absentTeachers} absent · ${t.uncovered} not covered` : 'No absences recorded') : ''],
+        ['Teachers', workloads.data ? String(teachers.length) : '…', workloads.data ? `Average load ${avgUse.toFixed(0)}% of weekly cap` : '', null, false, null,
+          workloads.data && { onClick: () => { setTab(TABS.indexOf('Workload')); scrollToId('teaching-tabs'); }, hint: 'Open teacher workload', active: TABS[tab] === 'Workload' }],
+        ['Classes', classes.data ? `${allocated.length} of ${sections.length}` : '…', 'With subject teachers allocated', null, false, null,
+          classes.data && { onClick: () => { setTab(TABS.indexOf('Allocations')); scrollToId('teaching-tabs'); }, hint: 'Open class allocations', active: TABS[tab] === 'Allocations' }],
+        [`Cover · ${t ? fmtDate(t.date) : '…'}`, t ? `${t.assigned} / ${t.periodsToCover}` : '…', t ? (t.periodsToCover ? `${t.absentTeachers} absent · ${t.uncovered} not covered` : 'No absences recorded') : '', null, false, null,
+          t && { onClick: () => { setTab(TABS.indexOf('Cover')); scrollToId('teaching-tabs'); }, hint: 'Open cover and substitutions', active: TABS[tab] === 'Cover' }],
       ]} />
-      <Card>
+      <Card id="teaching-tabs">
         <Tabs items={TABS} value={tab} onChange={setTab} />
         <div style={{ marginTop: 16 }}>
           {schedules.error || classes.error ? <ApiErr error={schedules.error || classes.error} />

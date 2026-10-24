@@ -2,13 +2,13 @@ import { NavLink, Outlet, useLocation, useNavigate, Link } from 'react-router-do
 import {
   School, Building2, ChevronsUpDown, LayoutDashboard, GraduationCap, Users, BookOpen,
   ClipboardCheck, Wallet, CalendarDays, Megaphone, ChartNoAxesCombined, FolderOpen,
-  Settings as SettingsIcon, CircleHelp, CalendarClock, ChevronRight, ChevronDown, Search, CalendarRange, Bell, LogOut, Menu, X, Check,
+  Settings as SettingsIcon, CircleHelp, CalendarClock, ChevronRight, ChevronDown, Search, CalendarRange, Bell, LogOut, Menu, X, Check, Rows3,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth.jsx';
 import { listBranches, getRegionalSettings } from '../api/authService.js';
 import { useApi } from '../api/useApi.js';
-import { THEMES, getTheme, applyTheme } from '../theme.js';
+import { THEMES, getTheme, applyTheme, DENSITIES, getDensity, applyDensity } from '../theme.js';
 import { useRegional, version, applyServerRegional } from '../regional.js';
 import { GlobalSearch, NotificationBell } from './ShellTools.jsx';
 
@@ -85,6 +85,9 @@ function AccountMenu({ onSignOut }) {
   const currentTheme = THEMES.find((t) => t.id === theme) || THEMES[0];
   const toggle = (k) => setExpand((v) => (v === k ? null : k));
   const pickTheme = (id) => { applyTheme(id); setTheme(id); };
+  const [density, setDensity] = useState(getDensity);
+  const currentDensity = DENSITIES.find((d) => d.id === density) || DENSITIES[0];
+  const pickDensity = (id) => { applyDensity(id); setDensity(id); };
   const ref = useRef(null);
   const pick = (s) => { setSession(s); try { localStorage.setItem(SESSION_KEY, s); } catch { /* storage unavailable */ } setOpen(false); };
 
@@ -128,6 +131,15 @@ function AccountMenu({ onSignOut }) {
           {expand === 'theme' && THEMES.map((t) => (
             <button key={t.id} role="menuitemradio" aria-checked={t.id === theme} className={'acctmenu-theme' + (t.id === theme ? ' on' : '')} onClick={() => pickTheme(t.id)}>
               <i className="swatch" style={{ background: t.swatch }} /><span>{t.name}</span>{t.id === theme && <Check size={14} />}
+            </button>
+          ))}
+          <button className="acctmenu-session" onClick={() => toggle('density')} aria-expanded={expand === 'density'}>
+            <Rows3 size={13} /><span>Density – <b>{currentDensity.name}</b></span>
+            <ChevronDown size={13} className={expand === 'density' ? 'flip' : ''} />
+          </button>
+          {expand === 'density' && DENSITIES.map((d) => (
+            <button key={d.id} role="menuitemradio" aria-checked={d.id === density} className={'acctmenu-theme' + (d.id === density ? ' on' : '')} onClick={() => pickDensity(d.id)}>
+              <span>{d.name}</span>{d.id === density && <Check size={14} />}
             </button>
           ))}
           <hr />

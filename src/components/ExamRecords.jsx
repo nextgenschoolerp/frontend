@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { LoaderCircle, FileText, Pencil } from 'lucide-react';
+import { LoaderCircle, FileText, Pencil, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as exam from '../api/examService.js';
@@ -12,6 +12,9 @@ const { ROLES, RESULT, TREND, AREAS, pct } = exam;
 const Loading = () => <p className="xs muted"><LoaderCircle size={12} className="spin" /> Loading…</p>;
 const fmtDate = (d) => formatDate(d);
 const pill = (map, code) => { const [t, c] = map[code] || [code, '']; return <Pill tone={c}>{t}</Pill>; };
+// Trend pill: an arrow shows the direction, so the meaning does not rest on colour alone
+const TREND_ICON = { IMPROVING: TrendingUp, DECLINING: TrendingDown, STEADY: Minus };
+const trendPill = (code) => { const [t, c] = TREND[code] || [code, '']; return <Pill tone={c} icon={TREND_ICON[code] ?? false}>{t}</Pill>; };
 const signed = (n) => (n === null || n === undefined ? '' : `${n > 0 ? '+' : ''}${Number(n).toFixed(1)} pts`);
 /** Bar colours for up to three terms, oldest first. */
 const SHADES = ['var(--mu)', 'var(--pr2, #9b8ce0)', 'var(--pr)'];
@@ -66,10 +69,10 @@ export function AcademicProgressCard({ student, trend, detailed }) {
               <div className="row" style={{ marginTop: 16, gap: 18, alignItems: 'flex-end', flexWrap: 'wrap' }}>
                 <div><div className="bignum">{pct(latest.percentage)}</div>
                   <p className="xs muted" style={{ marginTop: 6 }}>{latest.termName}{latest.sectionRank ? ` · rank ${latest.sectionRank} in section` : ''}</p></div>
-                <div className="pills">{latest.grade && <Pill tone="purple">Grade {latest.grade}</Pill>}{pill(RESULT, latest.result)}{pill(TREND, d.trend)}</div>
+                <div className="pills">{latest.grade && <Pill tone="purple">Grade {latest.grade}</Pill>}{pill(RESULT, latest.result)}{trendPill(d.trend)}</div>
               </div>
               {d.weightedPercentage !== null && d.weightedPercentage !== undefined && (
-                <p className="xs muted" style={{ margin: '10px 0 0' }}>Year so far {pct(d.weightedPercentage)}{d.weightedGrade ? ` (${d.weightedGrade})` : ''} weighted by term
+                <p className="small muted" style={{ margin: '10px 0 0' }}>Year so far {pct(d.weightedPercentage)}{d.weightedGrade ? ` (${d.weightedGrade})` : ''} weighted by term
                   {latest.changeFromPrevious !== null && latest.changeFromPrevious !== undefined ? ` · ${signed(latest.changeFromPrevious)} on the previous term` : ''}</p>
               )}
               <div style={{ margin: '16px 0 12px' }}><SubjectBars terms={d.terms} /></div>

@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { LoaderCircle, Plus, FileCheck2, ShieldAlert, Upload, FileText, Download } from 'lucide-react';
+import { LoaderCircle, Plus, FileCheck2, ShieldAlert, Upload, FileText, Download, HeartPulse, Minus } from 'lucide-react';
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as studentApi from '../api/studentService.js';
-import { DataTable, Person, Pill, KV, Actions, Pager, SearchBox, Card, SectionHead, downloadCsv, downloadFile } from './ui.jsx';
+import { DataTable, Person, Pill, KV, Actions, Pager, FilterChips, SearchBox, useSort, sortRows, avatarTone, SkeletonTable, EmptyState, Card, SectionHead, downloadCsv, downloadFile } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
 import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
@@ -15,7 +15,8 @@ export const fmtDate = (d) => formatDate(d);
 const label = (code) => (code || '').toLowerCase().split('_').map((w) => (w ? w[0].toUpperCase() + w.slice(1) : '')).join(' ');
 export const statusPill = (status) => {
   const [text, tone] = STUDENT_STATUS[status] || [label(status), ''];
-  return <Pill tone={tone}>{text}</Pill>;
+  // Students who have left (archived) get a dash; everyone else gets the icon for their tone
+  return <Pill tone={tone} icon={LEFT_STATUSES.includes(status) ? Minus : undefined}>{text}</Pill>;
 };
 /** Nursery, LKG, UKG, Class 1 … Class 12 */
 const gradeRank = (name) => {
@@ -25,8 +26,14 @@ const gradeRank = (name) => {
 };
 const byClass = (a, b) => gradeRank(a.gradeName) - gradeRank(b.gradeName) || String(a.sectionName).localeCompare(String(b.sectionName))
   || (a.rollNumber ?? 999) - (b.rollNumber ?? 999) || fullName(a).localeCompare(fullName(b));
-/** medicalAlerts holds real alerts (staff write "None" when there are none). */
-export const hasAlert = (s) => !!s?.medicalAlerts && !/^\s*(none|nil|no known (allergies|conditions))\.?\s*$/i.test(s.medicalAlerts);
+/** medicalAlerts holds real alerts. Staff write "None", "None; None", "Nil" or "No known allergies" when there are none. */
+export const isNoneText = (text) => {
+  // Keep only letters, so "None; None." and "None, nil" compare the same as "None"
+  const words = String(text || '').replace(/[^a-z]/gi, '').toLowerCase();
+  return words === '' || /^(none|nil|na|nokn(own)?(allergies|conditions)?)+$/.test(words);
+};
+/** A medical alert: conditions or allergies that are not "None". */
+export const hasAlert = (s) => !!s && (!isNoneText(s.medicalAlerts) || !isNoneText(s.allergies));
 /** Missing a guardian, emergency phone or blood group (the "Record health" card). */
 export const isIncomplete = (s) => !s.guardians?.length || !s.emergencyContactPhone || !s.bloodGroup;
 /** Start of the current academic year (1 April, as the DPS sessions run April–March). */
@@ -66,59 +73,126 @@ export function exportStudentsCsv(rows, name = 'students') {
 }
 
 /** Students → All students / Archived tab. */
-export function StudentsTable({ list, archived }) {
+const VIEWS_KEY = 'oakridge.studentViews';
+/** Saved views live in this browser only (a per-viewer convenience, not shared data). */
+const readViews = () => { try { return JSON.parse(localStorage.getItem(VIEWS_KEY) || '[]'); } catch { return []; } };
+const writeViews = (v) => { try { localStorage.setItem(VIEWS_KEY, JSON.stringify(v)); } catch { /* storage unavailable */ } };
+
+export function StudentsTable({ list, archived, only = '', onSetOnly, onClearOnly }) {
   const [q, setQ] = useState('');
   const [klass, setKlass] = useState('');
   const [section, setSection] = useState('');
   const [house, setHouse] = useState('');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [views, setViews] = useState(readViews);
+  const [naming, setNaming] = useState(null); // name typed for a new saved view, or null
+  const sort = useSort();
   if (!list.canRead) return <ApiNote>Student records are visible to registrars, office clerks, class teachers, principals, school nurses and super administrators.</ApiNote>;
   if (list.missingBranch) return <ApiNote>Select a campus to see its students.</ApiNote>;
-  if (list.loading) return <Loading />;
-  if (list.error) return <ApiErr error={list.error} />;
+  if (list.loading) return <SkeletonTable cols={['Student', 'Class', 'House', 'Primary guardian', 'Medical', 'Status', 'Actions']} />;
+  if (list.error) return <ApiErr error={list.error} onRetry={list.reload} />;
   const all = archived ? list.left : list.current;
   const opts = (f) => [...new Set(all.map(f).filter(Boolean))];
   const classes = opts((s) => s.gradeName).sort((a, b) => gradeRank(a) - gradeRank(b));
-  const rows = all.filter((s) => (!klass || s.gradeName === klass) && (!section || s.sectionName === section) && (!house || s.houseName === house)
+  const onlyLabel = { incomplete: 'Incomplete records', new: 'Enrolled this year', medical: 'Medical alerts' }[only];
+  const inOnly = only === 'incomplete' ? new Set(list.incomplete) : only === 'new' ? new Set(list.newThisYear)
+    : only === 'medical' ? new Set(all.filter(hasAlert)) : null;
+  // Sections offered depend on the class: none until a class is chosen
+  const sections = klass ? [...new Set(all.filter((s) => s.gradeName === klass).map((s) => s.sectionName).filter(Boolean))].sort() : [];
+  const rows = all.filter((s) => (!inOnly || inOnly.has(s)) && (!klass || s.gradeName === klass) && (!section || s.sectionName === section) && (!house || s.houseName === house)
     && `${fullName(s)} ${s.studentUid} ${(s.guardians || []).map((g) => g.fullName).join(' ')}`.toLowerCase().includes(q.toLowerCase()));
-  // 10 rows per page; a filter or search change goes back to page 1
-  const PAGE = 10;
+  // A filter or search change goes back to page 1
+  const PAGE = pageSize;
   const pages = Math.max(1, Math.ceil(rows.length / PAGE));
   const current = Math.min(page, pages);
-  const shown = rows.slice((current - 1) * PAGE, current * PAGE);
-  const pick = (value, set, all, choices) => (
-    <select className="select" value={value} onChange={(e) => { set(e.target.value); setPage(1); }} aria-label={all}>
+  // Sorted before paging, so the page shows the first rows of the sorted list
+  const cols = [
+    { label: 'Student', sortBy: (s) => fullName(s), render: (s) => (
+      <>
+        <StudentAvatar student={s} className="avatar-sm" tone={avatarTone(s.gradeName)} />
+        <span className="cell-id"><b>{fullName(s)}</b><small>{s.studentUid}</small></span>
+      </>
+    ) },
+    { label: 'Class', sortBy: (s) => classLabel(s), render: (s) => <span className="cell-id"><b>{classLabel(s)}</b><small>{s.rollNumber ? `Roll no. ${s.rollNumber}` : '—'}</small></span> },
+    { label: 'House', hideOnCards: true, render: (s) => s.houseName || '—' },
+    { label: 'Primary guardian', hideOnCards: true, render: (s) => (s.guardians?.[0]
+      ? <span className="cell-id"><b>{s.guardians[0].fullName}</b><small>{s.guardians[0].relationship} · {s.guardians[0].mobileNumber}</small></span> : '—') },
+    { label: 'Medical', hideOnCards: true, render: (s) => (hasAlert(s) ? <span title={s.medicalAlerts}><Pill tone="amber" icon={HeartPulse}>Medical alert</Pill></span> : <span className="muted">—</span>) },
+    { label: 'Status', sortBy: (s) => (isIncomplete(s) && !archived ? 'Needs update' : s.studentStatus), render: (s) => (isIncomplete(s) && !archived ? <Pill tone="amber">Needs update</Pill> : statusPill(s.studentStatus)) },
+    { label: 'Actions', render: (s) => (
+      <Actions><Link to={`/students/${s.studentId}`}>View profile</Link>{!archived && <Link to={`/students/${s.studentId}/edit`}>Edit</Link>}</Actions>
+    ) },
+  ];
+  const shown = sortRows(rows, cols, sort).slice((current - 1) * PAGE, current * PAGE);
+  const pick = (value, set, all, choices, disabled, title) => (
+    <select className="select" value={value} disabled={disabled} title={disabled ? title : undefined} onChange={(e) => { set(e.target.value); setPage(1); }} aria-label={all}>
       <option value="">{all}</option>{choices.map((c) => <option key={c}>{c}</option>)}
     </select>
   );
+  const setClass = (v) => { setKlass(v); setSection(''); setPage(1); };
+  // Saved views: a set of filters kept in this browser
+  const now = { klass, section, house, q: q.trim(), only };
+  const sameAs = (v) => ['klass', 'section', 'house', 'q', 'only'].every((k) => (v[k] || '') === (now[k] || ''));
+  const apply = (v) => { setKlass(v.klass || ''); setSection(v.section || ''); setHouse(v.house || ''); setQ(v.q || ''); setPage(1); onSetOnly?.(v.only || ''); };
+  const saveView = () => {
+    const name = naming.trim();
+    if (!name) return;
+    const next = [...views, { id: Date.now().toString(36), name, ...now }];
+    setViews(next); writeViews(next); setNaming(null);
+  };
+  const deleteView = (id) => { const next = views.filter((v) => v.id !== id); setViews(next); writeViews(next); };
+  const chips = [
+    q.trim() && [`Search: “${q.trim()}”`, () => { setQ(''); setPage(1); }],
+    onlyLabel && [onlyLabel, onClearOnly],
+    klass && [klass, () => setClass('')],
+    section && [`Section ${section}`, () => { setSection(''); setPage(1); }],
+    house && [`House: ${house}`, () => { setHouse(''); setPage(1); }],
+  ].filter(Boolean);
+  const clearAll = () => { setQ(''); setKlass(''); setSection(''); setHouse(''); setPage(1); if (onlyLabel) onClearOnly(); };
   return (
     <>
       <div className="filters">
         <SearchBox placeholder="Search name, student ID or guardian" value={q} onChange={(v) => { setQ(v); setPage(1); }} />
-        {pick(klass, setKlass, 'All classes', classes)}
-        {pick(section, setSection, 'All sections', opts((s) => s.sectionName).sort())}
+        <select className="select" value={klass} onChange={(e) => setClass(e.target.value)} aria-label="All classes">
+          <option value="">All classes</option>{classes.map((c) => <option key={c}>{c}</option>)}
+        </select>
+        {pick(section, setSection, 'All sections', sections, !klass, 'Choose a class first')}
         {pick(house, setHouse, 'All houses', opts((s) => s.houseName).sort())}
       </div>
+      <FilterChips chips={chips} onClear={clearAll}
+        save={!archived && naming === null && chips.length > 0 ? <button type="button" className="link" onClick={() => setNaming('')}>Save this view</button>
+          : !archived && naming !== null ? (
+            <form className="viewsave" onSubmit={(e) => { e.preventDefault(); saveView(); }}>
+              <input autoFocus value={naming} maxLength={40} placeholder="e.g. Class 6-A" aria-label="Saved view name" onChange={(e) => setNaming(e.target.value)} />
+              <button type="submit" className="btn primary" disabled={!naming.trim()}>Save</button>
+              <button type="button" className="btn" onClick={() => setNaming(null)}>Cancel</button>
+            </form>
+          ) : null}
+        end={!archived && views.length > 0 ? views.map((v) => (
+          <span key={v.id} className="viewchip own" aria-pressed={sameAs(v)}>
+            <button type="button" onClick={() => apply(v)}>{v.name}</button>
+            <button type="button" className="x" aria-label={`Delete saved view ${v.name}`} onClick={() => deleteView(v.id)}>✕</button>
+          </span>
+        )) : null} />
       {!all.length
-        ? <ApiNote>{archived ? 'No transferred or graduated students for this campus.' : 'No students on roll for this campus yet. Use “Add student” to enrol one.'}</ApiNote>
-        : (
+        ? (archived
+          ? <EmptyState title="No archived students">Transferred and graduated students for this campus will appear here.</EmptyState>
+          : <EmptyState title="No students on roll yet" action={<Link className="btn primary" to="/students/new">Add student</Link>}>Enrol the first student to build this campus's directory.</EmptyState>)
+        : !rows.length
+          ? (
+            <EmptyState title="No students match" action={<button type="button" className="btn" onClick={clearAll}>Clear filters</button>}>
+              Try a different search or remove a filter. {formatNumber(all.length)} students in total.
+            </EmptyState>
+          ) : (
           <div className="tablebox">
             <DataTable
-              cols={[
-                { label: 'Student', render: (s) => <Person name={fullName(s)} sub={s.studentUid} /> },
-                { label: 'Class', render: (s) => <span className="cell-id"><b>{classLabel(s)}</b><small>{s.rollNumber ? `Roll no. ${s.rollNumber}` : '—'}</small></span> },
-                { label: 'House', render: (s) => s.houseName || '—' },
-                { label: 'Primary guardian', render: (s) => (s.guardians?.[0]
-                  ? <span className="cell-id"><b>{s.guardians[0].fullName}</b><small>{s.guardians[0].relationship} · {s.guardians[0].mobileNumber}</small></span> : '—') },
-                { label: 'Medical', render: (s) => (hasAlert(s) ? <span title={s.medicalAlerts}><Pill tone="amber">Medical alert</Pill></span> : <span className="muted">—</span>) },
-                { label: 'Status', render: (s) => (isIncomplete(s) && !archived ? <Pill tone="amber">Needs update</Pill> : statusPill(s.studentStatus)) },
-                { label: 'Actions', render: (s) => (
-                  <Actions><Link to={`/students/${s.studentId}`}>View profile</Link>{!archived && <Link to={`/students/${s.studentId}/edit`}>Edit</Link>}</Actions>
-                ) },
-              ]}
+              cols={cols}
+              sort={sort}
+              cards
               rows={shown}
             />
-            <Pager page={current} pages={pages} onPage={setPage}
+            <Pager page={current} pages={pages} onPage={setPage} pageSize={pageSize} onPageSize={(n) => { setPageSize(n); setPage(1); }}
               text={rows.length
                 ? `Showing ${(current - 1) * PAGE + 1}–${(current - 1) * PAGE + shown.length} of ${rows.length} student${rows.length === 1 ? '' : 's'}${rows.length < all.length ? ` (filtered from ${all.length})` : ''}`
                 : `No students match · ${all.length} in total`} />
@@ -138,8 +212,8 @@ export function useStudentRecord(id, enabled = true) {
 
 /* ---------- photo and documents ---------- */
 
-/** Round avatar: the stored photo (GET …/photo/file with the token) or the initials. */
-export function StudentAvatar({ student, name, className = 'bigavatar' }) {
+/** Round avatar: the stored photo (GET …/photo/file with the token) or the initials. `tone` sets the initials' colours. */
+export function StudentAvatar({ student, name, className = 'bigavatar', tone }) {
   const [src, setSrc] = useState(null);
   const hasPhoto = student?.profilePhotoUrl?.startsWith('vault:');
   useEffect(() => {
@@ -151,7 +225,8 @@ export function StudentAvatar({ student, name, className = 'bigavatar' }) {
     return () => { alive = false; if (url) URL.revokeObjectURL(url); };
   }, [student?.studentId, student?.profilePhotoUrl]);
   const initials = (name || fullName(student)).split(' ').map((w) => w[0]).join('').slice(0, 2);
-  return <div className={className}>{src ? <img src={src} alt={`Photo of ${name || fullName(student)}`} className="avatar-img" /> : initials}</div>;
+  const style = tone && !src ? { background: tone[0], color: tone[1] } : undefined;
+  return <div className={className + (src ? ' has-photo' : '')} style={style}>{src ? <img src={src} alt={`Photo of ${name || fullName(student)}`} className="avatar-img" /> : initials}</div>;
 }
 
 /** Edit student → Change photo: POST …/photo/upload (JPEG or PNG, 5 MB). */
@@ -331,8 +406,8 @@ export function CertificatesCard({ student, onStudentChanged }) {
             )}
       </div>
       <div className="pills">
-        {hasRole(...ROLES.issueCertificate) && <button className="btn" onClick={() => setOpen('bonafide')}><Plus size={14} />Issue certificate</button>}
-        {hasRole(...ROLES.transfer) && onRoll && <button className="btn" onClick={() => setOpen('tc')}><Plus size={14} />Issue transfer certificate</button>}
+        {hasRole(...ROLES.issueCertificate) && <button className="btn" onClick={() => setOpen('bonafide')}><Plus size={15} />Issue certificate</button>}
+        {hasRole(...ROLES.transfer) && onRoll && <button className="btn" onClick={() => setOpen('tc')}><Plus size={15} />Issue transfer certificate</button>}
       </div>
       {open === 'bonafide' && <CertificateModal student={student} onClose={() => setOpen(null)} onSaved={certs.reload} />}
       {open === 'tc' && <TransferModal student={student} onClose={() => setOpen(null)} onSaved={() => { certs.reload(); onStudentChanged?.(); }} />}

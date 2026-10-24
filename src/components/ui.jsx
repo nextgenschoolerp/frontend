@@ -1,9 +1,15 @@
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowUpRight, ArrowLeft, FileText, Search, ChevronDown, Calendar } from 'lucide-react';
-import { useState } from 'react';
+import { ArrowUpRight, Check, ArrowLeft, FileText, Search, ChevronDown, ChevronUp, ChevronsUpDown, Calendar, AlertTriangle, XCircle } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { todayIso, formatDate, formatTime, timeZoneNames } from '../regional.js';
 
-export const Pill = ({ tone = '', children }) => <span className={`pill ${tone}`}>{children}</span>;
+/* Status icons, so a pill's meaning does not depend on its colour alone. Set per tone by default. */
+const TONE_ICON = { green: Check, amber: AlertTriangle, red: XCircle };
+/** `icon` overrides the tone's icon (pass `false` for none). */
+export const Pill = ({ tone = '', icon, children }) => {
+  const Icon = icon === undefined ? TONE_ICON[tone] : icon || null;
+  return <span className={`pill ${tone}`}>{Icon && <Icon size={11} strokeWidth={2.5} aria-hidden="true" className="pill-ic" />}{children}</span>;
+};
 
 /** Saves `content` as a file download (Export buttons build their files in the browser). */
 export function downloadFile(name, content, type = 'text/csv') {
@@ -70,6 +76,41 @@ export function useBackLink(to) {
   };
 }
 
+/** Page title with a back arrow beside it: `<BackTitle to="/students" label="Back to students">Krish Pandey</BackTitle>`. */
+export const BackTitle = ({ to, label, children }) => (
+  <span className="titlerow">
+    <Link to={to} className="iconbtn" aria-label={label} title={label}><ArrowLeft size={16} /></Link>
+    {children}
+  </span>
+);
+
+/** Secondary actions behind one button: `{ more: [{ label, icon, onClick, disabled, title }] }` in PageHeader's actions. */
+function MoreActions({ label, items }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const outside = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    const esc = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', outside);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', outside); document.removeEventListener('keydown', esc); };
+  }, [open]);
+  return (
+    <div className="actionmenu" ref={ref}>
+      <button type="button" className="btn" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>{label}<ChevronDown size={14} aria-hidden="true" /></button>
+      {open && (
+        <div className="actionmenu-list" role="menu">
+          {items.map((i) => (
+            <button type="button" role="menuitem" key={i.label} className="actionmenu-item" disabled={i.disabled} title={i.title}
+              onClick={() => { setOpen(false); i.onClick(); }}>{i.icon}{i.label}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function PageHeader({ title, desc, actions = [], context = true }) {
   // Opened from a link on another page (see useBackLink): offer a way back unless the page already has one
   const { state } = useLocation();
@@ -82,6 +123,7 @@ export function PageHeader({ title, desc, actions = [], context = true }) {
         <div><h1>{title}</h1><p>{desc}</p></div>
         <div className="actions">
           {actions.map((a) => {
+            if (a.more) return <MoreActions key={a.label} label={a.label} items={a.more} />;
             if (a.render) return <span key={a.label}>{a.render()}</span>;
             const cls = 'btn' + (a.primary ? ' primary' : '');
             const inner = <>{a.icon}{a.label}</>;
@@ -108,15 +150,28 @@ function DayContext() {
   );
 }
 
+/** Smoothly scroll to the element with this id (stat cards that point at a section of the same page). */
+export const scrollToId = (id) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+/** Stat cards: [label, value, sub, ctx, good, Icon, go]. `go` makes the card clickable: a route string (link) or a function (button);
+    pass `{ to | onClick, hint, active }` to also set the tooltip and mark the card as the one currently showing (tinted, ✓). Omit it (or `null`) for a plain card. */
 export const Metrics = ({ items }) => (
   <div className="grid4">
-    {items.map(([label, value, sub, ctx, good, Icon]) => (
-      <div className="card metric" key={label}>
-        <div className="mt">{label}{Icon ? <Icon size={17} style={{ color: 'var(--pr)' }} /> : null}</div>
-        <div className="mv">{value}</div>
-        <div className={'mc' + (good ? ' good' : '')}>{ctx || sub}{ctx && <small>{sub}</small>}</div>
-      </div>
-    ))}
+    {items.map(([label, value, sub, ctx, good, Icon, go]) => {
+      const body = (
+        <>
+          <div className="mt">{label}{go ? (go.active ? <Check size={15} className="go" aria-hidden="true" /> : <ArrowUpRight size={15} className="go" aria-hidden="true" />) : Icon ? <Icon size={17} style={{ color: 'var(--pr)' }} /> : null}</div>
+          <div className="mv">{value}</div>
+          <div className={'mc' + (good ? ' good' : '')}>{ctx || sub}{ctx && <small>{sub}</small>}</div>
+        </>
+      );
+      if (!go) return <div className="card metric" key={label}>{body}</div>;
+      const { to, onClick, hint, active } = typeof go === 'string' ? { to: go } : typeof go === 'function' ? { onClick: go } : go;
+      const title = hint || `Open ${label.toLowerCase()}`;
+      return to
+        ? <Link className={'card metric clickable' + (active ? ' on' : '')} key={label} to={to} title={title} aria-current={active ? 'true' : undefined} aria-label={`${label}: ${value}. ${title}`}>{body}</Link>
+        : <button type="button" className={'card metric clickable' + (active ? ' on' : '')} key={label} onClick={onClick} title={title} aria-pressed={!!active} aria-label={`${label}: ${value}. ${title}`}>{body}</button>;
+    })}
   </div>
 );
 
@@ -163,14 +218,62 @@ export const SearchBox = ({ placeholder, value, onChange, width }) => (
 export const Select = ({ children }) => <span className="select">{children}<ChevronDown size={12} /></span>;
 
 /** cols: [{ label, key, render?, className? }]  rows: array of objects */
-export function DataTable({ cols, rows, boxed }) {
+/**
+ * Column sorting. Keep `sort` in the page (`const sort = useSort()`), sort the rows before paging
+ * (`sortRows(rows, cols, sort)`), and give sortable columns a `sortBy: (row) => value`.
+ * Clicking a header sorts ascending, then descending, then back to the original order.
+ */
+export function useSort() {
+  const [sort, setSort] = useState({ key: null, dir: 'asc' });
+  const toggle = (key) => setSort((s) => (s.key !== key ? { key, dir: 'asc' } : s.dir === 'asc' ? { key, dir: 'desc' } : { key: null, dir: 'asc' }));
+  return { ...sort, toggle };
+}
+
+export function sortRows(rows, cols, sort) {
+  const col = cols.find((c) => c.sortBy && c.label === sort.key);
+  if (!col) return rows;
+  const blank = (v) => v == null || v === '';
+  const dir = sort.dir === 'asc' ? 1 : -1;
+  return rows.map((r, i) => [r, i]).sort(([a, i], [b, j]) => {
+    const x = col.sortBy(a); const y = col.sortBy(b);
+    // Blank values sort last in both directions; ties keep the original order
+    if (blank(x) || blank(y)) return blank(x) === blank(y) ? i - j : blank(x) ? 1 : -1;
+    const c = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true, sensitivity: 'base' });
+    return c * dir || i - j;
+  }).map(([r]) => r);
+}
+
+function SortHead({ label, sort }) {
+  const active = sort.key === label;
+  const Icon = !active ? ChevronsUpDown : sort.dir === 'asc' ? ChevronUp : ChevronDown;
+  return (
+    <button type="button" className={'sorth' + (active ? ' on' : '')} onClick={() => sort.toggle(label)}>
+      {label}<Icon size={11} aria-hidden="true" />
+    </button>
+  );
+}
+
+/**
+ * `cards`: on phones and tablets each row becomes a card (labelled fields, no sideways scrolling).
+ * A column with `hideOnCards` is left out of the card; the first column is the card's title.
+ */
+export function DataTable({ cols, rows, boxed, sort, cards }) {
   const t = (
     <div className="tablewrap">
-      <table className="t">
-        <thead><tr>{cols.map((c) => <th key={c.label}>{c.label}</th>)}</tr></thead>
+      <table className={'t' + (cards ? ' cards' : '')}>
+        <thead><tr>{cols.map((c) => (
+          <th key={c.label} className={c.hideOnCards ? 'hide-card' : undefined}
+            aria-sort={sort && c.sortBy && sort.key === c.label ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}>
+            {sort && c.sortBy ? <SortHead label={c.label} sort={sort} /> : c.label}
+          </th>
+        ))}</tr></thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i}>{cols.map((c) => <td key={c.label} className={c.className}>{c.render ? c.render(r) : r[c.key]}</td>)}</tr>
+            <tr key={i}>{cols.map((c) => (
+              <td key={c.label} className={[c.className, c.hideOnCards ? 'hide-card' : ''].filter(Boolean).join(' ') || undefined} data-label={c.label}>
+                {c.render ? c.render(r) : r[c.key]}
+              </td>
+            ))}</tr>
           ))}
         </tbody>
       </table>
@@ -183,7 +286,7 @@ export function DataTable({ cols, rows, boxed }) {
  * Table footer. With `pages` and `onPage` it pages for real (Previous / numbers / Next, at most 5 numbers around the
  * current page, hidden when everything fits on one page); without them it is the static sample footer.
  */
-export function Pager({ text, page, pages, onPage }) {
+export function Pager({ text, page, pages, onPage, pageSize, onPageSize }) {
   if (!onPage) {
     return (
       <div className="pager">
@@ -197,6 +300,13 @@ export function Pager({ text, page, pages, onPage }) {
   return (
     <div className="pager">
       <span>{text}</span>
+      {onPageSize && (
+        <label className="pagesize">Rows per page
+          <select value={pageSize} onChange={(e) => onPageSize(Number(e.target.value))} aria-label="Rows per page">
+            {[10, 25, 50].map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+      )}
       {pages > 1 && (
         <nav className="pages" aria-label="Pages">
           <button type="button" disabled={page <= 1} onClick={() => onPage(page - 1)}>← Previous</button>
@@ -209,6 +319,52 @@ export function Pager({ text, page, pages, onPage }) {
     </div>
   );
 }
+
+/** Placeholder table while a list loads: the real header labels over shimmering rows, so the layout does not jump. */
+export function SkeletonTable({ cols, rows = 6 }) {
+  return (
+    <div className="tablebox" role="status" aria-busy="true" aria-label="Loading">
+      <div className="tablewrap">
+        <table className="t">
+          <thead><tr>{cols.map((c) => <th key={c}>{c}</th>)}</tr></thead>
+          <tbody>
+            {Array.from({ length: rows }, (_, i) => (
+              <tr key={i}>{cols.map((c, j) => <td key={c}><span className="skel" style={{ width: `${[70, 55, 40, 65, 45, 50, 60][j % 7]}%` }} /></td>)}</tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/** Nothing to show: a title, an optional hint, and an optional action button. */
+export const EmptyState = ({ title, children, action }) => (
+  <div className="emptystate">
+    <b>{title}</b>
+    {children && <p className="xs muted">{children}</p>}
+    {action}
+  </div>
+);
+
+/** Applied filters as removable chips + "Clear all". `chips`: [[label, onRemove], …]; `extra` sits after "Clear all". Renders nothing when empty. */
+export const FilterChips = ({ chips, onClear, save, end }) => (chips.length || end || save ? (
+  <div className="fchips" role="group" aria-label="Applied filters">
+    {chips.map(([label, remove]) => (
+      <span className="fchip" key={label}>{label}<button type="button" onClick={remove} aria-label={`Remove filter ${label}`}>✕</button></span>
+    ))}
+    {chips.length > 0 && <button type="button" className="link" onClick={onClear}>Clear all</button>}
+    {save && <span className="fchips-save">{save}</span>}
+    {/* Right-aligned: saved views */}
+    {end && <span className="fchips-end">{end}</span>}
+  </div>
+) : null);
+
+/* Avatar colours for the initials, one pair per class so a class reads as a block when scanning. [background, text] */
+const AVATAR_TONES = [['#e8eefb', '#2f5aa8'], ['#e7f5ee', '#1f7a57'], ['#fbeee6', '#a4531f'], ['#f3ebfa', '#6b3fa0'],
+  ['#fdf3d9', '#8a6410'], ['#e6f4f7', '#1d6a7a'], ['#fbe9ee', '#a0325a'], ['#eef0e6', '#55652a']];
+/** Same group (class, department) → same colour; the hash keeps it stable between reloads. */
+export const avatarTone = (key) => AVATAR_TONES[[...String(key || '')].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 0) % AVATAR_TONES.length];
 
 export const Person = ({ name, sub, initials }) => (
   <>
@@ -238,8 +394,8 @@ export const Footer = () => (
   </div>
 );
 
-export const Card = ({ children, flush, className = '', style }) => (
-  <section className={`card${flush ? ' flush' : ''} ${className}`} style={style}>{children}</section>
+export const Card = ({ children, flush, className = '', style, id }) => (
+  <section id={id} className={`card${flush ? ' flush' : ''} ${className}`} style={style}>{children}</section>
 );
 
 /* form helpers */

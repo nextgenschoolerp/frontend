@@ -4,9 +4,10 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App.jsx';
 import { AuthProvider } from './auth.jsx';
 import './styles.css';
-import { applyTheme, getTheme } from './theme.js';
+import { applyTheme, getTheme, applyDensity, getDensity } from './theme.js';
 
 applyTheme(getTheme());
+applyDensity(getDensity());
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>

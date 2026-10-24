@@ -108,7 +108,14 @@ export function RecordPaymentModal({ account, onClose, onSaved }) {
 }
 
 /** Send receipt: POST /api/v1/finance/receipts/{id}/dispatch (US-04004). */
-function SendReceiptModal({ receipt, onClose }) {
+/** The saved contact for a channel: e-mail for EMAIL, otherwise the mobile number (SMS and WhatsApp), from the primary guardian first. */
+const savedContact = (guardians, channel) => {
+  const list = [...(guardians || [])].sort((a, b) => Number(!!b.primaryContact) - Number(!!a.primaryContact));
+  const field = channel === 'EMAIL' ? 'email' : 'mobileNumber';
+  return list.find((g) => g[field])?.[field] || '';
+};
+
+function SendReceiptModal({ receipt, contacts, onClose }) {
   const [channel, setChannel] = useState('WHATSAPP');
   const [done, setDone] = useState(null);
   const { busy, error, submit } = useSubmit((v) => fin.dispatchReceipt(receipt.receiptId, { channel: v.channel, recipient: v.recipient.trim() }), setDone);
@@ -122,9 +129,11 @@ function SendReceiptModal({ receipt, onClose }) {
   }
   return (
     <ModalForm title="Send receipt" sub={`${receipt.receiptNumber} · ${receipt.studentName}`} onClose={onClose} onSubmit={submit} busy={busy} error={error} submitLabel="Send">
-      <Sel label="Channel" name="channel" value="WHATSAPP" onChange={(e) => setChannel(e.target.value)}
+      <Sel label="Channel" name="channel" value={channel} onChange={(e) => setChannel(e.target.value)}
         options={[['WHATSAPP', 'WhatsApp'], ['SMS', 'SMS'], ['EMAIL', 'E-mail']]} />
-      <In label={channel === 'EMAIL' ? 'E-mail address' : 'Mobile number'} name="recipient" required
+      {/* Keyed by channel so the field refills with that channel's saved contact when the channel changes */}
+      <In key={channel} label={channel === 'EMAIL' ? 'E-mail address' : 'Mobile number'} name="recipient" required
+        defaultValue={savedContact(contacts, channel)}
         placeholder={channel === 'EMAIL' ? 'parent@example.com' : '+91 98111 00114'} />
     </ModalForm>
   );
@@ -147,7 +156,7 @@ function BounceModal({ receipt, onClose, onSaved }) {
 }
 
 /** Receipt row actions: PDF for everyone who can see it; Send and Bounce by role. */
-export function ReceiptActions({ receipt, onChanged }) {
+export function ReceiptActions({ receipt, onChanged, contacts }) {
   const { hasRole } = useAuth();
   const [open, setOpen] = useState(null);
   const [err, setErr] = useState(null);
@@ -160,7 +169,7 @@ export function ReceiptActions({ receipt, onChanged }) {
       {issued && ['CHEQUE', 'DEMAND_DRAFT'].includes(receipt.paymentMode) && hasRole(...ROLES.bounce)
         && <button type="button" className="link" onClick={() => setOpen('bounce')}><Ban size={13} />Bounced</button>}
       {err && <small className="xs" style={{ color: "var(--red, #b42318)" }}>{err}</small>}
-      {open === 'send' && <SendReceiptModal receipt={receipt} onClose={() => setOpen(null)} />}
+      {open === 'send' && <SendReceiptModal receipt={receipt} contacts={contacts} onClose={() => setOpen(null)} />}
       {open === 'bounce' && <BounceModal receipt={receipt} onClose={() => setOpen(null)} onSaved={onChanged} />}
     </span>
   );
@@ -230,7 +239,7 @@ function RaiseFees({ student, onDone }) {
 }
 
 /** Profile · Fees & payments tab: installments and receipts. */
-export function FeeAccountDetail({ fees }) {
+export function FeeAccountDetail({ fees, guardians }) {
   if (!fees.allowed || fees.loading || fees.error) return null;
   const a = fees.data;
   return (<>
@@ -249,22 +258,25 @@ export function FeeAccountDetail({ fees }) {
     </Card>
     <Card>
       <SectionHead title="Receipts" sub={a.receipts.length ? `${a.receipts.length} payments` : 'No payments yet'} />
-      {a.receipts.length > 0 && <div style={{ marginTop: 14 }}><ReceiptsTable rows={a.receipts} onChanged={fees.reload} /></div>}
+      {a.receipts.length > 0 && <div style={{ marginTop: 14 }}><ReceiptsTable rows={a.receipts} onChanged={fees.reload} contacts={guardians} /></div>}
     </Card>
   </>);
 }
 
 /** Receipts table (profile and the Fees page day-book). */
-export function ReceiptsTable({ rows, onChanged, showStudent }) {
-  return (
-    <DataTable boxed cols={[
-      ...(showStudent ? [{ label: 'Student / receipt', render: (r) => <span className="cell-id"><b>{r.studentName}</b><small>{r.receiptNumber} · {fin.classOf(r)}</small></span> }]
-        : [{ label: 'Receipt', render: (r) => <span className="cell-id"><b>{r.receiptNumber}</b><small>{r.collectedBy}</small></span> }]),
-      { label: 'Date', render: (r) => fmtDate(r.paymentTimestamp) },
-      { label: 'Method', render: (r) => `${PAYMENT_MODES[r.paymentMode] || r.paymentMode}${r.instrumentNumber ? ` ${r.instrumentNumber}` : ''}` },
-      { label: 'Amount', className: 'num', render: (r) => money(r.totalAmountPaid) },
-      { label: 'Status', render: receiptPill },
-      { label: 'Action', render: (r) => <ReceiptActions receipt={r} onChanged={onChanged} /> },
-    ]} rows={rows} />
-  );
+/** Receipt table columns, shared with the Fees page so its transactions list can sort before paging */
+export function receiptCols({ onChanged, showStudent, contacts }) {
+  return [
+    ...(showStudent ? [{ label: 'Student / receipt', sortBy: (r) => r.studentName, render: (r) => <span className="cell-id"><b>{r.studentName}</b><small>{r.receiptNumber} · {fin.classOf(r)}</small></span> }]
+      : [{ label: 'Receipt', sortBy: (r) => r.receiptNumber, render: (r) => <span className="cell-id"><b>{r.receiptNumber}</b><small>{r.collectedBy}</small></span> }]),
+    { label: 'Date', sortBy: (r) => r.paymentTimestamp, render: (r) => fmtDate(r.paymentTimestamp) },
+    { label: 'Method', sortBy: (r) => PAYMENT_MODES[r.paymentMode] || r.paymentMode, render: (r) => `${PAYMENT_MODES[r.paymentMode] || r.paymentMode}${r.instrumentNumber ? ` ${r.instrumentNumber}` : ''}` },
+    { label: 'Amount', className: 'num', sortBy: (r) => Number(r.totalAmountPaid), render: (r) => money(r.totalAmountPaid) },
+    { label: 'Status', sortBy: (r) => r.receiptStatus, render: receiptPill },
+    { label: 'Action', render: (r) => <ReceiptActions receipt={r} onChanged={onChanged} contacts={contacts} /> },
+  ];
+}
+
+export function ReceiptsTable({ rows, onChanged, showStudent, sort, contacts }) {
+  return <DataTable boxed cols={receiptCols({ onChanged, showStudent, contacts })} sort={sort} rows={rows} />;
 }

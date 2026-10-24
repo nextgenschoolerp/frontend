@@ -93,16 +93,16 @@ export default function Overview() {
       : row));
   const metrics = [
     students.live
-      ? ['Total students', formatNumber(students.current.length), `Across ${students.classCount} class sections`, `+${students.newThisYear.length} this year`, true, GraduationCap]
-      : ['Total students', '1,248', 'Across 44 classes', '+24 this term', true, GraduationCap],
+      ? ['Total students', formatNumber(students.current.length), `Across ${students.classCount} class sections`, `+${students.newThisYear.length} this year`, true, GraduationCap, '/students']
+      : ['Total students', '1,248', 'Across 44 classes', '+24 this term', true, GraduationCap, '/students'],
     att.live
       ? ['Student attendance', t.presentRate === null ? '—' : `${Number(t.presentRate).toFixed(1)}%`, `${formatNumber(t.present)} of ${formatNumber(t.totalStudents - t.unmarked)} marked present`,
-        att.change !== null ? pp(att.change) : `${t.amRegistersSubmitted} / ${t.registersExpected} registers in`, att.change === null || att.change >= 0, ClipboardCheck]
-      : ['Student attendance', att.allowed ? '…' : '95.2%', att.allowed ? '' : '1,188 of 1,248 present', att.allowed ? '' : '+0.5 pp vs last week', true, ClipboardCheck],
-    ['Staff on campus', '86 / 92', 'All lessons covered', '6 on approved leave', false, Users],
+        att.change !== null ? pp(att.change) : `${t.amRegistersSubmitted} / ${t.registersExpected} registers in`, att.change === null || att.change >= 0, ClipboardCheck, '/attendance']
+      : ['Student attendance', att.allowed ? '…' : '95.2%', att.allowed ? '' : '1,188 of 1,248 present', att.allowed ? '' : '+0.5 pp vs last week', true, ClipboardCheck, att.allowed && '/attendance'],
+    ['Staff on campus', '86 / 92', 'All lessons covered', '6 on approved leave', false, Users, '/staff'],
     fees.allowed && !fees.live
       ? ['Fees collected', fees.error ? '—' : '…', fees.error ? 'Could not load fee figures' : '', '', true, Wallet]
-      : ['Fees collected', moneyShort(fee.collected), `${moneyShort(fee.outstanding)} outstanding`, `${fee.collectedPct.toFixed(1)}% of billing`, fee.collectedPct >= 85, Wallet],
+      : ['Fees collected', moneyShort(fee.collected), `${moneyShort(fee.outstanding)} outstanding`, `${fee.collectedPct.toFixed(1)}% of billing`, fee.collectedPct >= 85, Wallet, '/fees'],
   ];
   // "Export report": the figures and the attention list shown on this page, as CSV
   const exportReport = () => downloadCsv('school-overview', ['Section', 'Item', 'Value', 'Detail'], [

@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Download, Plus, ArrowLeft, Upload, Pencil, Check, Circle, LoaderCircle, ArrowRight, IdCard, HeartPulse, UserPlus, GraduationCap } from 'lucide-react';
+import { Download, Plus, ArrowLeft, Upload, Pencil, Check, Circle, LoaderCircle, ArrowRight, IdCard, HeartPulse, UserPlus, GraduationCap, Mail } from 'lucide-react';
 import {
-  PageHeader, Metrics, Card, SectionHead, Tabs, DataTable, Pill, FieldGrid, Field, Footer, KV, Docs, downloadCsv,
+  PageHeader, BackTitle, Metrics, scrollToId, avatarTone, Card, SectionHead, Tabs, DataTable, Pill, FieldGrid, Field, Footer, KV, Docs, downloadCsv,
 } from '../components/ui.jsx';
 import { ApplicationsTable, useApplications, useOpenFollowUps, ApiErr, ApiNote, exportApplicationsCsv } from '../components/Admissions.jsx';
 import { NewAdmissionPanel, buildEnquiry, useCaptureAllowed, gradeCode } from '../components/NewAdmission.jsx';
 import {
-  useStudents, StudentsTable, exportStudentsCsv, useStudentRecord, statusPill, fmtDate, Loading, hasAlert,
+  useStudents, StudentsTable, exportStudentsCsv, useStudentRecord, statusPill, fmtDate, Loading, hasAlert, isNoneText,
   MedicalModal, IdCardModal, CertificatesCard, ConductCard, StudentAvatar, PhotoButton, StudentDocuments,
 } from '../components/StudentRecords.jsx';
 import { useAuth } from '../auth.jsx';
@@ -31,6 +31,9 @@ export function StudentsDirectory() {
   const [params, setParams] = useSearchParams();
   const tab = Math.max(0, TABS.indexOf(params.get('tab')));
   const setTab = (i) => setParams(TABS[i] ? { tab: TABS[i] } : {}, { replace: true });
+  // Stat cards narrow the directory: ?filter=incomplete | new (All students tab only)
+  const only = tab === 0 && ['incomplete', 'new', 'medical'].includes(params.get('filter')) ? params.get('filter') : '';
+  const showOnly = (f) => { setParams(f ? { filter: f } : {}, { replace: true }); scrollToId('student-directory'); };
   const live = apps.canRead && !apps.missingBranch && !apps.error;
   const openCount = live && apps.data ? apps.open.length : null;
   const n = (v) => (list.live ? formatNumber(v) : list.loading ? '…' : '—');
@@ -43,30 +46,37 @@ export function StudentsDirectory() {
         title="Students"
         desc="Manage admissions, student records and class placement across your school."
         actions={[
-          // Exports the rows of the open tab (students, applications or archived students) as CSV
-          tab === 1
-            ? { label: 'Export list', icon: <Download size={15} />, disabled: !(live && apps.data), title: live && apps.data ? 'Download the applications as CSV' : 'Applications are not available for your role',
-              onClick: () => exportApplicationsCsv(apps.rows) }
-            : { label: 'Export list', icon: <Download size={15} />, disabled: !list.live, title: list.live ? 'Download this list as CSV' : 'Student records are not available for your role',
-              onClick: () => exportStudentsCsv(tab === 2 ? list.left : list.current, tab === 2 ? 'archived-students' : 'students') },
-          ...(hasRole(...ROLES.promote) && list.live ? [{ label: 'Promote class', icon: <GraduationCap size={15} />, onClick: () => setPromoting(true) }] : []),
+          // Occasional tasks live in one menu; "Add student" stays the primary button
+          { label: 'More actions', more: [
+            // Exports the rows of the open tab (students, applications or archived students) as CSV
+            tab === 1
+              ? { label: 'Export list', icon: <Download size={15} />, disabled: !(live && apps.data), title: live && apps.data ? 'Download the applications as CSV' : 'Applications are not available for your role',
+                onClick: () => exportApplicationsCsv(apps.rows) }
+              : { label: 'Export list', icon: <Download size={15} />, disabled: !list.live, title: list.live ? 'Download this list as CSV' : 'Student records are not available for your role',
+                onClick: () => exportStudentsCsv(tab === 2 ? list.left : list.current, tab === 2 ? 'archived-students' : 'students') },
+            ...(hasRole(...ROLES.promote) && list.live ? [{ label: 'Promote class', icon: <GraduationCap size={15} />, onClick: () => setPromoting(true) }] : []),
+          ] },
           { label: 'Add student', icon: <Plus size={15} />, primary: true, to: '/students/new' },
         ]}
       />
       {promoting && <PromoteClassModal students={list.current} onClose={() => setPromoting(false)} onDone={list.reload} />}
       <Metrics items={[
-        ['Total students', n(list.current.length), list.live ? `Across ${list.classCount} class section${list.classCount === 1 ? '' : 's'}` : noAccess],
-        ['New this year', n(list.newThisYear.length), list.live ? 'Enrolled since 1 April' : noAccess],
-        ['Admission applications', openCount ?? (apps.loading ? '…' : '—'), openCount !== null ? 'Awaiting review' : noAccess],
-        ['Incomplete records', n(list.incomplete.length), list.live ? 'Guardian, emergency phone or blood group missing' : noAccess],
+        ['Total students', n(list.current.length), list.live ? `Across ${list.classCount} class section${list.classCount === 1 ? '' : 's'}` : noAccess, null, false, null,
+          list.live && { onClick: () => { setTab(0); showOnly(''); }, hint: 'Show all students', active: tab === 0 && !only }],
+        ['New this year', n(list.newThisYear.length), list.live ? 'Enrolled since 1 April' : noAccess, null, false, null,
+          list.live && { onClick: () => showOnly('new'), hint: 'Show students enrolled this year', active: only === 'new' }],
+        ['Admission applications', openCount ?? (apps.loading ? '…' : '—'), openCount !== null ? `Awaiting review · ${formatNumber(apps.rows.length)} in total` : noAccess, null, false, null,
+          openCount !== null && { onClick: () => { setTab(1); scrollToId('student-directory'); }, hint: 'Open the Admissions tab', active: tab === 1 }],
+        ['Incomplete records', n(list.incomplete.length), list.live ? 'Guardian, emergency phone or blood group missing' : noAccess, null, false, null,
+          list.live && { onClick: () => showOnly('incomplete'), hint: 'Show students with incomplete records', active: only === 'incomplete' }],
       ]} />
-      <Card style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <Card id="student-directory" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
         <div className="sh">
           <div><h3>Student directory</h3><p>{tab === 2 ? 'Transferred and graduated students' : 'All enrolled students'} · {list.current[0]?.branchId || 'this campus'}</p></div>
         </div>
         <Tabs items={[`All students${list.live ? ` (${list.current.length})` : ''}`, `Admissions${openCount !== null ? ` (${apps.rows.length})` : ''}`,
           `Archived${list.live ? ` (${list.left.length})` : ''}`]} value={tab} onChange={setTab} />
-        {tab === 1 ? <ApplicationsTable apps={apps} /> : <StudentsTable key={tab} list={list} archived={tab === 2} />}
+        {tab === 1 ? <ApplicationsTable apps={apps} /> : <StudentsTable key={tab} list={list} archived={tab === 2} only={only} onSetOnly={showOnly} onClearOnly={() => showOnly('')} />}
       </Card>
       <div className="cols eq">
         <Card>
@@ -151,13 +161,17 @@ const SAMPLE = {
 const valuesOf = (s) => {
   const [g1, g2] = s.guardians || [];
   return {
-    firstName: s.firstName, lastName: s.lastName, dob: s.dateOfBirth, admissionDate: s.createdAt?.slice(0, 10), gender: GENDER_LABEL[s.gender],
+    firstName: s.firstName, lastName: s.lastName, preferredName: s.preferredName || '', dob: s.dateOfBirth, gender: GENDER_LABEL[s.gender],
+    admissionDate: s.admissionDate || '', admissionNumber: s.admissionNumber || '', nationality: s.nationality || '', address: s.residentialAddress || '',
     uid: s.studentUid, klass: s.gradeName || '', section: s.sectionName || '', house: s.houseName || '',
     guardian: g1?.fullName, email: g1?.email, relationship: g1?.relationship, mobile: g1?.mobileNumber,
     secondary: g2 ? `${g2.fullName} · ${g2.relationship}` : '', secondaryPhone: g2?.mobileNumber,
-    emergencyContact: (g2 || g1)?.fullName, emergencyPhone: s.emergencyContactPhone, blood: s.bloodGroup, conditions: s.medicalAlerts || '',
+    emergencyContact: (g2 || g1)?.fullName, emergencyPhone: s.emergencyContactPhone, blood: s.bloodGroup,
+    conditions: s.medicalAlerts || '', allergies: s.allergies || '',
+    medication: s.medicationInstructions || '', gp: s.gpContact || '', collection: s.collectionPermission || '',
   };
 };
+
 
 /** Grade and section ids for a class name ("Class 6") and section letter (GET /academic/grades, /academic/sections). */
 async function placementIds(grades, klass, section) {
@@ -177,8 +191,7 @@ export function StudentForm({ mode }) {
   if (live && (record.loading || !record.data)) {
     return (
       <>
-        <PageHeader title="Edit student" desc="Update the student’s information, contacts and supporting documents."
-          actions={[{ label: 'Back to profile', icon: <ArrowLeft size={15} />, to: `/students/${id}` }]} />
+        <PageHeader context={false} title={<BackTitle to={`/students/${id}`} label="Back to profile">Edit student</BackTitle>} desc="Update the student’s information, contacts and supporting documents." />
         <Card>{!record.canView ? <ApiNote>Student records are not available for your role.</ApiNote> : record.error ? <ApiErr error={record.error} /> : <Loading />}</Card>
       </>
     );
@@ -199,6 +212,7 @@ function StudentFormBody({ mode, student: loaded }) {
   const canCapture = useCaptureAllowed();
   const canEnrol = !edit && hasRole(...ROLES.enroll);
   const canMedical = hasRole(...ROLES.medical);
+  const canProfile = hasRole(...ROLES.profile);
   const canAllocate = hasRole(...ROLES.allocate);
   // Classes and houses of the school (studentservice); the static lists are used when the role cannot read them
   const grades = useApi(() => studentApi.listGrades(user.tenantId), [user.tenantId], hasRole(...ROLES.grades) && !!user.tenantId);
@@ -292,33 +306,87 @@ function StudentFormBody({ mode, student: loaded }) {
     return null;
   }
 
-  // Save changes (live record): PUT …/medical (US-03001) and PUT …/allocation (US-03003) for what changed and the role may change
+  // Saves what changed, one request per group: personal details, guardians, medical and placement.
+  // A group the role may not change is reported as not saved, never dropped silently.
   async function saveChanges(thenView) {
     const form = new FormData(formRef.current);
     const get = (k) => String(form.get(k) || '').trim();
+    const phoneOf = (k) => get(k).replace(/[\s().-]/g, '');
     const calls = [];
-    const alerts = [get('medical-conditions'), get('allergies')].filter(Boolean).join('; ');
-    const medical = { bloodGroup: get('blood-group'), medicalAlerts: alerts, emergencyContactPhone: get('emergency-phone').replace(/[\s().-]/g, '') };
-    if (canMedical && (medical.bloodGroup !== (student.bloodGroup || '') || medical.medicalAlerts !== (student.medicalAlerts || '')
-      || medical.emergencyContactPhone !== (student.emergencyContactPhone || ''))) {
-      if (!medical.bloodGroup || !medical.medicalAlerts || !medical.emergencyContactPhone) return fail('Blood group, medical conditions and emergency phone are all required to save medical information (write “None” if there are none).');
-      calls.push(() => studentApi.updateMedical(student.studentId, medical));
+    const skipped = [];
+
+    // Personal details: PUT /students/{id}/profile
+    const profile = {
+      firstName: get('first-name'), lastName: get('last-name'), preferredName: get('preferred-name'),
+      dateOfBirth: get('date-of-birth'), gender: studentApi.GENDERS[get('gender')] || student.gender, nationality: get('nationality'),
+      admissionDate: get('admission-date'), admissionNumber: get('admission-number'), residentialAddress: get('home-address'),
+      medicationInstructions: get('medication-care-instructions'), gpContact: get('gp-surgery-contact'), collectionPermission: get('collection-permission'),
+    };
+    const profileNow = {
+      firstName: student.firstName, lastName: student.lastName, preferredName: student.preferredName || '',
+      dateOfBirth: student.dateOfBirth || '', gender: student.gender, nationality: student.nationality || '',
+      admissionDate: student.admissionDate || '', admissionNumber: student.admissionNumber || '', residentialAddress: student.residentialAddress || '',
+      medicationInstructions: student.medicationInstructions || '', gpContact: student.gpContact || '', collectionPermission: student.collectionPermission || '',
+    };
+    if (JSON.stringify(profile) !== JSON.stringify(profileNow)) {
+      if (!canProfile) skipped.push('personal details');
+      else if (!profile.firstName || !profile.lastName || !profile.dateOfBirth) return fail('First name, last name and date of birth are required.');
+      else calls.push(() => studentApi.updateProfile(student.studentId, profile));
     }
+
+    // Guardians: PUT /students/{id}/guardians (the list sent replaces the record's guardians)
+    const [g1, g2] = student.guardians || [];
+    const [secName, secRel] = get('secondary-guardian').split('·').map((x) => x.trim());
+    const key = (x) => JSON.stringify([x?.fullName || '', x?.relationship || '', x?.mobileNumber || '', x?.email || '']);
+    const formPrimary = { fullName: get('primary-guardian'), relationship: get('relationship'), mobileNumber: phoneOf('mobile-number'), email: get('email-address') };
+    const formSecondary = secName ? { fullName: secName, relationship: secRel || 'Guardian', mobileNumber: phoneOf('secondary-phone'), email: g2?.email || '' } : null;
+    if (key(formPrimary) !== key(g1) || key(formSecondary) !== key(g2)) {
+      if (!canProfile) skipped.push('guardians');
+      else if (!formPrimary.fullName || !formPrimary.relationship || !formPrimary.mobileNumber) return fail('The primary guardian needs a name, relationship and mobile number.');
+      else {
+        const guardians = [
+          { guardianId: g1?.guardianId, ...formPrimary, primaryContact: true },
+          ...(formSecondary ? [{ guardianId: g2?.guardianId, ...formSecondary, primaryContact: false }] : []),
+        ];
+        calls.push(() => studentApi.updateGuardians(student.studentId, { guardians }));
+      }
+    }
+
+    // Medical: PUT /students/{id}/medical (blood group, conditions, allergies and emergency phone; allergies are kept separately)
+    const medical = { bloodGroup: get('blood-group'), medicalAlerts: get('medical-conditions'), allergies: get('allergies') || null, emergencyContactPhone: phoneOf('emergency-phone') };
+    if (medical.bloodGroup !== (student.bloodGroup || '') || medical.medicalAlerts !== (student.medicalAlerts || '')
+      || (medical.allergies || '') !== (student.allergies || '') || medical.emergencyContactPhone !== (student.emergencyContactPhone || '')) {
+      if (!canMedical) skipped.push('medical information');
+      else if (!medical.bloodGroup || !medical.medicalAlerts || !medical.emergencyContactPhone) return fail('Blood group, medical conditions and emergency phone are all required to save medical information (write “None” if there are none).');
+      else calls.push(() => studentApi.updateMedical(student.studentId, medical));
+    }
+
+    // Placement: PUT /students/{id}/allocation
     const houseId = houses.data?.find((h) => h.houseName === get('house'))?.houseId;
     const placeChanged = get('class') !== (student.gradeName || '') || get('section') !== (student.sectionName || '') || (houseId && houseId !== student.houseId);
-    if (canAllocate && placeChanged) {
-      calls.push(async () => {
+    if (placeChanged) {
+      if (!canAllocate) skipped.push('class placement');
+      else calls.push(async () => {
         const same = get('class') === student.gradeName && get('section') === student.sectionName;
         const place = same ? { gradeId: student.gradeId, sectionId: student.sectionId } : await placementIds(grades.data, get('class'), get('section'));
         if (place.error) throw Object.assign(new Error(place.error), { detail: place.error });
         return studentApi.assignAllocation(student.studentId, { gradeId: place.gradeId, sectionId: place.sectionId, houseId: houseId || student.houseId || undefined, rollNumber: student.rollNumber ?? undefined });
       });
     }
-    if (!calls.length) { if (thenView) nav(back); else setSaved('No changes to save for your role.'); return null; }
+
+    const notSaved = skipped.length ? `Not saved, your role can't change: ${skipped.join(', ')}.` : '';
+    if (!calls.length) {
+      if (thenView && !skipped.length) nav(back);
+      else setSaved(notSaved || 'No changes to save.');
+      return null;
+    }
     setSaving(true); setSaveError(null);
     try {
       for (const c of calls) await c();
-      if (thenView) nav(back); else { setSaved('Changes saved'); }
+      // Reload the record, so the next save compares against what the server now holds
+      setStudent(await studentApi.getStudent(student.studentId));
+      if (thenView && !skipped.length) nav(back);
+      else setSaved(notSaved ? `Saved. ${notSaved}` : 'Changes saved');
     } catch (err) {
       setSaveError(err);
     } finally {
@@ -326,6 +394,7 @@ function StudentFormBody({ mode, student: loaded }) {
     }
     return null;
   }
+
 
   const submit = (e) => {
     e.preventDefault();
@@ -338,10 +407,9 @@ function StudentFormBody({ mode, student: loaded }) {
 
   return (
     <form ref={formRef} onSubmit={submit} onChange={touch} noValidate style={{ display: 'contents' }}>
-      <PageHeader
-        title={edit ? 'Edit student' : 'Add student'}
+      <PageHeader context={false}
+        title={<BackTitle to={back} label={edit ? 'Back to profile' : 'Back to students'}>{edit ? 'Edit student' : 'Add student'}</BackTitle>}
         desc={edit ? `Update ${name}’s information, contacts and supporting documents.` : 'Create a student record and prepare a new admission to Oakridge Academy.'}
-        actions={[{ label: edit ? 'Back to profile' : 'Back to students', icon: <ArrowLeft size={15} />, to: back }]}
       />
       <div className="cols s404">
         <div className="stack">
@@ -504,13 +572,23 @@ function StudentFormBody({ mode, student: loaded }) {
 /* ---------- profile ---------- */
 
 const PROFILE_TABS = [
-  ['overview', 'Overview'], ['academics', 'Academics'], ['attendance', 'Attendance'],
-  ['fees', 'Fees & payments'], ['guardians', 'Guardians'], ['documents', 'Documents'], ['conduct', 'Conduct'],
+  // Same priority as the Overview: attendance and fees first, then the academic detail
+  ['overview', 'Overview'], ['attendance', 'Attendance'], ['fees', 'Fees & payments'], ['academics', 'Academics'],
+  ['guardians', 'Guardians'], ['documents', 'Documents'], ['conduct', 'Conduct'],
 ];
 const age = (dob) => {
   const d = new Date(dob); const now = new Date();
   return now.getFullYear() - d.getFullYear() - (now < new Date(now.getFullYear(), d.getMonth(), d.getDate()) ? 1 : 0);
 };
+
+/* Short key facts in two columns (one on phones): a label above each value, so long rows don't need dotted leaders */
+const Facts = ({ rows }) => (
+  <dl className="factgrid">
+    {rows.map(([label, value]) => (
+      <div key={label}><dt>{label}</dt><dd>{value}</dd></div>
+    ))}
+  </dl>
+);
 
 export function StudentProfile() {
   const { id } = useParams();
@@ -529,14 +607,15 @@ export function StudentProfile() {
   const index = Math.max(0, PROFILE_TABS.findIndex(([key]) => key === params.get('tab')));
   const tab = PROFILE_TABS[index][0];
   const setTab = (i) => setParams(i === 0 ? {} : { tab: PROFILE_TABS[i][0] }, { replace: true });
+  const openTab = (key) => setTab(Math.max(0, PROFILE_TABS.findIndex(([k]) => k === key)));
 
-  const header = (extra = []) => (
-    <PageHeader
-      title="Student profile"
+  // The student's name is the title; "Back to students" sits beside it. Secondary actions go under "More actions".
+  const header = (more = []) => (
+    <PageHeader context={false}
+      title={<BackTitle to="/students" label="Back to students">{s ? fullName(s) : 'Student profile'}</BackTitle>}
       desc="A complete view of student progress, wellbeing and school records."
       actions={[
-        { label: 'Back to students', icon: <ArrowLeft size={15} />, to: '/students' },
-        ...extra,
+        ...(more.length ? [{ label: 'More actions', more }] : []),
         { label: 'Edit student', icon: <Pencil size={14} />, primary: true, to: `/students/${id}/edit` },
       ]}
     />
@@ -573,7 +652,7 @@ export function StudentProfile() {
       <Pill tone="green">Present today</Pill></>
     </Card>
   );
-  const feesCard = s ? <FeeStatusCard student={s} fees={fees} onOpenTab={tab === 'fees' ? undefined : () => setTab(3)} /> : (
+  const feesCard = s ? <FeeStatusCard student={s} fees={fees} onOpenTab={tab === 'fees' ? undefined : () => openTab('fees')} /> : (
     <Card>
       <SectionHead title="Fee status" sub="Term 1 · 2026–2027" link="View account →" to="/fees" />
       <><div className="bignum" style={{ marginTop: 18 }}>{formatMoney(0, { decimals: 2 })}</div>
@@ -582,6 +661,9 @@ export function StudentProfile() {
       <p className="xs muted" style={{ marginTop: 12 }}>{formatMoney(2400)} received · {formatDate('2026-09-05')}</p></>
     </Card>
   );
+  // Counts on the tab labels, so staff see what needs attention before they open a tab
+  const overdueCount = (fees.data?.ledger || []).filter((l) => Number(l.outstanding) > 0 && l.dueDate && l.dueDate < new Date().toISOString().slice(0, 10)).length;
+  const tabBadge = s ? { guardians: s.guardians?.length || '', fees: overdueCount ? `${overdueCount} overdue` : '' } : {};
   const guardiansCard = (
     <Card>
       <SectionHead title="Guardians & emergency contacts" />
@@ -601,7 +683,7 @@ export function StudentProfile() {
   const personalCard = (
     <Card>
       <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Personal information</h3>
-      <KV rows={s
+      <Facts rows={s
         ? [['Date of birth', `${fmtDate(s.dateOfBirth)} · Age ${age(s.dateOfBirth)}`], ['Gender', GENDER_LABEL[s.gender] || s.gender],
           ['Student UID', s.studentUid], ['Roll number', s.rollNumber ?? '—'], ['Campus', s.branchId]]
         : [['Date of birth', '12 May 2011 · Age 15'], ['Gender', 'Female'], ['Nationality', 'British'], ['Admission number', 'OA-2024-106'], ['Address', '24 Willow Lane, Oxford, OX2 7AB']]} />
@@ -611,8 +693,13 @@ export function StudentProfile() {
     <Card>
       <div className="cardhead"><h3>Medical & wellbeing</h3><p>Restricted · Authorised staff only</p></div>
       {s ? (<>
-        <div style={{ margin: '14px 0' }}>{hasAlert(s) ? <Pill tone="amber">Medical alert</Pill> : <Pill tone="green">No medical alerts</Pill>}</div>
-        {hasAlert(s) && <p className="body-s">{s.medicalAlerts}</p>}
+        {/* The header already shows the "Medical alert" pill; this card gives the detail */}
+        {hasAlert(s)
+          ? <div style={{ margin: '14px 0' }}>
+              {!isNoneText(s.medicalAlerts) && <p className="body-s">Conditions: {s.medicalAlerts}</p>}
+              {!isNoneText(s.allergies) && <p className="body-s">Allergies: {s.allergies}</p>}
+            </div>
+          : <div style={{ margin: '14px 0' }}><Pill tone="green">No medical alerts</Pill></div>}
         <KV rows={[['Blood group', s.bloodGroup || 'Not recorded'], ['Emergency phone', s.emergencyContactPhone || 'Not recorded']]} />
         {hasRole(...ROLES.medical) && <div style={{ marginTop: 14 }}><button className="btn" onClick={() => setModal('medical')}><HeartPulse size={14} />Update medical information</button></div>}
       </>) : (<>
@@ -624,7 +711,7 @@ export function StudentProfile() {
   );
   const documentsCard = s ? <CertificatesCard student={s} onStudentChanged={record.reload} /> : (
     <Card>
-      <SectionHead title="Documents" link={tab === 'documents' ? undefined : 'View all →'} onClick={() => setTab(5)} />
+      <SectionHead title="Documents" link={tab === 'documents' ? undefined : 'View all →'} onClick={() => openTab('documents')} />
       <div style={{ marginTop: 14 }}>
         <Docs items={[['Birth certificate.pdf', '284 KB · 02 Sep 2024 · Verified'], ['Proof of address.pdf', '196 KB · 02 Sep 2024 · Verified'], ['Medical care plan.pdf', '312 KB · 01 Sep 2026 · Verified']]} />
       </div>
@@ -637,6 +724,8 @@ export function StudentProfile() {
   const name = s ? fullName(s) : 'Amara Thompson';
   // "Message guardian": an email to the primary contact (else the first guardian with an email)
   const guardianEmail = s ? ([...(s.guardians || [])].sort((a, b) => Number(!!b.primaryContact) - Number(!!a.primaryContact)).find((g) => g.email)?.email) : 's.thompson@example.com';
+  // The primary guardian (else the first listed) is shown under the student's name
+  const primaryGuardian = s ? ([...(s.guardians || [])].sort((a, b) => Number(!!b.primaryContact) - Number(!!a.primaryContact))[0]) : null;
   // "Download record": the student's record as shown on this page, one field per row
   const downloadRecord = () => downloadCsv(`student-record-${s ? s.studentUid : 'ST-2024-106'}`, ['Section', 'Field', 'Value'], s ? [
     ['Student', 'Name', fullName(s)], ['Student', 'Student UID', s.studentUid], ['Student', 'Status', (studentApi.STUDENT_STATUS[s.studentStatus] || [s.studentStatus])[0]],
@@ -657,27 +746,37 @@ export function StudentProfile() {
         s && hasRole(...ROLES.idCard) && { label: 'ID card', icon: <IdCard size={15} />, onClick: () => setModal('idcard') },
       ].filter(Boolean))}
       <Card className="summary">
-        {s ? <StudentAvatar student={s} /> : <div className="bigavatar">{name.split(' ').map((w) => w[0]).join('').slice(0, 2)}</div>}
+        {/* Same class colour as the student directory, so the two screens match */}
+        {s ? <StudentAvatar student={s} tone={avatarTone(s.gradeName)} /> : <div className="bigavatar">{name.split(' ').map((w) => w[0]).join('').slice(0, 2)}</div>}
         <div className="id">
           <h2>{name}</h2>
           <p>{s ? `${s.studentUid} · ${classLabel(s)}${s.houseName ? ` · ${s.houseName} house` : ''}` : 'ST-2024-106 · Year 10A · Willow house'}</p>
-          <div className="pills">{s ? <>{statusPill(s.studentStatus)}{hasAlert(s) && <Pill tone="purple">Medical alert</Pill>}</>
+          {/* Primary guardian next to the name, with a message button beside it */}
+          <div className="guardian-line">
+            {s
+              ? (primaryGuardian
+                ? <span>Guardian <b>{primaryGuardian.fullName}</b>{primaryGuardian.relationship && <> ({primaryGuardian.relationship})</>}{primaryGuardian.mobileNumber && <> · {primaryGuardian.mobileNumber}</>}</span>
+                : <span className="muted">No guardian on record</span>)
+              : <span>Guardian <b>Sarah Thompson</b> (Mother) · +44 7700 900 142</span>}
+            {guardianEmail
+              ? <a className="btn" href={`mailto:${guardianEmail}?subject=${encodeURIComponent(`${name} · Oakridge Academy`)}`}><Mail size={14} />Message</a>
+              : <span className="xs muted">No guardian email</span>}
+          </div>
+          <div className="pills">{s ? <>{statusPill(s.studentStatus)}{hasAlert(s) && <Pill tone="purple" icon={HeartPulse}>Medical alert</Pill>}</>
             : <><Pill tone="green">Active</Pill><Pill tone="purple">Medical care plan</Pill></>}</div>
         </div>
         <div className="side">
           {s ? <><span>{s.rollNumber ? `Roll number ${s.rollNumber}` : 'Roll number not assigned'}</span><span>Record created {fmtDate(s.createdAt)}</span></>
             : <><span>Form tutor: Eleanor Hughes</span><span>Admitted 02 September 2024</span></>}
-          {guardianEmail
-            ? <a className="link strong" href={`mailto:${guardianEmail}?subject=${encodeURIComponent(`${name} · Oakridge Academy`)}`}>Message guardian →</a>
-            : <span className="xs muted">No guardian email on record</span>}
         </div>
       </Card>
-      <Tabs items={PROFILE_TABS.map(([, label]) => label)} value={index} onChange={setTab} />
+      <Tabs items={PROFILE_TABS.map(([key, label]) => (tabBadge[key] ? `${label} (${tabBadge[key]})` : label))} value={index} onChange={setTab} />
       {tab === 'overview' && (
         <div className="cols">
           <div className="stack">
-            {academicCard}
+            {/* Attendance and fees first: the two things staff check most often */}
             <div className="cols eq">{attendanceCard}{feesCard}</div>
+            {academicCard}
             {guardiansCard}
           </div>
           <div className="stack">{personalCard}{medicalCard}{documentsCard}</div>
@@ -685,7 +784,7 @@ export function StudentProfile() {
       )}
       {tab === 'academics' && <div className="stack">{academicCard}</div>}
       {tab === 'attendance' && <div className="stack">{attendanceCard}</div>}
-      {tab === 'fees' && <div className="stack">{feesCard}{s && <FeeAccountDetail fees={fees} />}</div>}
+      {tab === 'fees' && <div className="stack">{feesCard}{s && <FeeAccountDetail fees={fees} guardians={s.guardians} />}</div>}
       {tab === 'guardians' && <div className="stack">{guardiansCard}</div>}
       {tab === 'documents' && <div className="stack">{documentsCard}</div>}
       {tab === 'conduct' && <div className="stack">{conductCard}</div>}

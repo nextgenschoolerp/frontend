@@ -4,7 +4,7 @@ import { Plus, QrCode, ShieldAlert, LoaderCircle, Check, Send } from 'lucide-rea
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as comm from '../api/communicationService.js';
-import { PageHeader, Metrics, Card, Tabs, DataTable, Pill, todayIso, useTabParam } from './ui.jsx';
+import { PageHeader, Metrics, scrollToId, Card, Tabs, DataTable, Pill, todayIso, useTabParam } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
 import { formatDate, formatDateTime, formatTime } from '../regional.js';
@@ -52,6 +52,8 @@ export default function CommunicationsLive() {
   })[t] ?? true);
   const [tab, setTab] = useTabParam(tabs);
   const [msg, setMsg] = useState(null);
+  // Stat card → its tab (null when this role has no such tab, so the card stays plain)
+  const toTab = (name) => { const i = tabs.indexOf(name); return i < 0 ? null : { onClick: () => { setTab(i); setMsg(null); scrollToId('comms-tabs'); }, hint: `Open ${name.toLowerCase()}`, active: tab === i }; };
   // Another page can open a prefilled circular (Calendar's "Message attendees")
   const draft = useLocation().state?.circular;
   const [modal, setModal] = useState(draft && can.broadcast ? 'circular' : null); // 'circular' | 'emergency' | 'scan'
@@ -80,16 +82,16 @@ export default function CommunicationsLive() {
         ].filter(Boolean)}
       />
       <Metrics items={[
-        ['Active circulars', count(active, live.length), active.data ? `${live.filter((b) => b.isPinned).length} pinned to the top of the parent app` : 'WhatsApp, SMS, app push & email'],
+        ['Active circulars', count(active, live.length), active.data ? `${live.filter((b) => b.isPinned).length} pinned to the top of the parent app` : 'WhatsApp, SMS, app push & email', null, false, null, toTab('Circulars')],
         ['Absence alerts today', count(absences, absences.data?.length, can.attendanceAlerts),
-          sub(absences, can.attendanceAlerts, `${(absences.data || []).filter((a) => a.escalated).length} escalated to the counselor`, 'Sent 30 minutes after registration')],
+          sub(absences, can.attendanceAlerts, `${(absences.data || []).filter((a) => a.escalated).length} escalated to the counselor`, 'Sent 30 minutes after registration'), null, false, null, toTab('Absence alerts')],
         ['Open grievances', count(grievances, openTickets.length, can.reception),
-          sub(grievances, can.reception, `${openTickets.filter((g) => g.status === 'ESCALATED').length} escalated past their SLA`, 'Parent support tickets')],
+          sub(grievances, can.reception, `${openTickets.filter((g) => g.status === 'ESCALATED').length} escalated past their SLA`, 'Parent support tickets'), null, false, null, toTab('Grievances')],
         ['Visitors today', count(visitors, visitsToday.length, can.reception),
-          sub(visitors, can.reception, `${visitsToday.filter((v) => v.status === 'CHECKED_IN').length} on site now`, 'Reception appointments')],
+          sub(visitors, can.reception, `${visitsToday.filter((v) => v.status === 'CHECKED_IN').length} on site now`, 'Reception appointments'), null, false, null, toTab('Visitors')],
       ]} />
       {msg && <Ok>{msg}</Ok>}
-      <Card>
+      <Card id="comms-tabs">
         <Tabs items={tabs} value={tab} onChange={(i) => { setTab(i); setMsg(null); }} />
         <div style={{ marginTop: 16 }}>
           {tabs[tab] === 'Circulars' ? <CircularsTab active={active} onDone={setMsg} />

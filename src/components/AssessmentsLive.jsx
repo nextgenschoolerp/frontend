@@ -4,7 +4,7 @@ import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as exam from '../api/examService.js';
 import * as studentApi from '../api/studentService.js';
-import { PageHeader, Metrics, Card, SectionHead, Tabs, DataTable, Pill, Footer, downloadCsv, useTabParam } from './ui.jsx';
+import { PageHeader, Metrics, scrollToId, Card, SectionHead, Tabs, DataTable, Pill, Footer, downloadCsv, useTabParam } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
 import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
@@ -73,11 +73,14 @@ export function AssessmentsLive() {
       {locking && locking !== 'busy' && <Card><ApiErr error={locking} /></Card>}
       <Metrics items={[
         ['Term', term ? term.termName : '…', term ? `${term.termType === 'FORMATIVE' ? 'Formative' : 'Summative'} · ${term.weightagePercent}% of the year` : ''],
-        ['Mark entry', term ? (term.locked ? 'Locked' : 'Open') : '…', term ? (term.locked ? (term.lockedAt ? `Locked ${when(term.lockedAt)}` : `Closed ${when(term.markEntryDeadline)} (T_lock)`) : `Closes ${when(term.markEntryDeadline)}`) : ''],
-        ['Entries complete', o ? `${o.enteredEntries} / ${o.expectedEntries}` : '…', o ? (o.complete ? 'Ready for report cards' : `${o.missingEntries} still missing`) : ''],
-        ['Unlock tickets', tickets.data ? String(pending) : '…', pending ? 'Waiting for a decision' : 'None pending'],
+        ['Mark entry', term ? (term.locked ? 'Locked' : 'Open') : '…', term ? (term.locked ? (term.lockedAt ? `Locked ${when(term.lockedAt)}` : `Closed ${when(term.markEntryDeadline)} (T_lock)`) : `Closes ${when(term.markEntryDeadline)}`) : '', null, false, null,
+          term && { onClick: () => { setTab(0); scrollToId('academics-tabs'); }, hint: 'Open mark entry', active: tab === 0 }],
+        ['Entries complete', o ? `${o.enteredEntries} / ${o.expectedEntries}` : '…', o ? (o.complete ? 'Ready for report cards' : `${o.missingEntries} still missing`) : '', null, false, null,
+          o && { onClick: () => { setTab(3); scrollToId('academics-tabs'); }, hint: 'Open incomplete entries', active: tab === 3 }],
+        ['Unlock tickets', tickets.data ? String(pending) : '…', pending ? 'Waiting for a decision' : 'None pending', null, false, null,
+          tickets.data && { onClick: () => { setTab(4); scrollToId('academics-tabs'); }, hint: 'Open unlock tickets', active: tab === 4 }],
       ]} />
-      <Card>
+      <Card id="academics-tabs">
         <div className="filters" style={{ marginBottom: 14 }}>
           {terms.error ? <ApiErr error={terms.error} /> : <Picker label="Term" value={termId} onChange={setTermId} options={(terms.data || []).map((t) => [t.examTermId, `${t.termName} · ${t.sessionName}`])} />}
           {grades.error ? <ApiErr error={grades.error} /> : <Picker label="Class" value={gradeId} onChange={setGradeId} options={(grades.data || []).filter((g) => g.sequenceOrder >= 4).map((g) => [g.gradeId, g.gradeName])} />}

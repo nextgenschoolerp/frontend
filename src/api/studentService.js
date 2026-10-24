@@ -10,6 +10,8 @@ export const listStudents = (tenantId, branchId) => api.get(STUDENTS, { query: {
 export const getStudent = (studentId) => api.get(`${STUDENTS}/${studentId}`);
 export const enrollStudent = (body) => api.post(STUDENTS, body);
 export const updateMedical = (studentId, body) => api.put(`${STUDENTS}/${studentId}/medical`, body);
+export const updateProfile = (studentId, body) => api.put(`${STUDENTS}/${studentId}/profile`, body);
+export const updateGuardians = (studentId, body) => api.put(`${STUDENTS}/${studentId}/guardians`, body);
 export const assignAllocation = (studentId, body) => api.put(`${STUDENTS}/${studentId}/allocation`, body);
 export const getIdCard = (studentId) => api.get(`${STUDENTS}/${studentId}/id-card`);
 
@@ -79,6 +81,7 @@ export const ROLES = {
   grades: ['REGISTRAR', 'OFFICE_CLERK', 'SCHOOL_PRINCIPAL', 'CLASS_TEACHER', 'SUPER_ADMIN'],
   houses: ['REGISTRAR', 'OFFICE_CLERK', 'SCHOOL_PRINCIPAL', 'CLASS_TEACHER', 'HOUSE_MASTER', 'SUPER_ADMIN'],
   photo: ['REGISTRAR', 'OFFICE_CLERK', 'SUPER_ADMIN'],
+  profile: ['REGISTRAR', 'OFFICE_CLERK', 'SUPER_ADMIN'],
   uploadDocument: ['REGISTRAR', 'OFFICE_CLERK', 'SCHOOL_NURSE', 'SUPER_ADMIN'],
   /** GET /academic/grades and /sections (class pickers) */
   classes: ['REGISTRAR', 'OFFICE_CLERK', 'SCHOOL_PRINCIPAL', 'CLASS_TEACHER', 'SUBJECT_TEACHER', 'EXAM_CONTROLLER', 'VICE_PRINCIPAL', 'ACADEMIC_AUDITOR', 'ACADEMIC_HEAD', 'SUPER_ADMIN'],
