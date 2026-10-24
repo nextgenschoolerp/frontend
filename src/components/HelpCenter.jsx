@@ -33,7 +33,7 @@ const ARTICLES = [
   ['add-student', 'students', 'Add a student', 'Create a student record with placement, guardians and medical details.',
     ['Open Students and choose Add student.', 'Fill in the personal details; fields marked * are required.', 'Place the student in a class, section and house.', 'Add at least one guardian with a phone number and mark the primary contact.', 'Save. The student gets a permanent UID and appears in the directory.'], '/students/new'],
   ['admit-student', 'students', 'Admit a new student: step by step', 'Move an application from enquiry to enrolment.',
-    ['Open Students → Admissions.', 'Review the application and its documents; request anything missing.', 'Record the interview or assessment result.', 'Approve the application and issue the offer.', 'Once fees are paid, enrol the student; the record moves to the directory.'], '/students?tab=admissions'],
+    ['Open Admissions.', 'Review the application and its documents; request anything missing.', 'Record the interview or assessment result.', 'Approve the application and issue the offer.', 'Once fees are paid, enrol the student; the record moves to the directory.'], '/admissions'],
   ['update-guardian', 'students', 'Update guardian details', 'Change phone numbers, emails or the primary contact.',
     ['Open the student profile from Students.', 'Choose Edit.', 'Change the guardian details and save. Messages use the primary contact.'], '/students'],
   ['add-staff', 'staff', 'Add a staff member', 'Create an employee record and assign a role.',

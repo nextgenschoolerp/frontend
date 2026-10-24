@@ -11,7 +11,7 @@ import { formatDateTime } from '../regional.js';
 /* Top bar tools: global search (⌘K / Ctrl+K) and the notifications bell. */
 
 const PAGES = [
-  ['Overview', '/'], ['Students', '/students'], ['Add student', '/students/new'], ['Admissions', '/students?tab=admissions'],
+  ['Overview', '/'], ['Students', '/students'], ['Add student', '/students/new'], ['Admissions', '/admissions'],
   ['Staff & faculty', '/staff'], ['Add staff member', '/staff/new'], ['Academics', '/academics'], ['Teaching & learning', '/teaching'],
   ['Attendance', '/attendance'], ['Fees & payments', '/fees'], ['Calendar', '/calendar'], ['Communications', '/communications'],
   ['Reports', '/reports'], ['Documents', '/documents'], ['Settings', '/settings'], ['Academic setup', '/settings?tab=academic'],

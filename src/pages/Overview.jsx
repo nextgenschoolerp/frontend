@@ -85,7 +85,7 @@ export default function Overview() {
     collectedPct: 88.1, notYetDuePct: 7.9, overduePct: 4.0 };
   const pp = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)} pp vs last week`;
   const work = WORK.map((row) => (row[0] === 'Admission applications'
-    ? [row[0], row[1], live ? apps.open.length : (apps.loading ? '…' : '—'), row[3], row[4], row[5], row[6], '/students?tab=admissions']
+    ? [row[0], row[1], live ? apps.open.length : (apps.loading ? '…' : '—'), row[3], row[4], row[5], row[6], '/admissions']
     : row[0] === 'Overdue fee accounts'
       ? [row[0], `${moneyShort(fee.overdue)} overdue`, fees.allowed && !fees.live ? '…' : fee.accounts, row[3], row[4], row[5], row[6], row[7]]
     : row[0] === 'Incomplete student records' && students.live

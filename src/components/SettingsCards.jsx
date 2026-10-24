@@ -116,7 +116,11 @@ export function SchoolProfileCard() {
       {canEdit && changed && missing.length > 0 && <p className="xs" style={{ color: 'var(--rd)', marginTop: 8 }}>Fill in the required fields marked *.</p>}
       <SaveBar canEdit={canEdit} who="a principal, trustee or administrator" changed={changed} busy={save.busy || missing.length > 0} saved={save.saved} error={save.error}
         onDiscard={() => { setDraft(base); save.reset(); }}
-        onSave={() => save.run(async () => { await saveSchoolProfile(user.tenantId, draft); profile.reload(); }, 'School profile saved.')} />
+        onSave={() => save.run(async () => {
+          await saveSchoolProfile(user.tenantId, draft);
+          profile.reload();
+          window.dispatchEvent(new Event('school-profile:changed'));
+        }, 'School profile saved.')} />
     </Card>
   );
 }

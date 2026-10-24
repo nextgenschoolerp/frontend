@@ -66,7 +66,7 @@ export function StudentsDirectory() {
         ['New this year', n(list.newThisYear.length), list.live ? 'Enrolled since 1 April' : noAccess, null, false, null,
           list.live && { onClick: () => showOnly('new'), hint: 'Show students enrolled this year', active: only === 'new' }],
         ['Admission applications', openCount ?? (apps.loading ? '…' : '—'), openCount !== null ? `Awaiting review · ${formatNumber(apps.rows.length)} in total` : noAccess, null, false, null,
-          openCount !== null && { onClick: () => { setTab(1); scrollToId('student-directory'); }, hint: 'Open the Admissions tab', active: tab === 1 }],
+          openCount !== null && { to: '/admissions', hint: 'Open the Admissions workspace' }],
         ['Incomplete records', n(list.incomplete.length), list.live ? 'Guardian, emergency phone or blood group missing' : noAccess, null, false, null,
           list.live && { onClick: () => showOnly('incomplete'), hint: 'Show students with incomplete records', active: only === 'incomplete' }],
       ]} />
@@ -76,12 +76,12 @@ export function StudentsDirectory() {
         </div>
         <Tabs items={[`All students${list.live ? ` (${list.current.length})` : ''}`, `Admissions${openCount !== null ? ` (${apps.rows.length})` : ''}`,
           `Archived${list.live ? ` (${list.left.length})` : ''}`]} value={tab} onChange={setTab} />
-        {tab === 1 ? <ApplicationsTable apps={apps} /> : <StudentsTable key={tab} list={list} archived={tab === 2} only={only} onSetOnly={showOnly} onClearOnly={() => showOnly('')} />}
+        {tab === 1 ? <><p className="small muted">Walk-in enquiries, counseling sessions and the pipeline by stage are in the <Link className="link" to="/admissions">Admissions workspace →</Link></p><ApplicationsTable apps={apps} /></> : <StudentsTable key={tab} list={list} archived={tab === 2} only={only} onSetOnly={showOnly} onClearOnly={() => showOnly('')} />}
       </Card>
       <div className="cols eq">
         <Card>
           <div className="sh"><div><h3>Admissions for 2026–2027</h3></div>
-            <button className="link" onClick={() => setTab(1)}>Review applications →</button></div>
+            <Link className="link" to="/admissions">Open admissions workspace →</Link></div>
           <p className="body-s" style={{ marginTop: -6 }}>
             {openCount !== null ? `${openCount} application${openCount === 1 ? ' is' : 's are'} ready for your team to review.` : 'Applications are visible to admissions staff.'}
           </p>
@@ -256,7 +256,7 @@ function StudentFormBody({ mode, student: loaded }) {
   // Add student / Save draft -> POST /api/v1/admissions/enquiries (admissionservice, US-02001).
   // The application becomes a Student Master record later through the admissions pipeline.
   async function saveApplication(openAdmissions, thenUpload) {
-    if (created) { if (openAdmissions) nav('/students?tab=admissions'); return; }
+    if (created) { if (openAdmissions) nav('/admissions'); return; }
     const { body, error } = buildEnquiry(new FormData(formRef.current), user.tenantId, branchId);
     if (error) { setSaveError({ detail: error }); return; }
     setSaving(true);
@@ -264,7 +264,7 @@ function StudentFormBody({ mode, student: loaded }) {
     try {
       const enquiry = await captureEnquiry(body);
       setCreated(enquiry);
-      if (openAdmissions) nav('/students?tab=admissions');
+      if (openAdmissions) nav('/admissions');
       // "Upload documents" before saving: the documents panel replaces this card; bring its upload form into view
       if (thenUpload) setTimeout(() => document.getElementById('doc-file')?.closest('.card')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
     } catch (err) {

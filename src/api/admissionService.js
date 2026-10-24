@@ -18,6 +18,7 @@ export const uploadDocument = (enquiryId, documentType, file) => {
 export const listEvaluations = (enquiryId) => api.get(`${BASE}/enquiries/${enquiryId}/evaluations`);
 export const listOffers = (enquiryId) => api.get(`${BASE}/enquiries/${enquiryId}/offers`);
 export const listCalls = (enquiryId) => api.get(`${BASE}/enquiries/${enquiryId}/calls`);
+export const dueCallbacks = (tenantId, assignedTo, dueBefore) => api.get(`${BASE}/callbacks`, { query: { tenantId, assignedTo, dueBefore } }); // US-02015
 
 // --- Moving an application forward (review modal → Next step) ---------------------------------------
 export const logCall = (enquiryId, body) => api.post(`${BASE}/enquiries/${enquiryId}/calls`, body);                 // US-02015

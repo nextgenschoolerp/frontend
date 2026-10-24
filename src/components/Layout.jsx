@@ -2,11 +2,11 @@ import { NavLink, Outlet, useLocation, useNavigate, Link } from 'react-router-do
 import {
   School, Building2, ChevronsUpDown, LayoutDashboard, GraduationCap, Users, BookOpen,
   ClipboardCheck, Wallet, CalendarDays, Megaphone, ChartNoAxesCombined, FolderOpen,
-  Settings as SettingsIcon, CircleHelp, CalendarClock, ChevronRight, ChevronDown, Search, CalendarRange, Bell, LogOut, Menu, X, Check, Rows3,
+  Settings as SettingsIcon, CircleHelp, CalendarClock, ChevronRight, ChevronDown, Search, CalendarRange, Bell, LogOut, Menu, X, Check, Rows3, ClipboardList,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth.jsx';
-import { listBranches, getRegionalSettings } from '../api/authService.js';
+import { listBranches, getRegionalSettings, getSchoolProfile } from '../api/authService.js';
 import { useApi } from '../api/useApi.js';
 import { THEMES, getTheme, applyTheme, DENSITIES, getDensity, applyDensity } from '../theme.js';
 import { useRegional, version, applyServerRegional } from '../regional.js';
@@ -16,6 +16,7 @@ const GROUPS = [
   ['WORKSPACE', [
     ['/', 'Overview', LayoutDashboard, true],
     ['/students', 'Students', GraduationCap],
+    ['/admissions', 'Admissions', ClipboardList],
     ['/staff', 'Staff & faculty', Users],
     ['/academics', 'Academics', BookOpen],
     ['/teaching', 'Teaching & learning', CalendarClock],
@@ -31,7 +32,7 @@ const GROUPS = [
 ];
 
 const SECTION = {
-  students: 'Students', staff: 'Staff & faculty', academics: 'Academics', teaching: 'Teaching & learning', attendance: 'Attendance',
+  students: 'Students', admissions: 'Admissions', staff: 'Staff & faculty', academics: 'Academics', teaching: 'Teaching & learning', attendance: 'Attendance',
   fees: 'Fees & payments', calendar: 'Calendar', communications: 'Communications', reports: 'Reports',
   documents: 'Documents', settings: 'Settings', help: 'Help & support',
 };
@@ -48,7 +49,7 @@ function crumbsFor(pathname) {
 }
 
 /** Campus switcher. Super admins pick from GET /api/v1/tenants/{tenantId}/branches (US-00009). */
-function CampusSwitcher() {
+function CampusSwitcher({ campusName }) {
   const { user, hasRole, pickedBranch, selectBranch } = useAuth();
   const canList = hasRole('SUPER_ADMIN');
   const { data: branches } = useApi(() => listBranches(user.tenantId), [user.tenantId], canList && !!user.tenantId);
@@ -58,7 +59,7 @@ function CampusSwitcher() {
   return (
     <div className="campus" title={current ? `${current.branchCode} · ${current.affiliationBoard}` : user.branchId || undefined}>
       <Building2 size={16} />
-      <div><b>{current?.branchName || user.branchId || 'Main campus'}</b><small>{current ? `${current.affiliationBoard} · ${current.status.toLowerCase()}` : 'School administration'}</small></div>
+      <div><b>{campusName || current?.branchName || user.branchId || 'Main campus'}</b><small>{current ? `${current.affiliationBoard} · ${current.status.toLowerCase()}` : 'School administration'}</small></div>
       <ChevronsUpDown size={13} />
       {branches?.length > 1 && (
         <select aria-label="Switch campus" value={current?.branchCode} onChange={(e) => selectBranch(e.target.value)}>
@@ -163,6 +164,13 @@ export default function Layout() {
   // The school's saved preferences replace this browser's cached copy; if authservice is unreachable the cache stays in force
   // (useApi, so StrictMode's double mount sends the request once; an error leaves the cache as it is)
   const { data: serverRegional } = useApi(() => getRegionalSettings(user.tenantId), [user?.tenantId], !!user?.tenantId);
+  const { data: schoolProfile, reload: reloadSchoolProfile } = useApi(() => getSchoolProfile(user.tenantId), [user?.tenantId], !!user?.tenantId);
+  // Settings → School profile saves to authservice, then tells the shell to fetch the saved values again
+  useEffect(() => {
+    const refresh = () => reloadSchoolProfile();
+    window.addEventListener('school-profile:changed', refresh);
+    return () => window.removeEventListener('school-profile:changed', refresh);
+  }, [reloadSchoolProfile]);
   useEffect(() => { if (serverRegional) applyServerRegional(serverRegional); }, [serverRegional]);
   useEffect(() => { window.scrollTo(0, 0); document.title = `Oakridge Academy – ${crumbs[crumbs.length - 1]}`; }, [pathname]);
 
@@ -191,7 +199,7 @@ export default function Layout() {
       <aside className={'sidebar' + (navOpen ? ' open' : '')} id="sidebar">
         <div className="brand">
           <div className="crest"><School size={22} /></div>
-          <div><b>Oakridge</b><small>ACADEMY</small></div>
+          <div><b>{schoolProfile?.schoolName || 'Oakridge'}</b><small>{schoolProfile?.schoolName ? '' : 'ACADEMY'}</small></div>
           <button className="navclose" onClick={() => setNavOpen(false)} aria-label="Close menu"><X size={18} /></button>
         </div>
         {GROUPS.map(([label, items]) => (
@@ -227,7 +235,7 @@ export default function Layout() {
           </div>
           <div className="tools">
             <GlobalSearch />
-            <CampusSwitcher />
+            <CampusSwitcher campusName={schoolProfile?.campusName} />
             <NotificationBell />
             <AccountMenu onSignOut={logout} />
           </div>
