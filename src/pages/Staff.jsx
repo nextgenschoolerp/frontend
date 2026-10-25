@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Download, Plus, ArrowLeft, Pencil, Check, X, LoaderCircle } from 'lucide-react';
+import { Download, Plus, ArrowLeft, Pencil, Check, X, LoaderCircle, Upload } from 'lucide-react';
 import {
   PageHeader, BackTitle, Metrics, scrollToId, useSort, sortRows, avatarTone, Card, SectionHead, Tabs, SearchBox, DataTable, Pager, Person, Actions,
   Pill, FieldGrid, Field, Footer, KV, downloadCsv, todayIso,
@@ -415,7 +415,7 @@ export function StaffProfile() {
         ].filter(Boolean)}
       />
       <Card className="summary">
-        <div className="bigavatar">{`${s.firstName[0]}${s.lastName[0]}`.toUpperCase()}</div>
+        <StaffPhoto staff={s} />
         <div className="id">
           <h2>{name}</h2>
           <p>{s.employeeCode} · {s.designation} · {s.department}</p>
@@ -444,6 +444,50 @@ export function StaffProfile() {
   );
 }
 
+/* ---------- staff photo (POST /employees/{id}/photo, GET /employees/{id}/photo/file) ---------- */
+
+/** The staff photo, or initials when none is on file; with `canChange`, a button to upload a JPEG or PNG. */
+function StaffPhoto({ staff, canChange = false, onChanged, onError }) {
+  const [url, setUrl] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const inputId = `staff-photo-${staff.staffId}`;
+  const initials = `${staff.firstName[0]}${staff.lastName[0]}`.toUpperCase();
+  useEffect(() => {
+    if (!staff.hasPhoto) { setUrl(null); return undefined; }
+    let cancelled = false;
+    let objectUrl = null;
+    hr.employeePhotoBlob(staff.staffId)
+      .then((blob) => { if (!cancelled) { objectUrl = URL.createObjectURL(blob); setUrl(objectUrl); } })
+      .catch(() => { if (!cancelled) setUrl(null); });
+    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [staff]);
+  const choose = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    // Checked here, before sending, so a file the server would refuse gets a clear message, not a dropped connection
+    const problem = !['image/jpeg', 'image/png'].includes(file.type) ? 'Choose a JPEG or PNG photo.'
+      : file.size > 5 * 1024 * 1024 ? `This photo is ${(file.size / (1024 * 1024)).toFixed(1)} MB. The limit is 5 MB.` : null;
+    if (problem) { onError?.({ detail: problem }); return; }
+    setBusy(true); onError?.(null);
+    try { await hr.uploadEmployeePhoto(staff.staffId, file); onChanged?.(); } catch (err) { onError?.(err); } finally { setBusy(false); }
+  };
+  return (
+    <>
+      <div className="bigavatar">{url ? <img src={url} alt={`Photo of ${staff.firstName} ${staff.lastName}`} className="avatar-img" /> : initials}</div>
+      {canChange && (
+        <div>
+          <label className="btn" htmlFor={inputId} aria-disabled={busy}>
+            {busy ? <LoaderCircle size={14} className="spin" /> : <Upload size={15} />}{staff.hasPhoto ? 'Change photo' : 'Add photo'}
+          </label>
+          <input id={inputId} type="file" accept="image/jpeg,image/png" hidden disabled={busy} onChange={choose} />
+          <small>JPEG or PNG · Maximum 5 MB</small>
+        </div>
+      )}
+    </>
+  );
+}
+
 /* ---------- edit / add (POST /employees, PUT /employees/{id}) ---------- */
 
 const DEPARTMENTS = ['Mathematics', 'Science', 'English', 'Hindi', 'Social Science', 'Computer Science', 'Physical Education',
@@ -458,6 +502,7 @@ export function StaffForm() {
   const emp = useApi(() => hr.getEmployee(id), [id], !isNew);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [photoError, setPhotoError] = useState(null);
   const s = isNew ? {} : emp.data;
   const back = isNew ? '/staff' : `/staff/${id}`;
 
@@ -505,9 +550,10 @@ export function StaffForm() {
           <Card>
             <div className="cardhead"><h3>Personal & contact details</h3><p>Required fields are marked with an asterisk.</p></div>
             <div className="photo">
-              <div className="bigavatar">{isNew ? '+' : `${s.firstName[0]}${s.lastName[0]}`.toUpperCase()}</div>
+              {isNew ? <div className="bigavatar">+</div> : <StaffPhoto staff={s} canChange={canManage} onChanged={emp.reload} onError={setPhotoError} />}
               {!isNew && <Pill tone="purple">{s.employeeCode}</Pill>}
             </div>
+            {photoError && <div style={{ marginTop: 10 }}><ApiErr error={photoError} /></div>}
             <FieldGrid cols={[
               [{ label: 'First name', required: true, value: s.firstName, placeholder: 'Enter first name' }, { label: 'Work email', value: s.email, placeholder: 'name@school.edu.in' }],
               [{ label: 'Last name', required: true, value: s.lastName, placeholder: 'Enter last name' }, { label: 'Mobile number', value: s.phone, placeholder: '+91…' }],
@@ -519,19 +565,21 @@ export function StaffForm() {
               [
                 isNew ? { label: 'Employee code', required: true, placeholder: 'e.g. DPS-EMP-1050' } : { label: 'Employee code', value: s.employeeCode, readOnly: true },
                 { label: 'Department', required: true, select: true, value: s.department, placeholder: 'Select department', options: DEPARTMENTS.includes(s.department) || !s.department ? DEPARTMENTS : [s.department, ...DEPARTMENTS] },
+                { label: 'Basic salary / month', required: true, type: 'number', value: s.basicSalary ?? '', placeholder: 'e.g. 45000' },
                 { label: 'Contract', select: true, value: s.contractTerms, placeholder: 'Select contract', options: [...new Set([s.contractTerms, 'Permanent Full-Time', 'Probationary Contract', 'Fixed-Term', 'Part-Time 0.7 FTE'].filter(Boolean))] },
+                isNew ? { label: 'Probation ends', type: 'date', placeholder: 'Default: 6 months after the start date' } : { label: 'Probation', value: hr.PROBATION[s.probationStatus], readOnly: true },
               ],
               [
                 { label: 'Role / job title', required: true, value: s.designation, placeholder: 'e.g. TGT Mathematics' },
                 { label: 'Start date', required: true, type: 'date', value: s.joiningDate },
-                isNew ? { label: 'Probation ends', type: 'date', placeholder: 'Default: 6 months after the start date' } : { label: 'Probation', value: hr.PROBATION[s.probationStatus], readOnly: true },
-              ],
-              [
-                { label: 'Basic salary / month', required: true, type: 'number', value: s.basicSalary ?? '', placeholder: 'e.g. 45000' },
                 { label: 'Campus', required: true, value: s.branchId || branchId, placeholder: 'e.g. DPS-DELHI-NORTH' },
                 { label: 'Sign-in account ID', value: s.userId || '', placeholder: 'authservice user ID (optional)' },
               ],
             ]} />
+          </Card>
+          <Card>
+            <h3 style={{ fontSize: 15, fontWeight: 600 }}>Teaching assignments & access</h3>
+            <p className="small muted" style={{ marginTop: 6 }}>Classes and periods come from the timetable (Teaching & learning); system roles are managed in Settings → Users & permissions.</p>
           </Card>
         </div>
         <div className="stack">
@@ -545,10 +593,6 @@ export function StaffForm() {
             <div className="fieldlist">
               <Field box label="Qualifications" value={s.qualifications} placeholder="e.g. M.Sc Mathematics, B.Ed" />
             </div>
-          </Card>
-          <Card>
-            <h3 style={{ fontSize: 15, fontWeight: 600 }}>Teaching assignments & access</h3>
-            <p className="small muted" style={{ marginTop: 6 }}>Classes and periods come from the timetable (Teaching & learning); system roles are managed in Settings → Users & permissions.</p>
           </Card>
         </div>
       </div>

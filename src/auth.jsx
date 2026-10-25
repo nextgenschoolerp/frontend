@@ -24,6 +24,8 @@ if (!Number.isInteger(sessionIdleTimeoutMinutes) || sessionIdleTimeoutMinutes < 
   throw new Error('VITE_SESSION_IDLE_TIMEOUT_MINUTES must be a positive integer.');
 }
 const SESSION_IDLE_TIMEOUT_MS = sessionIdleTimeoutMinutes * 60 * 1000;
+// While the user is active, the token is renewed once it has less than this left (the token lasts 30 minutes)
+const RENEW_WITHIN_MS = 10 * 60 * 1000;
 
 const normaliseRole = (r) => String(r || '').replace(/^ROLE_/, '');
 
@@ -85,6 +87,7 @@ function persist(session, remember) {
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(readSession);
   const lastActivityAt = useRef(user?.lastActivityAt || Date.now());
+  const renewing = useRef(false);
   const [notice, setNotice] = useState('');
   // Campus picked in the sidebar switcher (super admins); otherwise the user's own branch from the login response
   const [pickedBranch, setPickedBranch] = useState(() => { try { return localStorage.getItem(BRANCH_KEY) || ''; } catch { return ''; } });
@@ -132,6 +135,21 @@ export function AuthProvider({ children }) {
         );
       }
     };
+    // Renews the token while the user is active, so an active user is not signed out at the token's 30-minute limit
+    const renewIfNearExpiry = () => {
+      if (!user.expiresAt || user.expiresAt - Date.now() > RENEW_WITHIN_MS || renewing.current) return;
+      renewing.current = true;
+      const remember = !!localStorage.getItem(SESSION_KEY);
+      authApi.refreshToken(user.token)
+        .then((res) => {
+          const renewed = { ...user, token: res.accessToken, expiresAt: tokenExpiry(res.accessToken), lastActivityAt: lastActivityAt.current };
+          persist(renewed, remember);
+          setUser(renewed);
+        })
+        // If the renewal fails, the expiry timer above signs the user out when the token runs out
+        .catch(() => {})
+        .finally(() => { renewing.current = false; });
+    };
     const recordActivity = () => {
       const now = Date.now();
       if (now - lastActivityAt.current < 1000) return;
@@ -148,6 +166,7 @@ export function AuthProvider({ children }) {
         console.error('Unable to persist the session activity timestamp.', error);
       }
       scheduleIdleTimeout();
+      renewIfNearExpiry();
     };
     const recordVisibleActivity = () => {
       if (document.visibilityState === 'visible') recordActivity();
@@ -167,14 +186,15 @@ export function AuthProvider({ children }) {
 
     lastActivityAt.current = Math.max(lastActivityAt.current, user.lastActivityAt || 0);
     scheduleIdleTimeout();
-    const activityEvents = ['pointerdown', 'keydown', 'touchstart', 'mousemove', 'focus'];
-    activityEvents.forEach((eventName) => window.addEventListener(eventName, recordActivity, { passive: true }));
+    // Capture phase, so scrolling inside any scrollable panel counts as activity (scroll events do not bubble)
+    const activityEvents = ['pointerdown', 'keydown', 'touchstart', 'mousemove', 'focus', 'wheel', 'scroll'];
+    activityEvents.forEach((eventName) => window.addEventListener(eventName, recordActivity, { passive: true, capture: true }));
     document.addEventListener('visibilitychange', recordVisibleActivity);
     window.addEventListener('storage', syncActivity);
 
     return () => {
       clearIdleTimer();
-      activityEvents.forEach((eventName) => window.removeEventListener(eventName, recordActivity));
+      activityEvents.forEach((eventName) => window.removeEventListener(eventName, recordActivity, { capture: true }));
       document.removeEventListener('visibilitychange', recordVisibleActivity);
       window.removeEventListener('storage', syncActivity);
     };

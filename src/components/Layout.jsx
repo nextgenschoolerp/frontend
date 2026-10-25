@@ -172,7 +172,8 @@ export default function Layout() {
     return () => window.removeEventListener('school-profile:changed', refresh);
   }, [reloadSchoolProfile]);
   useEffect(() => { if (serverRegional) applyServerRegional(serverRegional); }, [serverRegional]);
-  useEffect(() => { window.scrollTo(0, 0); document.title = `Oakridge Academy – ${crumbs[crumbs.length - 1]}`; }, [pathname]);
+  // The tab title carries the school's name from its profile (until it loads, the product name)
+  useEffect(() => { window.scrollTo(0, 0); document.title = `${schoolProfile?.schoolName || 'School ERP'} – ${crumbs[crumbs.length - 1]}`; }, [pathname, schoolProfile?.schoolName]);
 
   useEffect(() => setNavOpen(false), [pathname]);
   useEffect(() => {
@@ -199,7 +200,7 @@ export default function Layout() {
       <aside className={'sidebar' + (navOpen ? ' open' : '')} id="sidebar">
         <div className="brand">
           <div className="crest"><School size={22} /></div>
-          <div><b>{schoolProfile?.schoolName || 'Oakridge'}</b><small>{schoolProfile?.schoolName ? '' : 'ACADEMY'}</small></div>
+          <div><b>{schoolProfile?.schoolName || 'School ERP'}</b><small>{schoolProfile?.schoolName ? '' : 'WORKSPACE'}</small></div>
           <button className="navclose" onClick={() => setNavOpen(false)} aria-label="Close menu"><X size={18} /></button>
         </div>
         {GROUPS.map(([label, items]) => (

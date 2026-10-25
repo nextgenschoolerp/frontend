@@ -17,7 +17,7 @@ export function ForgotPassword() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
-  useEffect(() => { document.title = 'Oakridge Academy – Reset password'; }, []);
+  useEffect(() => { document.title = 'School ERP – Reset password'; }, []);
 
   async function submit(e) {
     e.preventDefault();
@@ -80,7 +80,7 @@ export function ResetPassword() {
   const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  useEffect(() => { document.title = 'Oakridge Academy – Choose a new password'; }, []);
+  useEffect(() => { document.title = 'School ERP – Choose a new password'; }, []);
 
   async function submit(e) {
     e.preventDefault();
@@ -132,7 +132,7 @@ export function ChangePassword() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const forced = user?.mustChangePassword;
-  useEffect(() => { document.title = 'Oakridge Academy – Change password'; }, []);
+  useEffect(() => { document.title = 'School ERP – Change password'; }, []);
 
   async function submit(e) {
     e.preventDefault();

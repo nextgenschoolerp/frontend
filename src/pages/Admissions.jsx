@@ -354,18 +354,17 @@ export default function AdmissionsWorkspace() {
                   </>
                 )}
                 {tab === 1 && (!canReadCalls ? <ApiNote>Counseling logs are visible to counselors, admission officers and the marketing manager.</ApiNote>
-                  : log.loading ? <SkeletonTable cols={['When', 'Applicant', 'Outcome', 'Direction', 'Duration', 'Notes']} />
+                  : log.loading ? <SkeletonTable cols={['When', 'Applicant', 'Outcome', 'Notes']} />
                     : log.error ? <ApiErr error={log.error} onRetry={log.reload} />
                       : !(log.data || []).length ? <EmptyState title="No counseling sessions logged yet">Sessions logged from an application or when registering a walk-in appear here.</EmptyState>
                         : (
                           <div className="tablebox">
                             <DataTable cards cols={[
-                              { label: 'When', render: (c) => formatDateTime(c.calledAt) },
+                              // Direction and duration sit under the time, so the table keeps its Review action on screen
+                              { label: 'When', render: (c) => <span className="cell-id"><b>{formatDateTime(c.calledAt)}</b><small>{label(c.direction)} · {Math.round((c.durationSeconds || 0) / 60)} min</small></span> },
                               { label: 'Applicant', render: (c) => <Person name={`${c.enquiry.candidateFirstName} ${c.enquiry.candidateLastName}`} sub={c.applicationNumber} /> },
                               { label: 'Outcome', render: (c) => <Pill tone={OUTCOME_TONE[c.outcome]}>{label(c.outcome)}</Pill> },
-                              { label: 'Direction', hideOnCards: true, render: (c) => label(c.direction) },
-                              { label: 'Duration', hideOnCards: true, render: (c) => `${Math.round((c.durationSeconds || 0) / 60)} min` },
-                              { label: 'Notes', hideOnCards: true, render: (c) => <span className="xs">{c.notes || '—'}</span> },
+                              { label: 'Notes', hideOnCards: true, render: (c) => <span className="xs logNotes" title={c.notes || undefined}>{c.notes || '—'}</span> },
                               { label: 'Actions', render: (c) => <Actions><button type="button" className="link" onClick={() => setViewing(c.enquiry)}>Review</button></Actions> },
                             ]} rows={log.data} />
                           </div>

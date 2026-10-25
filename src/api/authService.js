@@ -4,6 +4,8 @@ import { api, upload, fetchBlob } from './client.js';
 // --- Sign-in & password lifecycle (US-00000, US-01001 .. US-01005) ---------------------------------
 export const login = (username, password) => api.post('/api/v1/auth/login', { username, password }, { auth: false });
 export const me = (token) => api.get('/api/v1/auth/me', { token });
+// Sliding session: renews the token of an active user (see auth.jsx). Sends the current, still-valid token.
+export const refreshToken = (token) => api.post('/api/v1/auth/refresh', {}, { token });
 export const forgotPassword = (identifier) => api.post('/api/v1/auth/forgot-password', { identifier }, { auth: false });
 export const resetPassword = (token, newPassword, confirmPassword) =>
   api.post('/api/v1/auth/reset-password', { token, newPassword, confirmPassword }, { auth: false });

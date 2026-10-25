@@ -3,6 +3,7 @@ import { Download, LoaderCircle, Wand2, UserX, Shuffle, Plus, Check, Send, Calen
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as lms from '../api/academicService.js';
+import * as hr from '../api/hrService.js';
 import { PageHeader, Metrics, scrollToId, Card, Tabs, DataTable, Pill, Footer, SectionHead, downloadFile, todayIso, useTabParam } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
@@ -85,7 +86,7 @@ export function TeachingLive() {
             : TABS[tab] === 'Timetable' ? <TimetableTab sections={sections} allocated={allocated} sectionId={sectionId} setSectionId={setSectionId} teachers={teachers} schedule={schedule} me={user.userId} />
               : TABS[tab] === 'Allocations' ? <AllocationsTab classes={classes.data || []} sectionId={sectionId} setSectionId={setSectionId} teachers={teachers} schedule={schedule}
                 onChanged={() => { classes.reload(); allocations.reload(); workloads.reload(); }} />
-              : TABS[tab] === 'Workload' ? <WorkloadTab workloads={workloads} />
+              : TABS[tab] === 'Workload' ? <WorkloadTab workloads={workloads} canManage={hasRole(...ROLES.allocate)} />
                 : TABS[tab] === 'Cover' ? <CoverTab teachers={teachers} onChanged={today.reload} />
                   : TABS[tab] === 'Syllabus' ? <SyllabusTab sections={sections} sectionId={sectionId} setSectionId={setSectionId} />
                     : TABS[tab] === 'Homework' ? <HomeworkTab sections={sections} sectionId={sectionId} setSectionId={setSectionId} allocations={allocations.data || []} />
@@ -99,9 +100,18 @@ export function TeachingLive() {
   );
 }
 
-const SectionPicker = ({ sections, sectionId, setSectionId }) => (
-  <Picker label="Class" value={sectionId} onChange={setSectionId} options={sections} />
-);
+// Two dropdowns, grade then section ("Class 6" then "C"), so a long list of class-sections is not one long menu.
+// `sections` is [sectionId, "Grade-Section"] pairs, e.g. ["…", "Class 6-C"].
+const SectionPicker = ({ sections, sectionId, setSectionId }) => {
+  const parsed = sections.map(([id, label]) => { const i = label.lastIndexOf('-'); return { id, grade: label.slice(0, i), section: label.slice(i + 1) }; });
+  const current = parsed.find((p) => p.id === sectionId) || parsed[0];
+  const grades = [...new Set(parsed.map((p) => p.grade))];
+  const inGrade = parsed.filter((p) => p.grade === current?.grade);
+  return (<>
+    <Picker label="Grade" value={current?.grade || ''} onChange={(g) => setSectionId(parsed.find((p) => p.grade === g)?.id)} options={grades.map((g) => [g, g])} />
+    <Picker label="Section" value={current?.id || ''} onChange={setSectionId} options={inGrade.map((p) => [p.id, p.section])} />
+  </>);
+};
 
 /* ---------- Timetable (US-06002) ---------- */
 function TimetableTab({ sections, allocated, sectionId, setSectionId, teachers, schedule, me }) {
@@ -164,6 +174,8 @@ function GenerateModal({ schedule, classes, onClose, onDone }) {
     classes.forEach((c) => m.set(c.gradeId, [...(m.get(c.gradeId) || []), c]));
     return [...m.values()];
   }, [classes]);
+  // Section letters across the school (A, B, C, D, E), the matrix's columns
+  const letters = useMemo(() => [...new Set(classes.map((c) => c.sectionName))].sort(), [classes]);
   const [picked, setPicked] = useState(() => ready.map((c) => c.sectionId));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -189,24 +201,49 @@ function GenerateModal({ schedule, classes, onClose, onDone }) {
       </>) : (<>
         <p className="body-s" style={{ marginBottom: 10 }}>Builds each class's week from its subject allocations without double-booking a teacher. It replaces the class's current timetable and clears its upcoming cover.</p>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 8 }}>
-          <span className="xs muted">{ready.length} of {classes.length} classes have subject teachers allocated</span>
+          <span className="xs muted">{ready.length} of {classes.length} classes have subject teachers allocated · <b>{picked.length} selected</b></span>
           <button type="button" className="btn" disabled={!ready.length} onClick={() => setPicked(ready.map((c) => c.sectionId))}>Select all ready</button>
           <button type="button" className="btn" disabled={!picked.length} onClick={() => setPicked([])}>Clear</button>
         </div>
-        <div style={{ maxHeight: 300, overflowY: 'auto', display: 'grid', gap: 6 }}>{byGrade.map((group) => (
-          <div key={group[0].gradeId} style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-            <b className="xs" style={{ minWidth: 72 }}>{group[0].gradeName}</b>
-            {group.map((c) => {
-              const ok = c.allocatedSubjects > 0;
-              return (
-                <label key={c.sectionId} className={'xs' + (ok ? '' : ' muted')} style={{ display: 'flex', gap: 4, alignItems: 'center' }}
-                  title={ok ? `${c.allocatedSubjects} subjects · ${c.allocatedPeriodsPerWeek} periods a week` : 'No subject teachers allocated yet'}>
-                  <input type="checkbox" disabled={!ok} checked={picked.includes(c.sectionId)} onChange={() => toggle(c.sectionId)} />{c.sectionName}
-                </label>
-              );
-            })}
+        {!!picked.length && (
+          <p className="body-s" style={{ marginBottom: 10 }}>
+            <b>Selected:</b> {byGrade.map((group) => {
+              const names = group.filter((c) => picked.includes(c.sectionId)).map((c) => c.sectionName);
+              return names.length ? `${group[0].gradeName}: ${names.join(', ')}` : null;
+            }).filter(Boolean).join(' · ')}
+          </p>
+        )}
+        {/* One row per grade, one column per section: every class is visible at once, without scrolling */}
+        <div className="gmatrix" role="group" aria-label="Classes by grade and section">
+          <div className="gm-row gm-head" aria-hidden="true">
+            <span>Grade</span>{letters.map((l) => <span key={l}>{l}</span>)}<span />
           </div>
-        ))}</div>
+          {byGrade.map((group) => {
+            const readyIds = group.filter((c) => c.allocatedSubjects > 0).map((c) => c.sectionId);
+            const allOn = readyIds.length > 0 && readyIds.every((id) => picked.includes(id));
+            const toggleGrade = () => setPicked((p) => (allOn ? p.filter((id) => !readyIds.includes(id)) : [...new Set([...p, ...readyIds])]));
+            return (
+              <div key={group[0].gradeId} className="gm-row">
+                <span className="gm-grade">{group[0].gradeName}<small className="muted">{readyIds.length}/{group.length}</small></span>
+                {letters.map((letter) => {
+                  const c = group.find((x) => x.sectionName === letter);
+                  if (!c) return <span key={letter} />;
+                  const ok = c.allocatedSubjects > 0;
+                  const on = picked.includes(c.sectionId);
+                  return (
+                    <label key={letter} className={`gm-cell${on ? ' on' : ''}${ok ? '' : ' off'}`}
+                      title={ok ? `${c.allocatedSubjects} subjects · ${c.allocatedPeriodsPerWeek} periods a week` : 'No subject teachers allocated yet'}>
+                      <input type="checkbox" disabled={!ok} checked={on} onChange={() => toggle(c.sectionId)} />
+                      <span>{letter}</span>
+                      {ok && <small>{c.allocatedPeriodsPerWeek}p</small>}
+                    </label>
+                  );
+                })}
+                <button type="button" className="link gm-all" disabled={!readyIds.length} onClick={toggleGrade}>{allOn ? 'Clear' : 'All ready'}</button>
+              </div>
+            );
+          })}
+        </div>
         {ready.length < classes.length && <p className="xs muted" style={{ marginTop: 8 }}>Greyed-out classes have no subject teachers allocated, so there is nothing to place yet.</p>}
         {error && <div style={{ marginTop: 10 }}><ApiErr error={error} /></div>}
       </>)}
@@ -215,20 +252,97 @@ function GenerateModal({ schedule, classes, onClose, onDone }) {
 }
 
 /* ---------- Workload (US-06001) ---------- */
-function WorkloadTab({ workloads }) {
+function WorkloadTab({ workloads, canManage }) {
+  const [editing, setEditing] = useState(null); // {} = a new teacher, or the workload being changed
+  const subjects = useApi(() => lms.listSubjects(), []);
   if (workloads.error) return <ApiErr error={workloads.error} />;
   if (workloads.loading || !workloads.data) return <Loading />;
   return (<>
+    {canManage && (
+      <div className="filters" style={{ marginBottom: 12, justifyContent: 'flex-end' }}>
+        <button className="btn primary" onClick={() => setEditing({})}><Plus size={14} />Add teacher workload</button>
+      </div>
+    )}
     <DataTable boxed cols={[
-      { label: 'Teacher', render: (w) => <span className="cell-id"><b>{w.teacherName}</b><small>{w.qualifiedSubjectCodes.join(', ') || 'No subjects'}</small></span> },
+      { label: 'Teacher', render: (w) => <span className="cell-id"><b>{w.teacherName}</b><small>{w.qualifiedSubjectCodes.join(', ') || 'Any subject'}</small></span> },
       { label: 'Allocated', className: 'num', render: (w) => `${w.allocatedPeriods} / ${w.weeklyMaxPeriods}` },
       { label: 'Timetabled', className: 'num', key: 'timetabledPeriods' },
       { label: 'Daily cap', className: 'num', key: 'dailyMaxPeriods' },
       { label: 'Load', render: (w) => <Pill tone={Number(w.utilisationPercent) > 90 ? 'amber' : Number(w.utilisationPercent) ? 'green' : ''}>{Number(w.utilisationPercent).toFixed(0)}%</Pill> },
       { label: 'Classes', render: (w) => <small className="xs">{w.allocations.map((a) => `${a.className} ${a.subjectCode} ×${a.periodsPerWeek}`).join(' · ') || '—'}</small> },
+      ...(canManage ? [{ label: '', render: (w) => <button type="button" className="link" onClick={() => setEditing(w)}>Edit caps</button> }] : []),
     ]} rows={workloads.data.slice().sort((a, b) => a.teacherName.localeCompare(b.teacherName))} />
-    <p className="xs muted" style={{ marginTop: 10 }}>Caps are set by the timetable in-charge (Postman › Workloads); classes are allocated under <b>Allocations</b>.</p>
+    <p className="xs muted" style={{ marginTop: 10 }}>Caps and subjects are set here; classes are allocated under <b>Allocations</b>.</p>
+    {editing && (
+      <WorkloadModal workload={editing.teacherId ? editing : null} takenIds={workloads.data.map((w) => w.teacherId)} subjects={subjects.data || []}
+        onClose={() => setEditing(null)} onSaved={() => { setEditing(null); workloads.reload(); }} />
+    )}
   </>);
+}
+
+/** Add a teacher to the workload list, or change an existing teacher's caps and subjects. */
+function WorkloadModal({ workload, takenIds, subjects, onClose, onSaved }) {
+  const { user } = useAuth();
+  const staff = useApi(() => hr.listEmployees({}), [], !workload);
+  // Teachers are staff with a sign-in account who do not have a workload yet
+  const people = (staff.data || []).filter((p) => p.userId && !takenIds.includes(p.userId)
+    && !['RESIGNED', 'RETIRED', 'TERMINATED'].includes(p.employmentStatus));
+  const [teacherId, setTeacherId] = useState(workload?.teacherId || '');
+  const [weekly, setWeekly] = useState(workload ? String(workload.weeklyMaxPeriods) : '30');
+  const [daily, setDaily] = useState(workload ? String(workload.dailyMaxPeriods) : '6');
+  const [codes, setCodes] = useState(workload?.qualifiedSubjectCodes || []);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const person = people.find((p) => p.userId === teacherId);
+  const teacherName = workload ? workload.teacherName : person ? `${person.firstName} ${person.lastName}` : '';
+  const weeklyOk = Number(weekly) >= 1 && Number(weekly) <= 60;
+  const dailyOk = Number(daily) >= 1 && Number(daily) <= 12 && Number(daily) <= Number(weekly);
+  const valid = !!teacherId && weeklyOk && dailyOk;
+  const toggle = (code) => setCodes((c) => (c.includes(code) ? c.filter((x) => x !== code) : [...c, code]));
+  const save = async () => {
+    setBusy(true); setError(null);
+    try {
+      await lms.saveWorkload({
+        teacherId, teacherName, branchId: workload?.branchId || person?.branchId || user.branchId,
+        weeklyMaxPeriods: Number(weekly), dailyMaxPeriods: Number(daily), qualifiedSubjectCodes: codes,
+      });
+      onSaved();
+    } catch (e) { setError(e); } finally { setBusy(false); }
+  };
+  return (
+    <Modal title={workload ? 'Edit workload' : 'Add teacher workload'} sub={teacherName || 'Choose a teacher'} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn primary" disabled={busy || !valid} onClick={save}>{busy && <LoaderCircle size={14} className="spin" />}Save workload</button></>}>
+      {!workload && (
+        <div className="field box" style={{ marginBottom: 12 }}><label htmlFor="wl-teacher">TEACHER *</label>
+          <select id="wl-teacher" value={teacherId} onChange={(e) => setTeacherId(e.target.value)}>
+            <option value="">{staff.loading ? 'Loading staff…' : people.length ? 'Select teacher' : 'Every staff member already has a workload'}</option>
+            {people.map((p) => <option key={p.userId} value={p.userId}>{p.firstName} {p.lastName} · {p.designation}</option>)}
+          </select></div>
+      )}
+      <div className="fieldgrid" style={{ marginBottom: 12 }}>
+        <div className="field box"><label htmlFor="wl-weekly">WEEKLY CAP *</label>
+          <input id="wl-weekly" type="number" min={1} max={60} value={weekly} onChange={(e) => setWeekly(e.target.value)} /></div>
+        <div className="field box"><label htmlFor="wl-daily">DAILY CAP *</label>
+          <input id="wl-daily" type="number" min={1} max={12} value={daily} onChange={(e) => setDaily(e.target.value)} /></div>
+      </div>
+      {!dailyOk && <p className="xs muted" style={{ marginBottom: 10 }}>Daily cap must be between 1 and 12, and no more than the weekly cap.</p>}
+      <p className="xs" style={{ marginBottom: 6 }}><b>Subjects the teacher can take</b></p>
+      <p className="xs muted" style={{ marginBottom: 8 }}>With none selected, the teacher is offered for any subject.</p>
+      <div className="genchips-matrix">
+        {subjects.map((s) => {
+          const on = codes.includes(s.subjectCode);
+          return (
+            <label key={s.subjectId} className={`gm-cell${on ? ' on' : ''}`}>
+              <input type="checkbox" checked={on} onChange={() => toggle(s.subjectCode)} />
+              <span>{s.subjectName}</span>
+            </label>
+          );
+        })}
+      </div>
+      {error && <div style={{ marginTop: 10 }}><ApiErr error={error} /></div>}
+    </Modal>
+  );
 }
 
 /* ---------- Allocations (US-06001): which teacher teaches which subject to a class, and how often ---------- */
@@ -247,10 +361,14 @@ function AllocationsTab({ classes, sectionId, setSectionId, teachers, schedule, 
   const total = rows.reduce((n, a) => n + a.periodsPerWeek, 0);
   const capacity = schedule?.teachingPeriodsPerWeek;
   const refresh = (text) => { setMsg(text); list.reload(); onChanged(); };
-  const remove = async (a) => {
-    if (!window.confirm(`Remove ${a.subjectName} (${a.teacherName}) from ${a.className}? Its periods stay in the current timetable until it is generated again.`)) return;
+  // Confirmed in the app's own dialog: native confirm() boxes can be suppressed in the desktop app, which made Remove do nothing
+  const [toRemove, setToRemove] = useState(null);
+  const remove = async () => {
+    const a = toRemove;
     setRemoving(a.allocationId); setError(null);
-    try { await lms.deleteAllocation(a.allocationId); refresh(`${a.subjectName} removed from ${a.className}.`); } catch (e) { setError(e); } finally { setRemoving(null); }
+    try { await lms.deleteAllocation(a.allocationId); setToRemove(null); refresh(`${a.subjectName} removed from ${a.className}.`); }
+    catch (e) { setToRemove(null); setError(e); }
+    finally { setRemoving(null); }
   };
   return (<>
     <div className="filters" style={{ marginBottom: 12 }}>
@@ -263,18 +381,26 @@ function AllocationsTab({ classes, sectionId, setSectionId, teachers, schedule, 
     {capacity && total > capacity && <ApiNote>{cls?.className} has more periods allocated ({total}) than the bell schedule has in a week ({capacity}); the generator will leave some unplaced.</ApiNote>}
     {msg && <Ok>{msg}{cls && total !== cls.timetabledPeriods ? <> Run <b>Generate timetables</b> to rebuild the class's week.</> : null}</Ok>}
     {error && <div style={{ marginBottom: 12 }}><ApiErr error={error} /></div>}
-    {list.error ? <ApiErr error={list.error} /> : list.loading || !list.data ? <Loading />
+    {/* Only the first load shows the placeholder; a reload after a change keeps the table on screen (dimmed) so the page does not flicker */}
+    {list.error ? <ApiErr error={list.error} /> : !list.data ? <Loading />
       : !rows.length ? <ApiNote>No subject teachers are allocated to {cls?.className || 'this class'} yet.{can ? <> Use <b>Allocate subject</b> to add the first.</> : ' The timetable in-charge allocates them.'}</ApiNote>
-        : <DataTable boxed cols={[
+        : <div aria-busy={list.loading} style={{ opacity: list.loading ? 0.6 : 1, transition: 'opacity 150ms ease' }}><DataTable boxed cols={[
           { label: 'Subject', render: (a) => <span className="cell-id"><b>{a.subjectName}</b><small>{a.subjectCode}</small></span> },
           { label: 'Teacher', key: 'teacherName' },
           { label: 'Periods a week', className: 'num', key: 'periodsPerWeek' },
           ...(can ? [{ label: '', render: (a) => (
             <span style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
               <button className="btn" onClick={() => setEditing(a)}>Change</button>
-              <button className="btn" disabled={removing === a.allocationId} onClick={() => remove(a)}>{removing === a.allocationId && <LoaderCircle size={14} className="spin" />}Remove</button>
+              <button className="btn" disabled={removing === a.allocationId} onClick={() => setToRemove(a)}>{removing === a.allocationId && <LoaderCircle size={14} className="spin" />}Remove</button>
             </span>) }] : []),
-        ]} rows={rows} />}
+        ]} rows={rows} /></div>}
+    {toRemove && (
+      <Modal title="Remove subject" sub={toRemove.className} onClose={() => setToRemove(null)}
+        footer={<><button className="btn" onClick={() => setToRemove(null)}>Cancel</button>
+          <button className="btn danger" disabled={!!removing} onClick={remove}>{removing && <LoaderCircle size={14} className="spin" />}Remove</button></>}>
+        <p className="body-s">Remove <b>{toRemove.subjectName}</b> ({toRemove.teacherName}) from {toRemove.className}? Its periods stay in the current timetable until it is generated again.</p>
+      </Modal>
+    )}
     {editing && <AllocationModal cls={cls} allocation={editing.allocationId ? editing : null} subjects={subjects.data || []} taken={rows} teachers={teachers}
       onClose={() => setEditing(null)} onSaved={(a, isNew) => refresh(`${a.subjectName}: ${a.teacherName}, ${plural(a.periodsPerWeek, 'period')} a week ${isNew ? 'allocated to' : 'saved for'} ${a.className}.`)} />}
   </>);
@@ -449,8 +575,9 @@ function HomeworkTab({ sections, sectionId, setSectionId, allocations }) {
     </div>
     {list.error ? <ApiErr error={list.error} /> : list.loading || !list.data ? <Loading /> : !list.data.length ? <ApiNote>No homework set for this class yet.</ApiNote> : (
       <DataTable boxed cols={[
-        { label: 'Homework', render: (h) => <span className="cell-id"><b>{h.title}</b><small>{h.subjectName} · {h.teacherName}</small></span> },
-        { label: 'Due', render: (h) => when(h.dueAt) },
+        // A teacher name that is only an ID (no faculty record) is not shown as if it were a name
+        { label: 'Homework', render: (h) => <span className="cell-id"><b>{h.title}</b><small>{h.subjectName} · {/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(h.teacherName || '') ? 'Teacher not on record' : h.teacherName}</small></span> },
+        { label: 'Due', render: (h) => <span className="cell-id"><b>{when(h.dueAt)}</b>{h.missing > 0 && new Date(h.dueAt) < new Date() && <span><Pill tone="amber">Overdue</Pill></span>}</span> },
         { label: 'Handed in', render: (h) => `${h.submitted} / ${h.studentsInSection}` },
         { label: 'Marked', className: 'num', key: 'evaluated' },
         { label: 'Missing', render: (h) => (h.missing ? <Pill tone={new Date(h.dueAt) < new Date() ? 'amber' : ''}>{h.missing}</Pill> : <Pill tone="green">0</Pill>) },
@@ -567,11 +694,11 @@ function LessonPlansTab({ allocations }) {
         { label: 'Date', render: (p) => fmtDate(p.planDate) },
         { label: 'Class · subject', render: (p) => <span className="cell-id"><b>{p.className} · {p.subjectCode}</b><small>{p.teacherName}{p.chapterTitle ? ` · ${p.chapterTitle}` : ''}</small></span> },
         { label: 'Objectives', render: (p) => <small className="xs">{p.objectives || '—'}</small> },
-        { label: 'Status', render: (p) => <>{pill(lms.PLAN_STATUS, p.status)}{p.reviewRemarks && <small className="xs muted"> {p.reviewRemarks}</small>}</> },
+        { label: 'Status', render: (p) => <span className="resultstack">{pill(lms.PLAN_STATUS, p.status)}{p.reviewRemarks && <small className="xs muted">{p.reviewRemarks}</small>}</span> },
         { label: 'Action', render: (p) => (p.status === 'SUBMITTED' && reviewer
           ? <span className="act"><button type="button" className="link" onClick={() => setReviewing({ p, decision: 'APPROVED' })}>Approve</button>
               <button type="button" className="link" onClick={() => setReviewing({ p, decision: 'RETURNED' })}>Return</button></span>
-          : (p.status === 'DRAFT' || p.status === 'RETURNED') && p.teacherId === user.userId ? <button type="button" className="link" onClick={() => submit(p)}>Submit</button> : null) },
+          : (p.status === 'DRAFT' || p.status === 'RETURNED') && p.teacherId === user.userId ? <button type="button" className="link" onClick={() => submit(p)}>Submit</button> : <span className="muted xs">—</span>) },
       ]} rows={plans.data} />
     )}
     {reviewer && (

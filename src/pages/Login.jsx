@@ -18,7 +18,7 @@ export default function Login() {
 
   const statusChecked = useRef(false);
   useEffect(() => {
-    document.title = 'Oakridge Academy – Sign in';
+    document.title = 'School ERP – Sign in';
     // If no tenants exist, route to the Initial Setup Wizard (checked once per visit)
     if (statusChecked.current) return;
     statusChecked.current = true;

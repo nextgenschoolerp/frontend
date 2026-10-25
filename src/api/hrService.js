@@ -1,6 +1,6 @@
 // hrservice endpoints used by the UI (Module 07, staff HR, biometric attendance & payroll).
 // See docs/hrservice-api-mapping.md for the screen-by-screen map.
-import { api } from './client.js';
+import { api, upload, fetchBlob } from './client.js';
 
 const HR = '/api/v1/hr';
 
@@ -10,6 +10,13 @@ export const getEmployee = (staffId) => api.get(`${HR}/employees/${staffId}`);
 export const getMyProfile = () => api.get(`${HR}/employees/me`);
 export const createEmployee = (body) => api.post(`${HR}/employees`, body);
 export const updateEmployee = (staffId, body) => api.put(`${HR}/employees/${staffId}`, body);
+// Staff photo (JPEG or PNG, 5 MB): replaces the photo on file; the photo itself is fetched as a blob with the token
+export const uploadEmployeePhoto = (staffId, file) => {
+  const form = new FormData();
+  form.append('file', file);
+  return upload(`${HR}/employees/${staffId}/photo`, form);
+};
+export const employeePhotoBlob = (staffId) => fetchBlob(`${HR}/employees/${staffId}/photo/file`);
 export const listAppraisals = (staffId) => api.get(`${HR}/employees/${staffId}/appraisals`);
 export const listArchives = () => api.get(`${HR}/employees/archives`);
 

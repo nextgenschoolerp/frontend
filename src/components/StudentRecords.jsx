@@ -367,12 +367,31 @@ export function MedicalModal({ student, onClose, onSaved }) {
 /** Profile → ID card: GET /api/v1/students/{id}/id-card (US-03004). */
 export function IdCardModal({ student, onClose }) {
   const card = useApi(() => studentApi.getIdCard(student.studentId), [student.studentId]);
+  const d = card.data;
+  const tone = avatarTone(student.studentId);
+  const initials = (d?.fullName || fullName(student)).split(' ').map((w) => w[0]).join('').slice(0, 2);
+  // Only web links are shown as clickable; anything else is printed as plain text
+  const link = d?.verificationUrl && /^https?:\/\//.test(d.verificationUrl) ? d.verificationUrl : null;
   return (
-    <Modal title="Student ID card" sub={fullName(student)} onClose={onClose} footer={<button className="btn primary" onClick={onClose}>Done</button>}>
+    <Modal title="Student ID card" sub="Barcode and online verification for this student's ID" onClose={onClose} footer={<button className="btn primary" onClick={onClose}>Done</button>}>
       {card.loading ? <Loading /> : card.error ? <ApiErr error={card.error} /> : (
-        <KV rows={[['Name', card.data.fullName], ['Student UID', card.data.studentUid],
-          ['Class', `${card.data.gradeName} · Section ${card.data.sectionName}`], ['House', card.data.houseName],
-          ['Barcode', card.data.barcodeData], ['QR verification', card.data.verificationUrl]]} />
+        <div className="idcard">
+          <div className="idcard-top">
+            <span className="idcard-avatar" style={{ background: tone[0], color: tone[1] }} aria-hidden="true">{initials}</span>
+            <div>
+              <b className="idcard-name">{d.fullName}</b>
+              <small>{d.studentUid}</small>
+              <div className="pills">
+                <Pill tone="purple">{d.gradeName} · Section {d.sectionName}</Pill>
+                {d.houseName && <Pill>{d.houseName} house</Pill>}
+              </div>
+            </div>
+          </div>
+          <dl className="idcard-facts">
+            <div><dt>Barcode</dt><dd className="idcard-code">{d.barcodeData || '—'}</dd></div>
+            <div><dt>Verify online</dt><dd>{link ? <a href={link} target="_blank" rel="noopener noreferrer">{link}</a> : (d.verificationUrl || '—')}</dd></div>
+          </dl>
+        </div>
       )}
     </Modal>
   );

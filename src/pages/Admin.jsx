@@ -15,6 +15,7 @@ import ReportsLive from '../components/ReportsLive.jsx';
 import * as commApi from '../api/communicationService.js';
 import { useApi } from '../api/useApi.js';
 import { useAuth } from '../auth.jsx';
+import { useSchoolName } from '../useSchoolName.js';
 import { formatDate, formatDateTime, formatTime } from '../regional.js';
 import { getRegional, applyServerRegional, version, zoneName, TIME_ZONES, CURRENCIES, DATE_FORMATS, LANGUAGES, DEFAULT_REGIONAL } from '../regional.js';
 import { saveRegionalSettings } from '../api/authService.js';
@@ -129,6 +130,7 @@ const isoOfDaysAgo = (n) => { const d = new Date(`${todayIso()}T12:00:00`); d.se
  */
 export function Documents() {
   const { user, hasRole } = useAuth();
+  const schoolName = useSchoolName();
   const tenantId = user?.tenantId;
   const canManage = hasRole(...commApi.ROLES.documents);
   const [params, setParams] = useSearchParams();
@@ -197,7 +199,7 @@ export function Documents() {
       if (d.file) downloadFile(d.name, d.file, d.file.type);
       else if (live && d.hasContent) { const blob = await commApi.downloadSchoolDocument(d.id); downloadFile(d.name, blob, blob.type); }
       else if (typeOf(d.name) === 'Spreadsheet') downloadCsv(d.name.replace(/\.\w+$/, ''), ['Item', 'Owner', 'Updated'], [[d.name, d.owner, formatDate(d.modified)]]);
-      else downloadFile(d.name, samplePdf(d.name.replace(/\.\w+$/, ''), ['Oakridge Academy · 2026-2027', `Owner: ${d.owner}`, `Version ${d.version}`, `Access: ${d.access}`]), 'application/pdf');
+      else downloadFile(d.name, samplePdf(d.name.replace(/\.\w+$/, ''), [`${schoolName} · 2026-2027`, `Owner: ${d.owner}`, `Version ${d.version}`, `Access: ${d.access}`]), 'application/pdf');
       record(d, 'Downloaded');
     } catch (e) { setError(e); }
   };
@@ -292,7 +294,7 @@ export function Documents() {
               <h3 style={{ fontSize: 15, fontWeight: 600 }}>Document details</h3>
               <p className="small muted" style={{ marginTop: 4 }}>{f.name}</p>
               <div style={{ margin: '16px 0', border: '1px solid var(--bd)', borderRadius: 8, padding: 24, background: 'var(--sb)', textAlign: 'center' }}>
-                <FileText size={28} style={{ color: 'var(--pr)' }} /><b style={{ display: 'block', margin: '8px 0 2px', fontSize: 12 }}>Oakridge Academy</b><span className="xs muted">{f.name.replace(/\.\w+$/, '')}<br />2026–2027</span>
+                <FileText size={28} style={{ color: 'var(--pr)' }} /><b style={{ display: 'block', margin: '8px 0 2px', fontSize: 12 }}>{schoolName}</b><span className="xs muted">{f.name.replace(/\.\w+$/, '')}<br />2026–2027</span>
               </div>
               <KV rows={[['File type', typeOf(f.name)], ['Size', f.size], ['Owner', f.owner], ['Modified', formatDate(f.modified)], ['Version', `${f.version} · ${f.archived ? 'Archived' : 'Current'}`]]} />
               <div className="actions" style={{ marginTop: 14 }}>

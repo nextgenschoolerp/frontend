@@ -42,7 +42,7 @@ function SubjectBars({ terms }) {
               const p = t.subjects.find((s) => s.subjectCode === code);
               return (
                 <div className="b" key={t.examTermId} title={`${t.termName}: ${p ? pct(p.percentage) : 'no marks'}`}>
-                  <i style={{ width: `${p ? Math.max(2, Number(p.percentage)) : 0}%`, background: SHADES[SHADES.length - shown.length + i] }} />
+                  <span className="track"><i style={{ width: `${p ? Math.max(2, Number(p.percentage)) : 0}%`, background: SHADES[SHADES.length - shown.length + i] }} /></span>
                   <small>{p ? `${Math.round(p.percentage)}%${p.grade ? ` ${p.grade}` : ''}` : '—'}</small>
                 </div>
               );
@@ -83,7 +83,7 @@ export function AcademicProgressCard({ student, trend, detailed }) {
                   { label: 'Grade', render: (t) => t.grade || '—' },
                   { label: 'Rank', render: (t) => t.sectionRank ?? '—' },
                   { label: 'Change', render: (t) => signed(t.changeFromPrevious) || '—' },
-                  { label: 'Result', render: (t) => <>{pill(RESULT, t.result)}{!t.published && <small className="xs muted"> not published</small>}</> },
+                  { label: 'Result', render: (t) => <span className="resultstack">{pill(RESULT, t.result)}{!t.published && <small className="xs muted">Not published</small>}</span> },
                   { label: 'Action', render: (t) => <span className="act"><button type="button" className="link" onPointerEnter={() => prefetchCard(student.studentId, t.examTermId)} onFocus={() => prefetchCard(student.studentId, t.examTermId)} onClick={() => setOpen(t.examTermId)}><FileText size={13} />Progress card</button></span> },
                 ]} rows={d.terms} />
               )}

@@ -8,6 +8,8 @@ const LMS = '/api/v1/lms';
 export const listBellSchedules = () => api.get(`${LMS}/bell-schedules`);
 export const getBellSchedule = (id) => api.get(`${LMS}/bell-schedules/${id}`);
 export const listWorkloads = () => api.get(`${LMS}/workloads`);
+/** Creates a teacher's workload, or updates its caps and subjects (TIMETABLE_INCHARGE, ACADEMIC_COORDINATOR, SUPER_ADMIN). */
+export const saveWorkload = (body) => api.put(`${LMS}/workloads`, body);
 export const listClasses = () => api.get(`${LMS}/classes`);
 export const listSubjects = () => api.get(`${LMS}/subjects`);
 export const listAllocations = (sectionId) => api.get(`${LMS}/allocations`, { query: { sectionId } });

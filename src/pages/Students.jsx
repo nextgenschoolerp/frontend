@@ -11,6 +11,7 @@ import {
   MedicalModal, IdCardModal, CertificatesCard, ConductCard, StudentAvatar, PhotoButton, StudentDocuments,
 } from '../components/StudentRecords.jsx';
 import { useAuth } from '../auth.jsx';
+import { useSchoolName } from '../useSchoolName.js';
 import { useFeeAccount, FeeStatusCard, FeeAccountDetail } from '../components/FeeRecords.jsx';
 import { PromoteClassModal } from '../components/Promotion.jsx';
 import { useProgressTrend, AcademicProgressCard } from '../components/ExamRecords.jsx';
@@ -200,6 +201,7 @@ export function StudentForm({ mode }) {
 }
 
 function StudentFormBody({ mode, student: loaded }) {
+  const schoolName = useSchoolName();
   const edit = mode === 'edit';
   // The photo upload returns the updated record; keep it so the avatar refreshes without reloading the form
   const [student, setStudent] = useState(loaded);
@@ -409,7 +411,7 @@ function StudentFormBody({ mode, student: loaded }) {
     <form ref={formRef} onSubmit={submit} onChange={touch} noValidate style={{ display: 'contents' }}>
       <PageHeader context={false}
         title={<BackTitle to={back} label={edit ? 'Back to profile' : 'Back to students'}>{edit ? 'Edit student' : 'Add student'}</BackTitle>}
-        desc={edit ? `Update ${name}’s information, contacts and supporting documents.` : 'Create a student record and prepare a new admission to Oakridge Academy.'}
+        desc={edit ? `Update ${name}’s information, contacts and supporting documents.` : `Create a student record and prepare a new admission to ${schoolName}.`}
       />
       <div className="cols s404">
         <div className="stack">
@@ -591,6 +593,7 @@ const Facts = ({ rows }) => (
 );
 
 export function StudentProfile() {
+  const schoolName = useSchoolName();
   const { id } = useParams();
   const live = isStudentId(id);
   const { hasRole } = useAuth();
@@ -759,7 +762,7 @@ export function StudentProfile() {
                 : <span className="muted">No guardian on record</span>)
               : <span>Guardian <b>Sarah Thompson</b> (Mother) · +44 7700 900 142</span>}
             {guardianEmail
-              ? <a className="btn" href={`mailto:${guardianEmail}?subject=${encodeURIComponent(`${name} · Oakridge Academy`)}`}><Mail size={14} />Message</a>
+              ? <a className="btn" href={`mailto:${guardianEmail}?subject=${encodeURIComponent(`${name} · ${schoolName}`)}`}><Mail size={14} />Message</a>
               : <span className="xs muted">No guardian email</span>}
           </div>
           <div className="pills">{s ? <>{statusPill(s.studentStatus)}{hasAlert(s) && <Pill tone="purple" icon={HeartPulse}>Medical alert</Pill>}</>
