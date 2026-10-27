@@ -33,6 +33,10 @@ export const reassignProxy = (proxyId, body) => api.put(`${LMS}/substitutions/${
 
 // --- Syllabus coverage (US-06004) -------------------------------------------------------------------
 export const coverage = (sectionId) => api.get(`${LMS}/syllabus/coverage`, { query: { sectionId } });
+/** The syllabus plan of a class (grade) for a subject, or for every subject when none is given. */
+export const listPlans = (gradeId, subjectId) => api.get(`${LMS}/syllabus/plans`, { query: { gradeId, subjectId } });
+/** Creates or replaces the plan of a grade and subject; refused once a chapter is marked as taught (US-06004). */
+export const savePlan = (body) => api.put(`${LMS}/syllabus/plans`, body);
 export const markCovered = (topicId, body) => api.post(`${LMS}/syllabus/topics/${topicId}/coverage`, body);
 
 // --- Homework (US-06010, US-06008) ------------------------------------------------------------------
@@ -65,6 +69,7 @@ export const ROLES = {
   exportPdf: ['SCHOOL_PRINCIPAL', 'VICE_PRINCIPAL', 'TIMETABLE_INCHARGE', 'ACADEMIC_COORDINATOR', 'SUBSTITUTION_INCHARGE', 'SUPER_ADMIN'],
   substitution: ['SUBSTITUTION_INCHARGE', 'TIMETABLE_INCHARGE', 'VICE_PRINCIPAL', 'SUPER_ADMIN'],
   coverage: ['SUBJECT_TEACHER', 'CLASS_TEACHER', 'ACADEMIC_COORDINATOR', 'SUPER_ADMIN'],
+  syllabusPlan: ['ACADEMIC_COORDINATOR', 'SUPER_ADMIN'],
   setHomework: ['SUBJECT_TEACHER', 'CLASS_TEACHER', 'SUPER_ADMIN'],
   evaluate: ['SUBJECT_TEACHER', 'CLASS_TEACHER', 'ACADEMIC_COORDINATOR', 'SUPER_ADMIN'],
   writePlan: ['SUBJECT_TEACHER', 'CLASS_TEACHER', 'SUPER_ADMIN'],

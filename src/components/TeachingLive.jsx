@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Download, LoaderCircle, Wand2, UserX, Shuffle, Plus, Check, Send, CalendarPlus } from 'lucide-react';
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
@@ -88,7 +88,7 @@ export function TeachingLive() {
                 onChanged={() => { classes.reload(); allocations.reload(); workloads.reload(); }} />
               : TABS[tab] === 'Workload' ? <WorkloadTab workloads={workloads} canManage={hasRole(...ROLES.allocate)} />
                 : TABS[tab] === 'Cover' ? <CoverTab teachers={teachers} onChanged={today.reload} />
-                  : TABS[tab] === 'Syllabus' ? <SyllabusTab sections={sections} sectionId={sectionId} setSectionId={setSectionId} />
+                  : TABS[tab] === 'Syllabus' ? <SyllabusTab sections={sections} classes={classes.data || []} sectionId={sectionId} setSectionId={setSectionId} />
                     : TABS[tab] === 'Homework' ? <HomeworkTab sections={sections} sectionId={sectionId} setSectionId={setSectionId} allocations={allocations.data || []} />
                       : TABS[tab] === 'Lesson plans' ? <LessonPlansTab allocations={allocations.data || []} />
                         : <LabsTab sections={sections} />}
@@ -373,7 +373,7 @@ function AllocationsTab({ classes, sectionId, setSectionId, teachers, schedule, 
   return (<>
     <div className="filters" style={{ marginBottom: 12 }}>
       <SectionPicker sections={classes.map((c) => [c.sectionId, c.className])} sectionId={sectionId} setSectionId={setSectionId} />
-      {can && <button className="btn primary" disabled={!sectionId || !subjects.data} onClick={() => setEditing({})}><Plus size={14} />Allocate subject</button>}
+      {can && <button className="btn primary" style={{ marginLeft: 'auto' }} disabled={!sectionId || !subjects.data} onClick={() => setEditing({})}><Plus size={14} />Allocate subject</button>}
     </div>
     {cls && <p className="xs muted" style={{ marginBottom: 10 }}>
       {cls.className} · {plural(rows.length, 'subject')} · {total}{capacity ? ` of ${capacity}` : ''} periods a week allocated · {cls.timetabledPeriods} timetabled
@@ -526,23 +526,32 @@ function AbsenceModal({ date, teachers, onClose, onSaved }) {
 }
 
 /* ---------- Syllabus (US-06004) ---------- */
-function SyllabusTab({ sections, sectionId, setSectionId }) {
+function SyllabusTab({ sections, classes, sectionId, setSectionId }) {
   const { hasRole } = useAuth();
   const cov = useApi(() => lms.coverage(sectionId), [sectionId], !!sectionId);
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
+  // A plan belongs to the grade (every section of the class), set by the academic coordinator
+  const [planning, setPlanning] = useState(null); // { subjectId } to open the plan dialog
+  const canPlan = hasRole(...ROLES.syllabusPlan);
+  const cls = classes.find((x) => x.sectionId === sectionId);
   const mark = async (topicId) => {
     setBusy(topicId); setError(null);
     try { await lms.markCovered(topicId, { sectionId, completedOn: todayIso() }); cov.reload(); } catch (e) { setError(e); } finally { setBusy(null); }
   };
   const c = cov.data;
   return (<>
-    <div className="filters" style={{ marginBottom: 12 }}><SectionPicker sections={sections} sectionId={sectionId} setSectionId={setSectionId} /></div>
+    <div className="filters" style={{ marginBottom: 12 }}>
+      <SectionPicker sections={sections} sectionId={sectionId} setSectionId={setSectionId} />
+      {canPlan && cls && <button className="btn primary" style={{ marginLeft: 'auto' }} onClick={() => setPlanning({})}><Plus size={14} />Set syllabus plan</button>}
+    </div>
     {error && <ApiErr error={error} />}
-    {cov.loading || !c ? (cov.error ? <ApiErr error={cov.error} /> : <Loading />) : !c.subjects.length ? <ApiNote>No syllabus plan for {c.className} yet. The academic coordinator sets chapters and target dates.</ApiNote>
+    {cov.loading || !c ? (cov.error ? <ApiErr error={cov.error} /> : <Loading />) : !c.subjects.length
+      ? <ApiNote>No syllabus plan for {c.className} yet. {canPlan ? <>Use <b>Set syllabus plan</b> to add chapters and target dates; the plan applies to every section of {cls?.gradeName || 'the class'}.</> : 'The academic coordinator sets chapters and target dates.'}</ApiNote>
       : c.subjects.map((s) => (
         <div key={s.subjectId} style={{ marginBottom: 18 }}>
           <SectionHead title={`${s.subjectName} · ${Number(s.completionPercent).toFixed(0)}% taught`}
+            link={canPlan ? 'Edit plan' : undefined} onClick={canPlan ? () => setPlanning({ subjectId: s.subjectId }) : undefined}
             sub={`${s.completedTopics} of ${s.totalTopics} chapters · ${Number(s.expectedPercent).toFixed(0)}% expected by ${fmtDate(c.asOf)}${s.nextTopic ? ` · next: ${s.nextTopic}` : ''}`} />
           <div style={{ margin: '8px 0' }}>{pill(lms.COVERAGE, s.status)}</div>
           <DataTable boxed cols={[
@@ -555,7 +564,74 @@ function SyllabusTab({ sections, sectionId, setSectionId }) {
           ]} rows={s.topics} />
         </div>
       ))}
+    {planning && cls && <SyllabusPlanModal gradeId={cls.gradeId} gradeName={cls.gradeName} initialSubjectId={planning.subjectId || ''}
+      onClose={() => setPlanning(null)} onSaved={() => { setPlanning(null); cov.reload(); }} />}
   </>);
+}
+
+/** Sets or replaces the annual syllabus plan of a grade and subject: chapters in teaching order with target dates. */
+function SyllabusPlanModal({ gradeId, gradeName, initialSubjectId, onClose, onSaved }) {
+  const subjects = useApi(() => lms.listSubjects(), []);
+  const [subjectId, setSubjectId] = useState(initialSubjectId);
+  const plan = useApi(() => lms.listPlans(gradeId, subjectId), [gradeId, subjectId], !!subjectId);
+  const [rows, setRows] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const nextKey = useRef(0);
+  const blank = (date = '') => ({ key: nextKey.current++, title: '', date, periods: '' });
+  // Start from the saved chapters of the chosen subject (or one empty row)
+  useEffect(() => {
+    if (!plan.data) return;
+    const topics = (plan.data.find((p) => p.subjectId === subjectId)?.topics) || [];
+    setRows(topics.length ? topics.map((t) => ({ key: nextKey.current++, title: t.chapterTitle, date: t.plannedCompletionDate, periods: t.plannedPeriods ?? '' })) : [blank()]);
+    setError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plan.data, subjectId]);
+  const taught = ((plan.data || []).find((p) => p.subjectId === subjectId)?.topics || []).some((t) => t.completedOn);
+  const set = (key, patch) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  const add = () => setRows((rs) => [...rs, blank(rs.at(-1)?.date ? isoPlus(rs.at(-1).date, 30) : '')]);
+  const filled = rows.filter((r) => r.title.trim() || r.date);
+  const problem = !subjectId ? 'Choose a subject.' : !filled.length ? 'Add at least one chapter.'
+    : filled.some((r) => !r.title.trim()) ? 'Every chapter needs a title.'
+      : filled.some((r) => !r.date) ? 'Every chapter needs a target date.'
+        : filled.some((r, i) => i && r.date < filled[i - 1].date) ? 'List chapters in teaching order: target dates cannot go backwards.'
+          : filled.some((r) => r.periods !== '' && (Number(r.periods) < 1 || Number(r.periods) > 200)) ? 'Planned periods must be between 1 and 200.' : null;
+  const save = async () => {
+    setBusy(true); setError(null);
+    try {
+      await lms.savePlan({ gradeId, subjectId, topics: filled.map((r) => ({ chapterTitle: r.title.trim(), plannedCompletionDate: r.date, plannedPeriods: r.periods === '' ? null : Number(r.periods) })) });
+      onSaved();
+    } catch (e) { setError(e); } finally { setBusy(false); }
+  };
+  return (
+    <Modal title="Set syllabus plan" sub={`${gradeName} · applies to every section of the class`} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn primary" disabled={busy || !!problem || taught} onClick={save}>{busy && <LoaderCircle size={14} className="spin" />}Save plan</button></>}>
+      <div className="field box" style={{ marginBottom: 12 }}><label htmlFor="sp-subject">SUBJECT *</label>
+        <select id="sp-subject" value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
+          <option value="">{subjects.loading ? 'Loading subjects…' : 'Select subject'}</option>
+          {(subjects.data || []).map((s) => <option key={s.subjectId} value={s.subjectId}>{s.subjectName}</option>)}
+        </select></div>
+      {taught && <ApiNote>Some chapters of this plan are already marked as taught, so the plan can no longer be replaced.</ApiNote>}
+      {subjectId && (plan.loading && !plan.data ? <Loading /> : (<>
+        <div className="splan">
+          <div className="splan-head" aria-hidden="true"><span>#</span><span>Chapter</span><span>Target date</span><span>Periods</span><span /></div>
+          {rows.map((r, i) => (
+            <div className="splan-row" key={r.key}>
+              <span className="muted xs">{i + 1}</span>
+              <input aria-label={`Chapter ${i + 1} title`} maxLength={200} value={r.title} placeholder="e.g. Fractions" disabled={taught} onChange={(e) => set(r.key, { title: e.target.value })} />
+              <input aria-label={`Chapter ${i + 1} target date`} type="date" value={r.date} disabled={taught} onChange={(e) => set(r.key, { date: e.target.value })} />
+              <input aria-label={`Chapter ${i + 1} planned periods`} type="number" min={1} max={200} value={r.periods} placeholder="—" disabled={taught} onChange={(e) => set(r.key, { periods: e.target.value })} />
+              <button type="button" className="link" disabled={taught || rows.length === 1} onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))} aria-label={`Remove chapter ${i + 1}`}>Remove</button>
+            </div>
+          ))}
+        </div>
+        <button type="button" className="btn" style={{ marginTop: 10 }} disabled={taught || rows.length >= 60} onClick={add}><Plus size={14} />Add chapter</button>
+        {problem && filled.length > 0 && <p className="xs muted" style={{ marginTop: 10 }}>{problem}</p>}
+      </>))}
+      {error && <div style={{ marginTop: 10 }}><ApiErr error={error} /></div>}
+    </Modal>
+  );
 }
 
 /* ---------- Homework (US-06010, US-06008) ---------- */
@@ -567,13 +643,21 @@ function HomeworkTab({ sections, sectionId, setSectionId, allocations }) {
   const [setting, setSetting] = useState(false);
   const [open, setOpen] = useState(null);
   useEffect(() => setOpen(null), [sectionId]);
+  // Homework is set for a subject the class has a teacher for; a class with none allocated cannot be given homework yet
+  const subjectsHere = ownFirst(allocations.filter((a) => a.sectionId === sectionId), user.userId);
+  const className = sections.find(([id]) => id === sectionId)?.[1];
+  const canSet = hasRole(...ROLES.setHomework);
   return (<>
     <div className="row" style={{ gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
       <SectionPicker sections={sections} sectionId={sectionId} setSectionId={setSectionId} />
       <span style={{ marginLeft: 'auto' }} />
-      {hasRole(...ROLES.setHomework) && <button className="btn primary" onClick={() => setSetting(true)}><Plus size={14} />Set homework</button>}
+      {canSet && <button className="btn primary" disabled={!subjectsHere.length} title={subjectsHere.length ? undefined : `No subject teachers are allocated to ${className || 'this class'} yet`}
+        onClick={() => setSetting(true)}><Plus size={14} />Set homework</button>}
     </div>
-    {list.error ? <ApiErr error={list.error} /> : list.loading || !list.data ? <Loading /> : !list.data.length ? <ApiNote>No homework set for this class yet.</ApiNote> : (
+    {list.error ? <ApiErr error={list.error} /> : list.loading || !list.data ? <Loading /> : !list.data.length
+      ? <ApiNote>No homework set for {className || 'this class'} yet. {canSet
+        ? (subjectsHere.length ? <>Use <b>Set homework</b> to add the first.</> : <>Subject teachers must be allocated to the class first (Allocations tab).</>)
+        : 'Subject teachers and class teachers set homework.'}</ApiNote> : (
       <DataTable boxed cols={[
         // A teacher name that is only an ID (no faculty record) is not shown as if it were a name
         { label: 'Homework', render: (h) => <span className="cell-id"><b>{h.title}</b><small>{h.subjectName} · {/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(h.teacherName || '') ? 'Teacher not on record' : h.teacherName}</small></span> },
@@ -585,8 +669,7 @@ function HomeworkTab({ sections, sectionId, setSectionId, allocations }) {
       ]} rows={list.data} />
     )}
     {open && <div style={{ marginTop: 16 }}><Roster homeworkId={open} onChanged={list.reload} /></div>}
-    {setting && <HomeworkModal sectionId={sectionId} className={sections.find(([id]) => id === sectionId)?.[1]}
-      subjects={ownFirst(allocations.filter((a) => a.sectionId === sectionId), user.userId)} onClose={() => setSetting(false)} onSaved={list.reload} />}
+    {setting && <HomeworkModal sectionId={sectionId} className={className} subjects={subjectsHere} onClose={() => setSetting(false)} onSaved={list.reload} />}
   </>);
 }
 

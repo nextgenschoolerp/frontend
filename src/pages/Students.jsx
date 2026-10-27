@@ -16,6 +16,7 @@ import { useFeeAccount, FeeStatusCard, FeeAccountDetail } from '../components/Fe
 import { PromoteClassModal } from '../components/Promotion.jsx';
 import { useProgressTrend, AcademicProgressCard } from '../components/ExamRecords.jsx';
 import { StudentAttendanceCard } from '../components/AttendanceLive.jsx';
+import { SchoolPulseModal, movementSummary } from '../components/StudentInsights.jsx';
 import { useApi } from '../api/useApi.js';
 import { captureEnquiry } from '../api/admissionService.js';
 import * as studentApi from '../api/studentService.js';
@@ -41,6 +42,8 @@ export function StudentsDirectory() {
   const noAccess = 'Not available for your role';
   const { hasRole } = useAuth();
   const [promoting, setPromoting] = useState(false);
+  const [pulseOpen, setPulseOpen] = useState(false);
+  const pulse = movementSummary(list);
   return (
     <>
       <PageHeader
@@ -66,11 +69,13 @@ export function StudentsDirectory() {
           list.live && { onClick: () => { setTab(0); showOnly(''); }, hint: 'Show all students', active: tab === 0 && !only }],
         ['New this year', n(list.newThisYear.length), list.live ? 'Enrolled since 1 April' : noAccess, null, false, null,
           list.live && { onClick: () => showOnly('new'), hint: 'Show students enrolled this year', active: only === 'new' }],
-        ['Admission applications', openCount ?? (apps.loading ? '…' : '—'), openCount !== null ? `Awaiting review · ${formatNumber(apps.rows.length)} in total` : noAccess, null, false, null,
-          openCount !== null && { to: '/admissions', hint: 'Open the Admissions workspace' }],
         ['Incomplete records', n(list.incomplete.length), list.live ? 'Guardian, emergency phone or blood group missing' : noAccess, null, false, null,
           list.live && { onClick: () => showOnly('incomplete'), hint: 'Show students with incomplete records', active: only === 'incomplete' }],
+        // Leader view: the roll's net change this year; opens attention, capacity and movement (read from the services on open)
+        ['School pulse', list.live ? `${pulse.net > 0 ? '+' : ''}${formatNumber(pulse.net)}` : n(0), list.live ? 'Roll change since 1 April · attention, capacity and movement' : noAccess, null, false, null,
+          list.live && { onClick: () => setPulseOpen(true), hint: 'Open school pulse: students needing attention, capacity by class and movement' }],
       ]} />
+      {pulseOpen && <SchoolPulseModal list={list} onClose={() => setPulseOpen(false)} />}
       <Card id="student-directory" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
         <div className="sh">
           <div><h3>Student directory</h3><p>{tab === 2 ? 'Transferred and graduated students' : 'All enrolled students'} · {list.current[0]?.branchId || 'this campus'}</p></div>

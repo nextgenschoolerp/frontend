@@ -723,8 +723,8 @@ body.noscroll{overflow:hidden}
 .flowarrow{flex:none;width:58px;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:var(--fa)}
 .flowpill{display:inline-block;margin-top:2px;padding:2px 8px;border-radius:999px;background:var(--gl);color:var(--tx);font-size:11px;font-weight:600;white-space:nowrap}
 .flowexits{margin-top:16px;padding-top:14px;border-top:1px dashed var(--bd)}
-.flowexitlabel{display:block;font-size:11px;color:var(--mu);margin-bottom:8px}
-.flowexitrow{display:flex;flex-wrap:wrap;gap:12px}
+.flowexitlabel{display:block;font-size:11px;color:var(--mu);margin-bottom:8px;text-align:center}
+.flowexitrow{display:flex;flex-wrap:wrap;gap:12px;justify-content:center}
 .flownode.exit{flex-direction:row;align-items:center;justify-content:space-between;gap:24px;padding:10px 14px;height:auto;min-width:200px;width:auto}
 .flownode.exit .flowtop{width:auto;gap:10px}
 .flownode.exit .flowlabel{font-size:12px}
@@ -759,3 +759,37 @@ body.noscroll{overflow:hidden}
 .btn.danger{color:var(--rd);border-color:var(--rd);background:var(--card)}
 .btn.danger:hover{background:var(--rdbg)}
 .steprow b{display:flex;align-items:center;gap:8px}
+
+/* Students page · leader panels (StudentInsights.jsx) */
+.riskchips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.risklist{list-style:none;margin:14px 0 0;padding:0;border:1px solid var(--bd);border-radius:10px;overflow:hidden}
+.risklist li{display:grid;grid-template-columns:auto minmax(140px,220px) 1fr;gap:12px;align-items:center;padding:10px 14px}
+.risklist li+li{border-top:1px solid var(--bd)}
+.risk-who{display:flex;flex-direction:column;min-width:0}
+.risk-who a{font-weight:600;font-size:12px;color:var(--tx);text-decoration:none}
+.risk-who a:hover{color:var(--pr)}
+.risk-who small{font-size:10px;color:var(--mu)}
+.risk-flags{display:flex;flex-wrap:wrap;gap:6px}
+@media (max-width:640px){.risklist li{grid-template-columns:auto 1fr}.risk-flags{grid-column:1/-1}}
+.capbars{display:grid;gap:7px;margin-top:14px}
+.caprow{display:grid;grid-template-columns:76px 1fr 64px;gap:10px;align-items:center;font-size:11px}
+.capname{font-weight:500;color:var(--tx);white-space:nowrap}
+.capbars .track{display:block;height:8px;border-radius:6px;background:var(--gl)}
+.capbars .track i{display:block;height:100%;border-radius:6px}
+.capnum{text-align:right;color:var(--mu);font-variant-numeric:tabular-nums}
+.movegrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:14px 0 0}
+.movegrid>div{border:1px solid var(--bd);border-radius:10px;padding:12px 14px}
+.movegrid dt{font-size:10px;color:var(--mu);text-transform:uppercase;letter-spacing:.04em}
+.movegrid dd{margin:4px 0 2px;font-size:22px;font-weight:600;color:var(--tx)}
+.movegrid dd.up{color:var(--gr, #2f855a)}
+.movegrid dd.down{color:var(--rd, #c53030)}
+.movegrid small{display:block;font-size:10px;color:var(--mu)}
+@media (max-width:640px){.movegrid{grid-template-columns:1fr}}
+
+/* Set syllabus plan dialog: one row per chapter */
+.splan{display:grid;gap:6px}
+.splan-head,.splan-row{display:grid;grid-template-columns:24px minmax(0,1fr) 150px 70px 64px;gap:8px;align-items:center}
+.splan-head{font-size:10px;color:var(--mu);text-transform:uppercase;letter-spacing:.04em;padding:0 2px}
+.splan-row input{height:34px;padding:0 10px;border:1px solid var(--bd);border-radius:8px;background:var(--card);color:var(--tx);font:inherit;font-size:12px;min-width:0}
+.splan-row input:disabled{opacity:.6}
+@media (max-width:640px){.splan-head{display:none}.splan-row{grid-template-columns:24px 1fr 1fr}.splan-row input:nth-of-type(1){grid-column:2/-1}}

@@ -15,6 +15,7 @@ import {
 import { Modal } from '../components/AuthSettings.jsx';
 import { ApplicationModal, ApplicantCell, ApiErr, ApiNote, statusPill, gradeLabel, useApplications, exportApplicationsCsv } from '../components/Admissions.jsx';
 import { useCaptureAllowed, gradeCode, academicYearCode } from '../components/NewAdmission.jsx';
+import { AdmissionsOutlookModal, stuckApplications, STUCK_DAYS } from '../components/AdmissionInsights.jsx';
 import { formatDate, formatDateTime, formatNumber } from '../regional.js';
 
 /* Admissions workspace (Module 02): walk-in enquiry registration, counseling session logs and the admission pipeline.
@@ -45,8 +46,6 @@ const STAGE_ORDER = [...STAGES, ...EXITS].map((s) => s.key);
 const CLASSES = ['Nursery', 'LKG', 'UKG', ...Array.from({ length: 12 }, (_, i) => `Class ${i + 1}`)];
 const YEARS = ['2026–2027', '2027–2028'];
 const OUTCOME_TONE = { CONNECTED: 'green', CALLBACK_REQUESTED: 'amber', NOT_INTERESTED: 'red', NO_ANSWER: '', BUSY: '', WRONG_NUMBER: 'red' };
-/** Overdue callbacks in red: they are the most urgent figure on the page; zero is shown quietly. */
-const overdueLabel = (n) => (n ? <span className="overdue-text">{formatNumber(n)} overdue</span> : <span className="muted">None overdue</span>);
 const localDateTime = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 
 const In = ({ label: l, name, required, ...rest }) => (
@@ -236,6 +235,7 @@ export default function AdmissionsWorkspace() {
   const sort = useSort();
   const [modal, setModal] = useState(null); // 'walkin' | { session: enquiry }
   const [viewing, setViewing] = useState(null);
+  const [outlookOpen, setOutlookOpen] = useState(false);
   const [msg, setMsg] = useState(null);
 
   const loading = apps.loading && !apps.data;
@@ -304,11 +304,10 @@ export default function AdmissionsWorkspace() {
       live && { onClick: () => { setFilter({ stage: 'open', source: '' }); toApplications(); }, hint: 'Show applications still open', active: stage === 'open' && !walkInsOnly }],
     ['Walk-in enquiries', loading ? '…' : formatNumber(walkIns.length), live ? `${formatNumber(walkInsThisMonth)} registered this month` : noAccess, null, false, null,
       live && { onClick: () => { setFilter({ stage: '', source: 'walk-in' }); toApplications(); }, hint: 'Show walk-in enquiries', active: walkInsOnly && !stage }],
-    canReadCalls
-      ? ['Callbacks scheduled', callbackCount === undefined ? '…' : formatNumber(callbackCount),
-        callbacks.data ? overdueLabel(callbacks.data.filter((c) => c.overdue).length) : 'Counseling follow-ups', null, false, null,
-        { onClick: () => { setTab(2); scrollToId('admission-list'); }, hint: 'Open the callbacks', active: tab === 2 }]
-      : ['Enrolled', loading ? '…' : formatNumber(counts.ENROLLED || 0), live ? 'Converted to students' : noAccess],
+    // Leader view: open applications that have stalled; opens seat demand, delays and what converts (read from the services on open)
+    ['Admissions outlook', loading ? '…' : formatNumber(stuckApplications(all).length),
+      live ? `Open applications with no change for ${STUCK_DAYS}+ days · seats, delays and what converts` : noAccess, null, false, null,
+      live && { onClick: () => setOutlookOpen(true), hint: 'Open the admissions outlook: seat demand, stuck applications and conversion by source and counselor' }],
   ];
 
   const tabItems = [`Applications${live ? ` (${formatNumber(rows.length)})` : ''}`, `Counseling log${log.data ? ` (${formatNumber(log.data.length)})` : ''}`,
@@ -331,6 +330,7 @@ export default function AdmissionsWorkspace() {
           : (
             <>
               <Metrics items={metrics} />
+              {outlookOpen && <AdmissionsOutlookModal apps={apps} onClose={() => setOutlookOpen(false)} />}
               {apps.error ? <Card><ApiErr error={apps.error} onRetry={apps.reload} /></Card>
                 : <PipelineFlow counts={counts} total={scoped.length} scope={walkInsOnly ? 'Walk-ins only' : ''} stage={stage} loading={loading} onPick={(k) => { setFilter({ stage: k }); toApplications(); }} />}
               <Card id="admission-list" style={{ display: 'flex', flexDirection: 'column', gap: 18, marginTop: 28 }}>

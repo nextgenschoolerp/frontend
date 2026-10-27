@@ -21,6 +21,8 @@ export const completeness = (termId, query) => api.get(`${AC}/terms/${termId}/co
 // --- Results (US-05007, US-05008, US-05010, US-05011) -------------------------------------------------
 export const broadsheet = (termId, sectionId, branchId) => api.get(`${AC}/terms/${termId}/broadsheet`, { query: { sectionId, branchId } });
 export const rankList = (termId, query) => api.get(`${AC}/terms/${termId}/rank-list`, { query });
+/** The broadsheet of every section with students, in one call (Academics outlook; leadership only). */
+export const schoolResults = (termId, branchId) => api.get(`${AC}/terms/${termId}/school-results`, { query: { branchId } });
 export const publish = (termId, sectionId, branchId) => api.post(`${AC}/terms/${termId}/publish`, { sectionId }, { query: { branchId } });
 
 // --- Student (US-05009, US-05013, US-05018) -----------------------------------------------------------
@@ -35,6 +37,7 @@ export const ROLES = {
   view: [...TEACHING, 'REGISTRAR'],
   studentProgress: [...TEACHING, 'REGISTRAR', 'APPLICANT_PARENT'],
   configure: ['EXAM_CONTROLLER', 'SCHOOL_PRINCIPAL', 'SUPER_ADMIN'],
+  schoolResults: ['SCHOOL_PRINCIPAL', 'VICE_PRINCIPAL', 'EXAM_CONTROLLER', 'ACADEMIC_AUDITOR', 'SUPER_ADMIN'],
   enterMarks: ['SUBJECT_TEACHER', 'CLASS_TEACHER', 'EXAM_CONTROLLER', 'SUPER_ADMIN'],
   requestUnlock: ['SUBJECT_TEACHER', 'CLASS_TEACHER', 'SUPER_ADMIN'],
   decideUnlock: ['SCHOOL_PRINCIPAL', 'EXAM_CONTROLLER', 'SUPER_ADMIN'],

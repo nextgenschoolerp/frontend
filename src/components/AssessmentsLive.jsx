@@ -7,6 +7,7 @@ import * as studentApi from '../api/studentService.js';
 import { PageHeader, Metrics, scrollToId, Card, SectionHead, Tabs, DataTable, Pill, Footer, EmptyState, downloadCsv, useTabParam } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
+import { AcademicOutlookModal, canOpenAcademicOutlook, startedTerms } from './AcademicInsights.jsx';
 import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
 
 const { ROLES, RESULT, pct } = exam;
@@ -35,6 +36,9 @@ export function AssessmentsLive() {
   const overall = useApi(() => exam.completeness(termId, { branchId }), [termId, branchId], !!termId);
   const tickets = useApi(() => exam.listTickets(termId), [termId], !!termId);
   const [locking, setLocking] = useState(null);
+  const [outlookOpen, setOutlookOpen] = useState(false);
+  const canOutlook = canOpenAcademicOutlook(hasRole);
+  const outlookTerm = startedTerms(terms.data)[0];
 
   // Defaults: the latest term that has started, the first class with exams, its first section
   useEffect(() => {
@@ -74,14 +78,18 @@ export function AssessmentsLive() {
       />
       {locking && locking !== 'busy' && <Card><ApiErr error={locking} /></Card>}
       <Metrics items={[
-        ['Term', term ? term.termName : noData, term ? `${term.termType === 'FORMATIVE' ? 'Formative' : 'Summative'} · ${term.weightagePercent}% of the year` : ''],
         ['Mark entry', term ? (term.locked ? 'Locked' : 'Open') : noData, term ? (term.locked ? (term.lockedAt ? `Locked ${when(term.lockedAt)}` : `Closed ${when(term.markEntryDeadline)} (T_lock)`) : `Closes ${when(term.markEntryDeadline)}`) : '', null, false, null,
           term && { onClick: () => { setTab(0); scrollToId('academics-tabs'); }, hint: 'Open mark entry', active: tab === 0 }],
         ['Entries complete', o ? `${o.enteredEntries} / ${o.expectedEntries}` : noData, o ? (o.complete ? 'Ready for report cards' : `${o.missingEntries} still missing`) : '', null, false, null,
           o && { onClick: () => { setTab(3); scrollToId('academics-tabs'); }, hint: 'Open incomplete entries', active: tab === 3 }],
         ['Unlock tickets', tickets.data ? String(pending) : noData, pending ? 'Waiting for a decision' : 'None pending', null, false, null,
           tickets.data && { onClick: () => { setTab(4); scrollToId('academics-tabs'); }, hint: 'Open unlock tickets', active: tab === 4 }],
+        // Leader view: the latest scored term; opens results and trend, class and subject comparison, and students needing support
+        ['Academic outlook', canOutlook ? (outlookTerm ? outlookTerm.termName : noData) : '—',
+          canOutlook ? 'Results and trend, class and subject comparison, students needing support' : 'School leadership and the exam controller', null, false, null,
+          canOutlook && outlookTerm && { onClick: () => setOutlookOpen(true), hint: 'Open the academic outlook: results against the previous term, classes and subjects, and students needing support' }],
       ]} />
+      {outlookOpen && <AcademicOutlookModal terms={terms} onClose={() => setOutlookOpen(false)} />}
       <Card id="academics-tabs">
         <div className="filters" style={{ marginBottom: 14 }}>
           {terms.error ? <ApiErr error={terms.error} /> : <Picker label="Term" value={termId} onChange={setTermId} options={(terms.data || []).map((t) => [t.examTermId, `${t.termName} · ${t.sessionName}`])} />}

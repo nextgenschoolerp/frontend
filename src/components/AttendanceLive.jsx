@@ -3,7 +3,8 @@ import { Check, Download, LoaderCircle, Phone } from 'lucide-react';
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as studentApi from '../api/studentService.js';
-import { PageHeader, Metrics, scrollToId, Card, DataTable, Tabs, SectionHead, Pill, Person, KV, Footer, downloadCsv, todayIso, useTabParam } from './ui.jsx';
+import { PageHeader, Metrics, scrollToId, Card, DataTable, Tabs, SectionHead, Pill, Person, KV, Footer, downloadCsv, todayIso, useTabParam, schoolDay } from './ui.jsx';
+import { AttendanceOutlookModal, canOpenAttendanceOutlook, followUpBacklog } from './AttendanceInsights.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
 import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
@@ -112,6 +113,12 @@ export function AttendanceLive() {
 
   const s = summary.data;
   const isToday = date === todayIso();
+  const [outlookOpen, setOutlookOpen] = useState(false);
+  const canOutlook = canOpenAttendanceOutlook(hasRole);
+  const backlog = followUpBacklog(followUps.data);
+  // A weekend or break with no marks: nothing was due, so show "school closed" rather than zeros
+  const dayInfo = schoolDay(date);
+  const closedDay = !!s && !dayInfo.open && s.unmarked === s.totalStudents;
   const refresh = () => { register.reload(); summary.reload(); followUps.reload(); };
   const reg = register.data;
   const exportRegister = () => reg && downloadCsv(`attendance-${reg.gradeName}-${reg.sectionName}-${reg.date}`.replace(/\s+/g, '-'),
@@ -127,17 +134,23 @@ export function AttendanceLive() {
       />
       {summary.error ? <ApiErr error={summary.error} /> : (
         <Metrics items={s ? [
-          [isToday ? 'Present today' : `Present on ${dayLabel(date, { day: 'numeric', month: 'short' })}`, formatNumber(s.present), s.unmarked === s.totalStudents ? `No registers in yet · ${formatNumber(s.totalStudents)} on roll`
-            : `${pctText(s.presentRate)} of ${formatNumber(s.totalStudents - s.unmarked)} marked${s.unmarked ? ` · ${formatNumber(s.unmarked)} not yet marked` : ''}`,
+          [isToday ? 'Present today' : `Present on ${dayLabel(date, { day: 'numeric', month: 'short' })}`, closedDay ? '—' : formatNumber(s.present),
+            closedDay ? `${dayInfo.status} · no registers expected` : s.unmarked === s.totalStudents ? `No registers in yet · ${formatNumber(s.totalStudents)} on roll`
+              : `${pctText(s.presentRate)} of ${formatNumber(s.totalStudents - s.unmarked)} marked${s.unmarked ? ` · ${formatNumber(s.unmarked)} not yet marked` : ''}`,
             null, false, null, { onClick: () => { setTab(0); setNotice(null); scrollToId('attendance-tabs'); }, hint: 'Open the daily register' }],
-          ['Excused absences', s.excused, s.excused ? 'Reasons recorded' : 'None recorded', null, false, null,
+          ['Excused absences', closedDay ? '—' : s.excused, closedDay ? 'School closed' : s.excused ? 'Reasons recorded' : 'None recorded', null, false, null,
             { onClick: () => { setTab(1); setNotice(null); scrollToId('attendance-tabs'); }, hint: 'Open absence history' }],
-          ['Unexcused absences', s.unexcused, s.openFollowUps ? `${s.openFollowUps} awaiting guardian follow-up` : 'No follow-up pending', null, false, null,
-            { onClick: () => { setTab(1); setNotice(null); scrollToId('attendance-tabs'); }, hint: 'Open absence history and follow-ups' }],
-          ['Class registers', `${s.amRegistersSubmitted} / ${s.registersExpected}`, `Morning registers submitted · ${s.pmRegistersSubmitted} afternoon`, null, false, null,
+          ['Class registers', closedDay ? '—' : `${s.amRegistersSubmitted} / ${s.registersExpected}`,
+            closedDay ? 'School closed · none due' : `Morning registers submitted · ${s.pmRegistersSubmitted} afternoon`, null, false, null,
             { onClick: () => { setTab(0); setNotice(null); scrollToId('attendance-tabs'); }, hint: 'Open the daily register' }],
-        ] : [['Present today', '…', ''], ['Excused absences', '…', ''], ['Unexcused absences', '…', ''], ['Class registers', '…', '']]} />
+          // Leader view: unexcused absences whose guardian has not been reached; opens trend, chronic absence and register compliance
+          ['Attendance outlook', canOutlook ? (followUps.data ? formatNumber(backlog.open.length) : '…') : '—',
+            canOutlook ? (backlog.slow.length ? `Guardians not reached, ${backlog.slow.length} waiting 3+ days · trend, chronic absence, registers` : 'Guardians not yet reached · trend, chronic absence, registers') : 'Attendance viewers only',
+            null, false, null,
+            canOutlook && followUps.data && { onClick: () => setOutlookOpen(true), hint: 'Open attendance outlook: trend and patterns, chronic absence, follow-up and register compliance' }],
+        ] : [['Present today', '…', ''], ['Excused absences', '…', ''], ['Class registers', '…', ''], ['Attendance outlook', '…', '']]} />
       )}
+      {outlookOpen && <AttendanceOutlookModal branchId={branchId} onClose={() => setOutlookOpen(false)} />}
       <div className="cols s354">
         <Card id="attendance-tabs" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <div className="sh"><div><h3>Class register</h3>

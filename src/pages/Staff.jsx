@@ -11,6 +11,7 @@ import { TimetableGrid } from '../components/TeachingLive.jsx';
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as hr from '../api/hrService.js';
+import { StaffPulseModal, canOpenStaffPulse, staffAttention } from '../components/StaffInsights.jsx';
 import * as lms from '../api/academicService.js';
 import { formatDate, formatNumber, formatMoney } from '../regional.js';
 
@@ -41,8 +42,8 @@ export function StaffDirectory() {
   const today = todayIso();
   const staff = useApi(() => hr.listEmployees(branchId ? { branchId } : {}), [branchId]);
   const leaves = useApi(() => hr.listLeaves(), []);
-  const canSummary = hasRole(...hr.HR_ROLES.attendance);
-  const summary = useApi(() => hr.attendanceSummary(today), [today], canSummary);
+  const canPulse = canOpenStaffPulse(hasRole);
+  const [pulseOpen, setPulseOpen] = useState(false);
   const [q, setQ] = useState('');
   const [tab, setTab] = useState(0);
   const [dept, setDept] = useState('');
@@ -57,6 +58,7 @@ export function StaffDirectory() {
   const pending = (leaves.data || []).filter((l) => l.status === 'PENDING' && all.some((s) => s.staffId === l.staffId));
   const departments = [...new Set(all.map((s) => s.department))].sort();
   const reviewsDue = current.filter((s) => s.probationStatus !== 'CONFIRMED' && s.probationEndDate);
+  const attention = staffAttention(all, leaves.data);
 
   const inTab = { all: current, teaching, support: current.filter((s) => staffType(s) === 'Support'), archived: all.filter((s) => !isCurrent(s)) }[DIR_TABS[tab]];
   const rows = inTab
@@ -105,14 +107,17 @@ export function StaffDirectory() {
       <Metrics items={[
         ['Total staff', n(current.length), `${n(teaching.length)} teaching · ${n(current.length - teaching.length)} support`, null, false, null,
           staff.data && { onClick: () => { setTab(0); setDept(''); setAvail(''); setQ(''); setPage(1); scrollToId('staff-directory'); }, hint: 'Show all current staff', active: tab === 0 && !dept && !avail && !q }],
-        ['On campus today', summary.data ? formatNumber(summary.data.presentCount) : canSummary && summary.loading ? '…' : '—',
-          summary.data ? `${formatNumber(summary.data.attendancePercentage)}% punched in` : 'Biometric attendance · principal and HR', null, false, null,
-          summary.data && { to: '/attendance?tab=staff-attendance', hint: 'Open staff attendance' }],
         ['On leave today', leaves.data ? formatNumber(leaveToday.length) : '…', 'Approved leave', null, false, null,
           leaves.data && { onClick: () => { setTab(0); setAvail('leave'); setPage(1); scrollToId('staff-directory'); }, hint: 'Show staff on leave today', active: avail === 'leave' }],
         ['Leave requests', leaves.data ? formatNumber(pending.length) : '…', 'Awaiting approval', null, false, null,
           leaves.data && { onClick: () => scrollToId('staff-leave'), hint: 'Jump to leave and cover' }],
+        // Leader view: probation reviews, notice periods and slow leave approvals; opens teaching load, leave and attendance patterns, and people risks
+        ['Staff pulse', canPulse ? (staff.data && leaves.data ? formatNumber(attention.total) : '…') : '—',
+          canPulse ? 'Probation reviews, notice periods and slow leave approvals · load, leave and people risks' : 'School leadership and HR',
+          null, false, null,
+          canPulse && staff.data && leaves.data && { onClick: () => setPulseOpen(true), hint: 'Open staff pulse: teaching load and cover, leave and attendance patterns, and people risks' }],
       ]} />
+      {pulseOpen && <StaffPulseModal staff={staff} leaves={leaves} onClose={() => setPulseOpen(false)} />}
       <Card id="staff-directory" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
         <div className="sh"><div><h3>Staff directory</h3><p>{branchId || 'All campuses'} · from HR records</p></div></div>
         <Tabs items={[`All staff (${n(current.length)})`, `Teaching (${n(teaching.length)})`, `Support (${n(current.length - teaching.length)})`, `Archived (${n(all.length - current.length)})`]}
