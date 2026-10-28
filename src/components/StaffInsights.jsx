@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Modal } from './AuthSettings.jsx';
-import { SectionHead, Pill, Tabs, DataTable, schoolDay } from './ui.jsx';
+import { SectionHead, Pill, Tabs, DataTable, schoolDay, useSchoolCalendar } from './ui.jsx';
 import { ApiNote } from './Admissions.jsx';
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
@@ -58,7 +58,8 @@ export function staffAttention(staff, leaves) {
 function TeachingLoad({ staff, leaves }) {
   const workloads = useApi(() => lms.listWorkloads(), []);
   const subjects = useApi(() => lms.listSubjects(), []);
-  const coverDay = useMemo(nextOpenDay, []);
+  const calendar = useSchoolCalendar();
+  const coverDay = useMemo(nextOpenDay, [calendar]);
   const sheet = useApi(() => lms.daySheet(coverDay), [coverDay]);
   const today = todayIso();
   const until = addDays(today, COVER_LOOKAHEAD);
@@ -127,7 +128,8 @@ function TeachingLoad({ staff, leaves }) {
 function LeavePatterns({ staff, leaves }) {
   const { hasRole } = useAuth();
   const canSummary = hasRole(...hr.HR_ROLES.attendance);
-  const day = useMemo(lastOpenDay, []);
+  const calendar = useSchoolCalendar();
+  const day = useMemo(lastOpenDay, [calendar]);
   const summary = useApi(() => hr.attendanceSummary(day), [day], canSummary);
   const current = staff.filter(isCurrent);
   const byId = useMemo(() => new Map(staff.map((s) => [s.staffId, s])), [staff]);

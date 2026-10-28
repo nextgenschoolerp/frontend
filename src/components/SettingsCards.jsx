@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Upload, Check, Plus, Trash2, Settings as Cog } from 'lucide-react';
-import { Card, SectionHead, schoolDay, todayIso, useBackLink } from './ui.jsx';
+import { Card, SectionHead, schoolDay, todayIso, useBackLink, useSchoolCalendar } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
 import { useApi } from '../api/useApi.js';
@@ -132,6 +132,7 @@ export function AcademicSetupCard() {
   const { user, hasRole } = useAuth();
   const canEdit = hasRole(...ACADEMIC_EDITORS);
   const cal = useApi(() => getAcademicCalendar(user.tenantId), [user.tenantId]);
+  useSchoolCalendar();
   const sessions = cal.data?.sessions || [];
   const active = sessions.find((s) => s.isActive) || sessions[sessions.length - 1];
   const [yearId, setYearId] = useState(null);
@@ -186,9 +187,10 @@ export function AcademicSetupCard() {
           await updateAcademicSession(year.academicYearId, { startDate: draft.startDate, endDate: draft.endDate, weekStructure: draft.weekStructure, isActive: draft.isActive || undefined });
           if (draft.currentTermId !== base.currentTermId && terms.length) await saveAcademicTerms(year.academicYearId, termPayload(terms, draft.currentTermId));
           cal.reload();
+          window.dispatchEvent(new Event('school-calendar:changed'));
         }, `${year.sessionName} saved.`)} />
       {termsOpen && <TermsModal year={year} terms={terms} canEdit={canEdit} onClose={() => setTermsOpen(false)}
-        onSave={async (list) => { await saveAcademicTerms(year.academicYearId, list); cal.reload(); setTermsOpen(false); }} />}
+        onSave={async (list) => { await saveAcademicTerms(year.academicYearId, list); cal.reload(); window.dispatchEvent(new Event('school-calendar:changed')); setTermsOpen(false); }} />}
     </Card>
   );
 }

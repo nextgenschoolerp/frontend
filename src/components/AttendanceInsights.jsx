@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Modal } from './AuthSettings.jsx';
-import { SectionHead, Pill, Tabs, DataTable, schoolDay, todayIso } from './ui.jsx';
+import { SectionHead, Pill, Tabs, DataTable, schoolDay, todayIso, useSchoolCalendar } from './ui.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
 import { useApi } from '../api/useApi.js';
 import * as studentApi from '../api/studentService.js';
@@ -283,8 +283,9 @@ export function AttendanceOutlookModal({ branchId, onClose }) {
   const error = trend.error || absences.error || followUps.error;
   const ready = trend.data && absences.data && followUps.data;
   // Only days school was open and registers came in: weekends and breaks never count against the school
+  const calendar = useSchoolCalendar();
   const days = useMemo(() => (trend.data || []).filter((d) => schoolDay(d.date).open && d.presentRate !== null && d.presentRate !== undefined)
-    .sort((a, b) => a.date.localeCompare(b.date)), [trend.data]);
+    .sort((a, b) => a.date.localeCompare(b.date)), [trend.data, calendar]);
   return (
     <Modal title="Attendance outlook" sub="Attendance trend and patterns, chronic absence, and follow-up and register compliance" onClose={onClose}
       footer={<button className="btn primary" onClick={onClose}>Done</button>}>

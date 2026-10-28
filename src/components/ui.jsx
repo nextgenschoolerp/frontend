@@ -1,6 +1,6 @@
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowUpRight, Check, ArrowLeft, FileText, Search, ChevronDown, ChevronUp, ChevronsUpDown, Calendar, AlertTriangle, XCircle } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { todayIso, formatDate, formatTime, timeZoneNames } from '../regional.js';
 
 /* Status icons, so a pill's meaning does not depend on its colour alone. Set per tone by default. */
@@ -30,28 +30,54 @@ export function downloadCsv(base, header, rows) {
 
 /* ---------- school calendar and the date the pages are viewed for ---------- */
 
-// Term 1 of 2026–2027 (Calendar / Settings → Academic setup): 31 Aug – 18 Dec 2026, half-term 26–30 Oct
-const TERM = { name: 'Term 1', start: '2026-08-31', end: '2026-12-18', breaks: [['2026-10-26', '2026-10-30']] };
+// The school calendar: terms with their half-term (Settings → Academic setup, Calendar → Term dates) and the holidays on the calendar.
+// Loaded once after sign-in by setSchoolCalendar(); pages that show the school day call useSchoolCalendar() so they redraw when it arrives.
+let CAL = { ready: false, sessions: [], terms: [], holidays: [] };
+const calListeners = new Set();
+/** terms: academic terms [{ termName, startDate, endDate, halfTermStart, halfTermEnd }]; events: calendar events (HOLIDAY ones close the school). */
+export function setSchoolCalendar({ sessions = [], terms = [], events = [] }) {
+  CAL = {
+    ready: true, sessions,
+    terms: terms.slice().sort((a, b) => a.startDate.localeCompare(b.startDate)),
+    holidays: events.filter((e) => e.eventType === 'HOLIDAY' && e.isPublished !== false).map((e) => ({ name: e.title, start: e.startDate, end: e.endDate || e.startDate })),
+  };
+  calListeners.forEach((fn) => fn());
+}
+export function useSchoolCalendar() {
+  return useSyncExternalStore((fn) => { calListeners.add(fn); return () => calListeners.delete(fn); }, () => CAL);
+}
 const atNoon = (iso) => new Date(`${iso}T12:00:00`);
 const isoOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 // Today in the school's time zone (Settings → Regional preferences)
 export { todayIso };
-const inBreak = (iso) => TERM.breaks.some(([a, b]) => iso >= a && iso <= b);
-/** Teaching weeks (Monday dates) of the term, half-term excluded. */
-const termWeeks = () => {
+const termOf = (iso) => CAL.terms.find((x) => iso >= x.startDate && iso <= x.endDate);
+/** The break covering a date: { name, half } for half-term or a calendar holiday, else null. */
+const breakOn = (iso) => {
+  const half = CAL.terms.find((x) => x.halfTermStart && x.halfTermEnd && iso >= x.halfTermStart && iso <= x.halfTermEnd);
+  if (half) return { name: 'Half-term break', half: true };
+  const h = CAL.holidays.find((x) => iso >= x.start && iso <= x.end);
+  return h ? { name: h.name, half: false } : null;
+};
+/** Teaching weeks (Monday dates) of a term, breaks excluded. */
+const termWeeks = (term) => {
   const weeks = [];
-  for (let d = atNoon(TERM.start); isoOf(d) <= TERM.end; d.setDate(d.getDate() + 7)) if (!inBreak(isoOf(d))) weeks.push(isoOf(d));
+  for (let d = atNoon(term.startDate); isoOf(d) <= term.endDate; d.setDate(d.getDate() + 7)) if (!breakOn(isoOf(d))) weeks.push(isoOf(d));
   return weeks;
 };
-/** Term, week and whether school is open on a date: { date, week, weeks, status, open }. */
+/**
+ * Term, week and whether school is open on a date: { date, term, week, weeks, status, open, inTerm, onBreak, halfTerm, ready }.
+ * Until the calendar has loaded (or when it cannot be read) school is assumed open and no term is named.
+ */
 export function schoolDay(iso) {
   const d = atNoon(iso);
   const date = formatDate(iso, { weekday: 'long' });
-  const weeks = termWeeks();
+  if (!CAL.ready) return { date, term: '', week: 0, weeks: 0, inTerm: false, onBreak: false, halfTerm: false, status: '', open: true, ready: false };
+  const term = termOf(iso);
+  const weeks = term ? termWeeks(term) : [];
   const week = weeks.filter((w) => w <= iso).length;
-  const inTerm = iso >= TERM.start && iso <= TERM.end;
-  const status = !inTerm ? 'Outside term dates' : inBreak(iso) ? 'Half-term break' : d.getDay() % 6 === 0 ? 'Weekend · school closed' : 'School in session';
-  return { date, week, weeks: weeks.length, inTerm, onBreak: inBreak(iso), status, open: status === 'School in session' };
+  const brk = term ? breakOn(iso) : null;
+  const status = !term ? 'Outside term dates' : brk ? brk.name : d.getDay() % 6 === 0 ? 'Weekend · school closed' : 'School in session';
+  return { date, term: term?.termName || '', week, weeks: weeks.length, inTerm: !!term, onBreak: !!brk, halfTerm: !!brk?.half, status, open: status === 'School in session', ready: true };
 }
 
 /** Read-only "Today · 18 Oct 2026" with a calendar icon (Overview header). */
@@ -140,10 +166,12 @@ export function PageHeader({ title, desc, actions = [], context = true }) {
 
 /** "Term 1 · Week 7 of 15 / Sunday, 18 October 2026 / Weekend · school closed" for today. */
 function DayContext() {
+  useSchoolCalendar();
   const day = schoolDay(todayIso());
+  if (!day.ready) return null;
   return (
     <div className="context">
-      <span className={`dot${day.open ? '' : ' off'}`} />{!day.inTerm ? '2026–2027' : day.onBreak ? `${TERM.name} · Half-term` : `${TERM.name} · Week ${Math.max(day.week, 1)} of ${day.weeks}`}
+      <span className={`dot${day.open ? '' : ' off'}`} />{!day.inTerm ? 'Between terms' : day.onBreak ? `${day.term} · ${day.halfTerm ? 'Half-term' : 'Holiday'}` : `${day.term} · Week ${Math.max(day.week, 1)} of ${day.weeks}`}
       <span className="sep">/</span>{day.date}
       <span className="sep">/</span><span className={day.open ? 'ok' : 'off'}>{day.status}</span>
     </div>
