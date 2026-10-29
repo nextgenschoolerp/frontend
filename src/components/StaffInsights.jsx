@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Modal } from './AuthSettings.jsx';
-import { SectionHead, Pill, Tabs, DataTable, schoolDay } from './ui.jsx';
+import { SectionHead, Pill, Tabs, DataTable, schoolDay, useSchoolCalendar, Skel, SkeletonTable } from './ui.jsx';
 import { ApiNote } from './Admissions.jsx';
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
@@ -58,7 +58,8 @@ export function staffAttention(staff, leaves) {
 function TeachingLoad({ staff, leaves }) {
   const workloads = useApi(() => lms.listWorkloads(), []);
   const subjects = useApi(() => lms.listSubjects(), []);
-  const coverDay = useMemo(nextOpenDay, []);
+  const calendar = useSchoolCalendar();
+  const coverDay = useMemo(nextOpenDay, [calendar]);
   const sheet = useApi(() => lms.daySheet(coverDay), [coverDay]);
   const today = todayIso();
   const until = addDays(today, COVER_LOOKAHEAD);
@@ -84,22 +85,23 @@ function TeachingLoad({ staff, leaves }) {
   }).filter(({ able }) => able.length <= 1), [subjects.data, rows]);
 
   if (workloads.error?.status === 403) return <ApiNote>Teaching load is visible to the timetable in-charge, academic coordinator, principals and super administrators.</ApiNote>;
-  if (!workloads.data) return <p className="xs muted">Loading teachers and cover…</p>;
+  // The panel is laid out at once; values show placeholders until their data arrives
+  const loading = !workloads.data;
   const cover = sheet.data;
   return (
-    <div className="pulse-panel">
+    <div className="pulse-panel" aria-busy={loading}>
       <SectionHead title="Teaching load and cover risk"
-        sub={`${plural(rows.length, 'teacher')} · average load ${average.toFixed(0)}% of weekly caps · ${over.length} at ${OVERLOAD_PCT}% or more · ${formatNumber(sparePeriods)} spare periods a week`} />
+        sub={loading ? <Skel w="70%" /> : `${plural(rows.length, 'teacher')} · average load ${average.toFixed(0)}% of weekly caps · ${over.length} at ${OVERLOAD_PCT}% or more · ${formatNumber(sparePeriods)} spare periods a week`} />
       <dl className="movegrid">
-        <div><dt>Overloaded</dt><dd className={over.length ? 'down' : ''}>{formatNumber(over.length)}</dd>
-          <small>{over.length ? over.map((r) => r.teacherName).join(', ') : `Nobody at ${OVERLOAD_PCT}% or more`}</small></div>
-        <div><dt>Spare capacity</dt><dd>{formatNumber(sparePeriods)}</dd>
-          <small>periods a week across {plural(spare.length, 'teacher')} under {SPARE_PCT}%</small></div>
-        <div><dt>Cover on {formatDate(coverDay)}</dt><dd className={cover?.uncovered ? 'down' : ''}>{cover ? formatNumber(cover.periodsToCover) : '…'}</dd>
-          <small>{cover ? `${formatNumber(cover.assigned)} assigned · ${formatNumber(cover.uncovered)} uncovered · ${plural(cover.absentTeachers, 'teacher')} absent` : 'Loading cover'}</small></div>
+        <div><dt>Overloaded</dt><dd className={over.length ? 'down' : ''}>{loading ? <Skel w="36px" /> : formatNumber(over.length)}</dd>
+          <small>{loading ? <Skel w="85%" /> : over.length ? over.map((r) => r.teacherName).join(', ') : `Nobody at ${OVERLOAD_PCT}% or more`}</small></div>
+        <div><dt>Spare capacity</dt><dd>{loading ? <Skel w="44px" /> : formatNumber(sparePeriods)}</dd>
+          <small>{loading ? <Skel w="80%" /> : <>periods a week across {plural(spare.length, 'teacher')} under {SPARE_PCT}%</>}</small></div>
+        <div><dt>Cover on {formatDate(coverDay)}</dt><dd className={cover?.uncovered ? 'down' : ''}>{cover ? formatNumber(cover.periodsToCover) : <Skel w="36px" />}</dd>
+          <small>{cover ? `${formatNumber(cover.assigned)} assigned · ${formatNumber(cover.uncovered)} uncovered · ${plural(cover.absentTeachers, 'teacher')} absent` : <Skel w="90%" />}</small></div>
       </dl>
       <h4 style={{ fontSize: 13, fontWeight: 600, margin: '18px 0 8px' }}>Subjects with a single point of failure</h4>
-      {single.length ? (
+      {loading || !subjects.data ? <div className="riskchips"><Skel w="140px" h={20} /><Skel w="110px" h={20} /><Skel w="160px" h={20} /></div> : single.length ? (
         <div className="riskchips">
           {single.map(({ sub, able }) => {
             const t = able[0];
@@ -110,12 +112,12 @@ function TeachingLoad({ staff, leaves }) {
         </div>
       ) : <p className="body-s">Every subject has at least two teachers who can take it.</p>}
       <h4 style={{ fontSize: 13, fontWeight: 600, margin: '18px 0 8px' }}>Teachers by load</h4>
-      <DataTable boxed cols={[
+      {loading ? <SkeletonTable cols={['Teacher', 'Allocated', 'Load', `Leave in the next ${COVER_LOOKAHEAD} days`]} rows={6} /> : <DataTable boxed cols={[
         { label: 'Teacher', render: (r) => <span className="cell-id"><b>{r.teacherName}</b><small>{r.qualifiedSubjectCodes.join(', ') || 'Any subject'}</small></span> },
         { label: 'Allocated', className: 'num', render: (r) => `${r.allocatedPeriods} / ${r.weeklyMaxPeriods}` },
         { label: 'Load', render: (r) => <Pill tone={r.load >= OVERLOAD_PCT ? 'red' : r.load < SPARE_PCT ? '' : 'green'}>{r.load.toFixed(0)}%</Pill> },
         { label: `Leave in the next ${COVER_LOOKAHEAD} days`, render: (r) => (r.leave ? <Pill tone="amber">{formatDate(r.leave.startDate)} – {formatDate(r.leave.endDate)}</Pill> : '—') },
-      ]} rows={rows} />
+      ]} rows={rows} />}
       {away.length > 0 && <p className="xs muted" style={{ marginTop: 10 }}>{plural(away.length, 'teacher')} on approved leave in the next {COVER_LOOKAHEAD} days: {away.map((r) => r.teacherName).join(', ')}.</p>}
       <p className="xs muted" style={{ marginTop: 6 }}>Load is allocated periods against the weekly cap. A teacher with no subjects listed counts as able to take any subject.</p>
     </div>
@@ -124,10 +126,11 @@ function TeachingLoad({ staff, leaves }) {
 
 /* ---------- leave and attendance patterns ---------- */
 
-function LeavePatterns({ staff, leaves }) {
+function LeavePatterns({ staff, leaves, ready }) {
   const { hasRole } = useAuth();
   const canSummary = hasRole(...hr.HR_ROLES.attendance);
-  const day = useMemo(lastOpenDay, []);
+  const calendar = useSchoolCalendar();
+  const day = useMemo(lastOpenDay, [calendar]);
   const summary = useApi(() => hr.attendanceSummary(day), [day], canSummary);
   const current = staff.filter(isCurrent);
   const byId = useMemo(() => new Map(staff.map((s) => [s.staffId, s])), [staff]);
@@ -149,30 +152,31 @@ function LeavePatterns({ staff, leaves }) {
   }, [staff, leaves, summary.data]);
   const top = depts[0];
   const s = summary.data;
+  const sumLoading = canSummary && !s && !summary.error;
 
   return (
-    <div className="pulse-panel">
+    <div className="pulse-panel" aria-busy={!ready}>
       <SectionHead title="Leave and attendance patterns"
-        sub={`${days(taken).toFixed(1)} leave days taken since ${formatDate(yearStart)} · ${plural(pending.length, 'request')} waiting${oldest !== null ? `, the oldest ${plural(oldest, 'day')}` : ''}`} />
+        sub={!ready ? <Skel w="65%" /> : `${days(taken).toFixed(1)} leave days taken since ${formatDate(yearStart)} · ${plural(pending.length, 'request')} waiting${oldest !== null ? `, the oldest ${plural(oldest, 'day')}` : ''}`} />
       <dl className="movegrid">
         <div><dt>Presence on {formatDate(day)}</dt>
-          <dd>{s ? `${Number(s.attendancePercentage).toFixed(0)}%` : canSummary ? '…' : '—'}</dd>
-          <small>{s ? `${formatNumber(s.presentCount)} of ${formatNumber(s.totalStaff)} punched in · ${formatNumber(s.absentCount)} absent · ${formatNumber(s.onLeaveCount)} on leave`
-            : canSummary ? 'Loading biometric attendance' : 'Biometric attendance: principals and HR'} · last day school was in session</small></div>
-        <div><dt>Leave taken</dt><dd>{days(taken).toFixed(1)}</dd>
-          <small>{byType.length ? byType.map(([name, n]) => `${name.replace(' leave', '')} ${n.toFixed(1)}`).join(' · ') : 'No approved leave this year'}</small></div>
-        <div><dt>Waiting for approval</dt><dd className={oldest >= WAITING_DAYS ? 'down' : ''}>{formatNumber(pending.length)}</dd>
-          <small>{pending.length ? `Oldest waiting ${plural(oldest, 'day')}` : 'Nothing waiting'}</small></div>
+          <dd>{s ? `${Number(s.attendancePercentage).toFixed(0)}%` : sumLoading ? <Skel w="48px" /> : '—'}</dd>
+          <small>{s ? `${formatNumber(s.presentCount)} of ${formatNumber(s.totalStaff)} punched in · ${formatNumber(s.absentCount)} absent · ${formatNumber(s.onLeaveCount)} on leave · last day school was in session`
+            : sumLoading ? <Skel w="90%" /> : 'Biometric attendance: principals and HR'}</small></div>
+        <div><dt>Leave taken</dt><dd>{!ready ? <Skel w="44px" /> : days(taken).toFixed(1)}</dd>
+          <small>{!ready ? <Skel w="80%" /> : byType.length ? byType.map(([name, n]) => `${name.replace(' leave', '')} ${n.toFixed(1)}`).join(' · ') : 'No approved leave this year'}</small></div>
+        <div><dt>Waiting for approval</dt><dd className={oldest >= WAITING_DAYS ? 'down' : ''}>{!ready ? <Skel w="36px" /> : formatNumber(pending.length)}</dd>
+          <small>{!ready ? <Skel w="60%" /> : pending.length ? `Oldest waiting ${plural(oldest, 'day')}` : 'Nothing waiting'}</small></div>
       </dl>
       <h4 style={{ fontSize: 13, fontWeight: 600, margin: '18px 0 8px' }}>By department</h4>
-      <DataTable boxed cols={[
+      {!ready ? <SkeletonTable cols={['Department', 'Staff', 'Leave days', 'Per person', 'Waiting', `Present ${formatDate(day)}`]} rows={6} /> : <DataTable boxed cols={[
         { label: 'Department', render: (d) => <b style={{ fontWeight: 600 }}>{d.department}</b> },
         { label: 'Staff', className: 'num', render: (d) => formatNumber(d.staff) },
         { label: 'Leave days', className: 'num', render: (d) => d.days.toFixed(1) },
         { label: 'Per person', render: (d) => <Pill tone={top && d === top && d.perHead > 0 ? 'amber' : ''}>{d.perHead.toFixed(1)}</Pill> },
         { label: 'Waiting', className: 'num', render: (d) => (d.pending ? <Pill tone="amber">{d.pending}</Pill> : '0') },
-        { label: `Present ${formatDate(day)}`, render: (d) => (d.present === null ? '—' : `${d.present} of ${d.staff}`) },
-      ]} rows={depts} />
+        { label: `Present ${formatDate(day)}`, render: (d) => (d.present === null ? (sumLoading ? <Skel w="50px" /> : '—') : `${d.present} of ${d.staff}`) },
+      ]} rows={depts} />}
       {pending.length > 0 && (<>
         <h4 style={{ fontSize: 13, fontWeight: 600, margin: '18px 0 8px' }}>Requests waiting</h4>
         <DataTable boxed cols={[
@@ -191,7 +195,7 @@ function LeavePatterns({ staff, leaves }) {
 
 /* ---------- people risks ---------- */
 
-function PeopleRisks({ staff }) {
+function PeopleRisks({ staff, ready }) {
   const current = useMemo(() => staff.filter(isCurrent), [staff]);
   const today = todayIso();
   // Appraisals on file per current staff member: one request each, read when this tab opens
@@ -218,15 +222,30 @@ function PeopleRisks({ staff }) {
     .map(([name, test]) => [name, current.filter((s) => s.joiningDate && test(s)).length]);
   const names = (rows, max = 6) => `${rows.slice(0, max).map(fullName).join(', ')}${rows.length > max ? ` and ${rows.length - max} more` : ''}`;
 
+  if (!ready) {
+    // Staff records not here yet: the panel's layout with placeholders, so the pop-up opens fully formed
+    return (
+      <div className="pulse-panel" aria-busy="true">
+        <SectionHead title="People risks" sub={<Skel w="65%" />} />
+        <dl className="movegrid">
+          {['Probation due', 'Appraisals on file', 'Notice period'].map((t) => <div key={t}><dt>{t}</dt><dd><Skel w="44px" /></dd><small><Skel w="80%" /></small></div>)}
+        </dl>
+        <h4 style={{ fontSize: 13, fontWeight: 600, margin: '18px 0 8px' }}>On probation</h4>
+        <SkeletonTable cols={['Staff member', 'Probation ends', 'Days left', 'Appraisal']} rows={4} />
+        <h4 style={{ fontSize: 13, fontWeight: 600, margin: '18px 0 8px' }}>Records to fix</h4>
+        <div className="riskchips"><Skel w="150px" h={20} /><Skel w="130px" h={20} /><Skel w="100px" h={20} /></div>
+      </div>
+    );
+  }
   return (
     <div className="pulse-panel">
       <SectionHead title="People risks"
         sub={`${plural(current.length, 'current staff member')} · ${plural(dueSoon.length, 'probation review')} due within ${PROBATION_DAYS} days · ${formatNumber(notice.length)} in a notice period`} />
       <dl className="movegrid">
         <div><dt>Probation due</dt><dd className={unreviewed.length ? 'down' : ''}>{formatNumber(dueSoon.length)}</dd>
-          <small>{dueSoon.length ? (known ? `${unreviewed.length} without an appraisal on file` : 'Checking appraisals…') : `None ending within ${PROBATION_DAYS} days`}</small></div>
-        <div><dt>Appraisals on file</dt><dd>{known ? `${withAppraisal} of ${current.length}` : '…'}</dd>
-          <small>{known ? `${noAppraisal.length} with over a year of service and none` : 'Loading appraisals'}</small></div>
+          <small>{dueSoon.length ? (known ? `${unreviewed.length} without an appraisal on file` : <Skel w="80%" />) : `None ending within ${PROBATION_DAYS} days`}</small></div>
+        <div><dt>Appraisals on file</dt><dd>{known ? `${withAppraisal} of ${current.length}` : <Skel w="60px" />}</dd>
+          <small>{known ? `${noAppraisal.length} with over a year of service and none` : <Skel w="85%" />}</small></div>
         <div><dt>Notice period</dt><dd className={notice.length ? 'down' : ''}>{formatNumber(notice.length)}</dd>
           <small>{notice.length ? names(notice) : `No resignations in progress · ${formatNumber(left.length)} left or retired`}</small></div>
       </dl>
@@ -236,7 +255,7 @@ function PeopleRisks({ staff }) {
           { label: 'Staff member', render: (s) => <span className="cell-id"><b>{fullName(s)}</b><small>{s.designation}</small></span> },
           { label: 'Probation ends', render: (s) => formatDate(s.probationEndDate) },
           { label: 'Days left', render: (s) => <Pill tone={s.left < 0 ? 'red' : s.left <= PROBATION_DAYS ? 'amber' : ''}>{s.left < 0 ? `${-s.left} overdue` : s.left}</Pill> },
-          { label: 'Appraisal', render: (s) => (known ? <Pill tone={filed.get(s.staffId) ? 'green' : s.left <= PROBATION_DAYS ? 'red' : ''}>{filed.get(s.staffId) ? 'On file' : 'None yet'}</Pill> : '…') },
+          { label: 'Appraisal', render: (s) => (known ? <Pill tone={filed.get(s.staffId) ? 'green' : s.left <= PROBATION_DAYS ? 'red' : ''}>{filed.get(s.staffId) ? 'On file' : 'None yet'}</Pill> : <Skel w="56px" />) },
         ]} rows={probation} />
       </>)}
       {noAppraisal.length > 0 && <p className="body-s" style={{ marginTop: 14 }}><b>No appraisal on file after a year or more:</b> {names(noAppraisal, 8)}</p>}
@@ -269,21 +288,24 @@ const PULSE_TABS = ['Teaching load', 'Leave and attendance', 'People risks'];
 /**
  * Staff pulse (a stat card on the Staff & faculty page). Opening it reloads the staff list and leave requests, and each
  * tab reads its own data (workloads and cover, biometric attendance, appraisals) from the services.
+ * The pop-up opens fully laid out: every tab is mounted at once (hidden until chosen), so all of them load together, show
+ * placeholders until their values arrive, and switching tabs never reloads.
  */
 export function StaffPulseModal({ staff, leaves, onClose }) {
   const [tab, setTab] = useState(0);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { staff.reload(); leaves.reload(); }, []);
-  const ready = staff.data && leaves.data;
+  const ready = !!(staff.data && leaves.data);
+  const people = staff.data || [];
+  const requests = leaves.data || [];
   return (
     <Modal title="Staff pulse" sub="Teaching load and cover risk, leave and attendance patterns, and people risks" onClose={onClose}
       footer={<button className="btn primary" onClick={onClose}>Done</button>}>
       <Tabs items={PULSE_TABS} value={tab} onChange={setTab} />
       <div style={{ marginTop: 16 }}>
-        {!ready ? <p className="xs muted">Loading staff and leave…</p>
-          : tab === 0 ? <TeachingLoad staff={staff.data} leaves={leaves.data} />
-            : tab === 1 ? <LeavePatterns staff={staff.data} leaves={leaves.data} />
-              : <PeopleRisks staff={staff.data} />}
+        <div hidden={tab !== 0}><TeachingLoad staff={people} leaves={requests} /></div>
+        <div hidden={tab !== 1}><LeavePatterns staff={people} leaves={requests} ready={ready} /></div>
+        <div hidden={tab !== 2}><PeopleRisks staff={people} ready={ready} /></div>
       </div>
     </Modal>
   );

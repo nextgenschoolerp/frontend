@@ -1,0 +1,8 @@
+Employee code *,First name *,Last name *,Department *,Designation *,Joining date *,Basic salary *,Email *,Mobile *,Probation end date,Qualifications,PAN,Aadhaar,PF UAN,ESI number,Bank name,Bank account number,Bank IFSC
+DPS-EMP-2001,Meera,Iyer,Mathematics,TGT Mathematics,01/07/2026,45000,meera.iyer@dps.edu.in,9811200101,31/12/2026,"M.Sc. Mathematics, B.Ed.",ABCDE1234F,234567890123,100200300400,1234567890,State Bank of India,30012345678,SBIN0001234
+DPS-EMP-2002,Rahul,Verma,Science,TGT Physics,01/07/2026,46000,rahul.verma.science@dps.edu.in,9811200102,,"M.Sc. Physics, B.Ed.",BCDEF2345G,345678901234,100200300401,,HDFC Bank,50100234567890,HDFC0001234
+DPS-EMP-2003,Shalini,Rao,English,PRT English,15/07/2026,38000,shalini.rao@dps.edu.in,9811200103,,"B.A. English, B.Ed.",,,,,,,
+DPS-EMP-2004,Karan,Singh,Administration,Office Assistant,01/08/2026,24000,karan.singh@dps.edu.in,+91 98112 00104,,B.Com.,CDEFG3456H,,,,ICICI Bank,123405678901,ICIC0001234
+DPS-EMP-2005,Fatima,Shaikh,Library,Librarian,01/08/2026,32000,fatima.shaikh@dps.edu.in,9811200105,,M.Lib.Sc.,,,,,,,
+DPS-EMP-2006,Nikhil,Arora,Computer Science,PGT Computer Science,01/07/2026,52000,nikhil.arora@dps.edu.in,9811200106,,M.C.A.,ABC123,,,,,,
+DPS-EMP-1025,Anita,Desai,Accounts,Accounts Assistant,01/07/2026,30000,anita.desai@dps.edu.in,9811200107,,B.Com.,,,,,,,

@@ -3,7 +3,7 @@ import {
   Calendar as CalIcon, Download, Plus, GraduationCap, ClipboardCheck, Users, Wallet,
   ArrowUpRight, Send, CalendarDays, ShieldCheck, ChevronDown,
 } from 'lucide-react';
-import { PageHeader, Metrics, SectionHead, Pill, Card, Footer, downloadCsv, TodayLabel } from '../components/ui.jsx';
+import { PageHeader, Metrics, SectionHead, Pill, Card, Footer, downloadCsv, TodayLabel, todayIso } from '../components/ui.jsx';
 import { useAuth } from '../auth.jsx';
 import { useApplications } from '../components/Admissions.jsx';
 import { useStudents } from '../components/StudentRecords.jsx';
@@ -13,12 +13,27 @@ import { useFeeOverview } from '../components/FeesLive.jsx';
 import * as hr from '../api/hrService.js';
 import { useApi } from '../api/useApi.js';
 import { money, moneyShort } from '../api/financeService.js';
-import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
+import { formatDate, formatDateTime, formatTime, formatNumber, getRegional } from '../regional.js';
+import { listCalendarEvents, listBroadcasts } from '../api/communicationService.js';
 
-const SAMPLE = [94.1, 95.8, 94.7, 96.1, 95.2].map((value, i) => ({ value, label: ['Mon 12', 'Tue 13', 'Wed 14', 'Thu 15', 'Fri 16'][i] }));
+// Upcoming events and the notice board: school calendar events and circulars (communicationservice)
+const EVENT_TONE = { SPORTS: 'green', DEADLINE: 'grey' };
+const AUDIENCE = { ALL_PARENTS: 'All parents', ALL_STAKEHOLDERS: 'Everyone', ALL_TEACHERS: 'All teaching staff', ALL_STAFF: 'All staff', TRANSPORT_COMMUTERS: 'School bus families' };
+const audienceLabel = (a) => AUDIENCE[a] || String(a || 'Everyone').replace(/^GRADE_(\d+)$/, 'Class $1 families').replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
+const NOTICE_TAG = { EMERGENCY: 'Emergency', URGENT: 'Action required' };
+const atNoon = (iso) => new Date(`${iso}T12:00:00`);
+const monthOf = (iso) => new Intl.DateTimeFormat(getRegional().language, { month: 'short' }).format(atNoon(iso)).toUpperCase();
+const dayOf = (iso) => String(Number(iso.slice(8, 10)));
+const eventLine = (e) => {
+  const multi = e.endDate && e.endDate !== e.startDate;
+  const when = multi ? `${formatDate(e.startDate, { year: false })} – ${formatDate(e.endDate, { year: false })}`
+    : formatDate(e.startDate, { year: false, weekday: 'short' }).split(',')[0];
+  const time = e.startTime ? (e.endTime ? `${e.startTime}–${e.endTime}` : `${e.startTime} deadline`) : 'All day';
+  return [when, time, e.venue].filter(Boolean).join(' · ');
+};
 
-/** Daily present % with the 95% target line. `points`: [{ label, value }] (live from useAttendanceWeek); the sample week without. */
-export function AttendanceChart({ points = SAMPLE, empty = 'No registers submitted yet this week.' }) {
+/** Daily present % with the 95% target line. `points`: [{ label, value }] (live from useAttendanceWeek); nothing without. */
+export function AttendanceChart({ points = [], empty = 'No registers submitted yet this week.' }) {
   const W = 675;
   if (!points.length) return <p className="xs muted" style={{ height: 133, display: 'grid', placeItems: 'center' }}>{empty}</p>;
   const values = points.map((p) => p.value);
@@ -85,14 +100,20 @@ export default function Overview() {
   // "Student attendance" and "Attendance trends": GET /api/v1/attendance/summary and /trend (studentservice)
   const att = useAttendanceWeek();
   const t = att.today;
+  // "Upcoming events": the next three school events still to happen; "Notice board": the latest active circulars
+  const calendar = useApi(() => listCalendarEvents(user.tenantId), [user.tenantId]);
+  const circulars = useApi(() => listBroadcasts(user.tenantId), [user.tenantId]);
+  const upcoming = (calendar.data || []).filter((e) => e.isPublished !== false && (e.endDate || e.startDate) >= todayIso())
+    .sort((a, b) => `${a.startDate}${a.startTime || ''}`.localeCompare(`${b.startDate}${b.startTime || ''}`)).slice(0, 3);
+  const notices = (circulars.data || []).filter((b) => !b.isArchived && b.status === 'ACTIVE')
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   // "Attendance trends" range: This week / Last week / Last 4 weeks
   const [rangeKey, setRangeKey] = useState('week');
   const r = att.live ? att.range(rangeKey) : null;
-  // "Term fees collected", "Fee collection" and "Overdue fee accounts": financeservice reports (academic year to date);
-  // a rupee sample for roles outside finance staff
+  // "Term fees collected", "Fee collection" and "Overdue fee accounts": financeservice reports (academic year to date), finance roles only
   const fees = useFeeOverview();
-  const fee = fees.live ? fees : { billed: 9600000, collected: 8460000, outstanding: 1140000, notYetDue: 760000, overdue: 380000, accounts: 38,
-    collectedPct: 88.1, notYetDuePct: 7.9, overduePct: 4.0 };
+  const fee = fees.live ? fees : null;
+  const feeState = fees.allowed ? (fees.error ? 'Could not load fee figures' : '') : 'Not available for your role';
   const pp = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)} pp vs last week`;
   const work = WORK.map((row) => (row[0] === 'Admission applications'
     ? [row[0], row[1], live ? apps.open.length : (apps.loading ? '…' : '—'), row[3], row[4], row[5], row[6], '/admissions']
@@ -101,24 +122,26 @@ export default function Overview() {
         canStaff && leaves.data && pendingLeave === 0 ? 'green' : 'amber',
         canStaff && leaves.data ? (pendingLeave ? 'Approval needed' : 'All clear') : 'Not available for your role', row[5], row[6], row[7]]
     : row[0] === 'Overdue fee accounts'
-      ? [row[0], `${moneyShort(fee.overdue)} overdue`, fees.allowed && !fees.live ? '…' : fee.accounts, row[3], row[4], row[5], row[6], row[7]]
+      ? [row[0], fee ? `${moneyShort(fee.overdue)} overdue` : 'Overdue balances', fee ? fee.accounts : (fees.allowed && !fees.error ? '…' : '—'), fee ? row[3] : '', fee ? row[4] : feeState, row[5], row[6], row[7]]
     : row[0] === 'Incomplete student records' && students.live
       ? [row[0], 'Guardian, emergency phone or blood group missing', students.incomplete.length, row[3], row[4], row[5], row[6], row[7]]
+    : row[0] === 'Incomplete student records'
+      ? [row[0], 'Guardian, emergency phone or blood group missing', students.canRead && !students.error ? '…' : '—', '', students.canRead && !students.error ? '' : 'Not available for your role', row[5], row[6], row[7]]
       : row));
   const metrics = [
     students.live
       ? ['Total students', formatNumber(students.current.length), `Across ${students.classCount} class sections`, `+${students.newThisYear.length} this year`, true, GraduationCap, '/students']
-      : ['Total students', '1,248', 'Across 44 classes', '+24 this term', true, GraduationCap, '/students'],
+      : ['Total students', students.canRead && !students.error ? '…' : '—', students.canRead && !students.error ? '' : 'Not available for your role', '', true, GraduationCap, students.canRead && '/students'],
     att.live
       ? ['Student attendance', t.presentRate === null ? '—' : `${Number(t.presentRate).toFixed(1)}%`, `${formatNumber(t.present)} of ${formatNumber(t.totalStudents - t.unmarked)} marked present`,
         att.change !== null ? pp(att.change) : `${t.amRegistersSubmitted} / ${t.registersExpected} registers in`, att.change === null || att.change >= 0, ClipboardCheck, '/attendance']
-      : ['Student attendance', att.allowed ? '…' : '95.2%', att.allowed ? '' : '1,188 of 1,248 present', att.allowed ? '' : '+0.5 pp vs last week', true, ClipboardCheck, att.allowed && '/attendance'],
+      : ['Student attendance', att.allowed && !att.error ? '…' : '—', att.allowed ? (att.error ? 'Could not load attendance' : '') : 'Not available for your role', '', true, ClipboardCheck, att.allowed && '/attendance'],
     canStaff && staff.data && staffToday.data
       ? ['Staff on campus', `${formatNumber(staffToday.data.presentCount)} / ${formatNumber(staffCount)}`,
         staffCount ? `${formatNumber(staffToday.data.attendancePercentage)}% punched in` : 'No staff records yet', '', false, Users, '/staff']
       : ['Staff on campus', canStaff && (staff.loading || staffToday.loading) ? '…' : '—', canStaff ? '' : 'Not available for your role', '', false, Users, canStaff && '/staff'],
-    fees.allowed && !fees.live
-      ? ['Fees collected', fees.error ? '—' : '…', fees.error ? 'Could not load fee figures' : '', '', true, Wallet]
+    !fee
+      ? ['Fees collected', fees.allowed && !fees.error ? '…' : '—', feeState, '', true, Wallet]
       : ['Fees collected', moneyShort(fee.collected), `${moneyShort(fee.outstanding)} outstanding`, `${fee.collectedPct.toFixed(1)}% of billing`, fee.collectedPct >= 85, Wallet, '/fees'],
   ];
   // "Export report": the figures and the attention list shown on this page, as CSV
@@ -143,31 +166,33 @@ export default function Overview() {
       <div className="cols ov">
         <Card>
           <div className="sh">
-            <div><h3>Attendance trends</h3><p>Student attendance · {r ? (r.period || r.label.toLowerCase()) : '12–16 October'}</p></div>
+            <div><h3>Attendance trends</h3><p>Student attendance{r ? ` · ${r.period || r.label.toLowerCase()}` : ''}</p></div>
             {r ? (
               <select className="select" aria-label="Attendance period" style={{ height: 27, fontSize: 11 }} value={rangeKey} onChange={(e) => setRangeKey(e.target.value)}>
                 {ATTENDANCE_RANGES.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
               </select>
-            ) : <span className="select" style={{ height: 27, fontSize: 11 }}>This week<ChevronDown size={13} /></span>}
+            ) : null}
           </div>
+          {!r ? <p className="xs muted" style={{ height: 133, display: 'grid', placeItems: 'center' }}>{att.allowed ? (att.error ? 'Could not load attendance.' : 'Loading attendance…') : 'Not available for your role.'}</p> : (<>
           <div className="sumline">
-            <b>{r ? (r.avg === null ? '—' : `${r.avg.toFixed(1)}%`) : '95.2%'}</b>
-            <span className="muted small">{rangeKey === 'month' && r ? 'average' : 'weekly average'}</span>
-            {r && r.change !== null && <span className="xs" style={{ color: r.change >= 0 ? 'var(--gr)' : 'var(--rd)' }}>{`${r.change >= 0 ? '+' : ''}${r.change.toFixed(1)} pp vs ${r.versus}`}</span>}
+            <b>{r.avg === null ? '—' : `${r.avg.toFixed(1)}%`}</b>
+            <span className="muted small">{rangeKey === 'month' ? 'average' : 'weekly average'}</span>
+            {r.change !== null && <span className="xs" style={{ color: r.change >= 0 ? 'var(--gr)' : 'var(--rd)' }}>{`${r.change >= 0 ? '+' : ''}${r.change.toFixed(1)} pp vs ${r.versus}`}</span>}
             <span className="xs muted" style={{ marginLeft: 'auto' }}>— — Target 95%</span>
           </div>
-          {r ? <AttendanceChart points={r.points} empty={`No registers submitted ${r.label.toLowerCase() === 'this week' ? 'yet this week' : `in ${r.label.toLowerCase()}`}.`} /> : <AttendanceChart />}
+          <AttendanceChart points={r.points} empty={`No registers submitted ${r.label.toLowerCase() === 'this week' ? 'yet this week' : `in ${r.label.toLowerCase()}`}.`} />
           <div className="legendrow">
             <span>TODAY</span>
-            <span className="i"><i style={{ background: 'var(--gr)' }} />{att.live ? formatNumber(t.present) : '1,188'} present</span>
-            <span className="i"><i style={{ background: 'var(--chart-am)' }} />{att.live ? t.excused : 42} excused</span>
-            <span className="i"><i style={{ background: 'var(--rd)' }} />{att.live ? t.unexcused : 18} unexcused</span>
+            <span className="i"><i style={{ background: 'var(--gr)' }} />{formatNumber(t.present)} present</span>
+            <span className="i"><i style={{ background: 'var(--chart-am)' }} />{t.excused} excused</span>
+            <span className="i"><i style={{ background: 'var(--rd)' }} />{t.unexcused} unexcused</span>
             <Link to="/attendance" className="link"><ArrowUpRight size={14} /></Link>
-          </div>
+          </div></>)}
         </Card>
 
         <Card style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <SectionHead title="Fee collection" sub={fees.live ? 'Academic year to date' : 'Academic year to date · sample'} link="View finance" to="/fees" />
+          <SectionHead title="Fee collection" sub="Academic year to date" link="View finance" to="/fees" />
+          {!fee ? <p className="xs muted" style={{ height: 133, display: 'grid', placeItems: 'center' }}>{fees.allowed && !fees.error ? 'Loading fee figures…' : (feeState || 'Not available for your role')}.</p> : (<>
           <div className="row" style={{ alignItems: 'flex-end' }}>
             <div>
               <div style={{ fontSize: 29, fontWeight: 600 }}>{money(fee.collected)}</div>
@@ -188,9 +213,9 @@ export default function Overview() {
             <div><small>Overdue · {fee.accounts} account{fee.accounts === 1 ? '' : 's'}</small><b style={{ color: 'var(--am)' }}>{money(fee.overdue)}</b></div>
           </div>
           <div className="legendrow" style={{ marginTop: 0 }}>
-            <span>{fees.live ? `${fees.receipts} receipts this academic year` : 'Last reminder sent 14 Oct'}</span>
+            <span>{`${fee.receipts} receipts this academic year`}</span>
             <Link to="/fees" className="link"><Send size={13} />Follow up overdue accounts</Link>
-          </div>
+          </div></>)}
         </Card>
       </div>
 
@@ -218,40 +243,43 @@ export default function Overview() {
 
         <Card style={{ display: 'flex', flexDirection: 'column', gap: 17 }}>
           <SectionHead title="Upcoming events" link="Calendar" to="/calendar" />
-          {[['19', '', 'Year 10 parent–teacher meetings', 'Mon · 15:30–18:00 · Main hall'],
-            ['21', 'green', 'Autumn sports day', 'Wed · 09:00–14:00 · Sports grounds'],
-            ['23', 'grey', 'Mid-term progress reports due', 'Fri · 16:00 deadline · All teaching staff']].map(([d, tone, t, s]) => (
-            <div className="event" key={d}>
-              <div className={`eventdate ${tone}`}><small>OCT</small><b>{d}</b></div>
-              <div><b className="t">{t}</b><span className="s">{s}</span></div>
-            </div>
-          ))}
+          {calendar.error ? <p className="xs muted">Events are not available for your role.</p>
+            : !calendar.data ? <p className="xs muted">Loading events…</p>
+              : !upcoming.length ? <p className="xs muted">No events are scheduled. Add one from the calendar.</p>
+                : upcoming.map((e) => (
+                  <div className="event" key={e.eventId}>
+                    <div className={`eventdate ${EVENT_TONE[e.eventType] || ''}`}><small>{monthOf(e.startDate)}</small><b>{dayOf(e.startDate)}</b></div>
+                    <div><b className="t">{e.title}</b><span className="s">{eventLine(e)}</span></div>
+                  </div>
+                ))}
         </Card>
       </div>
 
       <div>
         <div className="row" style={{ marginBottom: 12 }}>
-          <div className="row" style={{ gap: 8 }}><h3 style={{ fontSize: 15, fontWeight: 600 }}>Notice board</h3><Pill>2 active</Pill></div>
+          <div className="row" style={{ gap: 8 }}><h3 style={{ fontSize: 15, fontWeight: 600 }}>Notice board</h3>{circulars.data && <Pill>{notices.length} active</Pill>}</div>
           <Link to="/communications" className="link">View all notices →</Link>
         </div>
-        <div className="notices">
-          <Card className="notice-card">
-            <div className="sym"><CalendarDays size={16} /></div>
-            <div className="nc">
-              <div className="nh">Half-term break: 26–30 October<span>School update</span></div>
-              <p>School reopens Monday, 2 November. Please share with families.</p>
-              <small>School office · All staff & parents · 15 Oct</small>
-            </div>
-          </Card>
-          <Card className="notice-card">
-            <div className="sym"><ShieldCheck size={16} /></div>
-            <div className="nc">
-              <div className="nh">Safeguarding refresher training<span>Action required</span></div>
-              <p>All staff to complete the online module by Friday, 23 October.</p>
-              <small>Principal’s office · All staff · 14 Oct</small>
-            </div>
-          </Card>
-        </div>
+        {circulars.error ? <p className="xs muted">Notices are not available for your role.</p>
+          : !circulars.data ? <p className="xs muted">Loading notices…</p>
+            : !notices.length ? <p className="xs muted">No active notices. Send one from Communications.</p>
+              : (
+                <div className="notices">
+                  {notices.slice(0, 2).map((b) => {
+                    const Icon = b.priority === 'NORMAL' ? CalendarDays : ShieldCheck;
+                    return (
+                      <Card className="notice-card" key={b.broadcastId}>
+                        <div className="sym"><Icon size={16} /></div>
+                        <div className="nc">
+                          <div className="nh">{b.title}<span>{NOTICE_TAG[b.priority] || 'School update'}</span></div>
+                          <p>{b.messageBody}</p>
+                          <small>{b.senderName} · {audienceLabel(b.targetAudience)} · {formatDate(b.createdAt, { year: false })}</small>
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
       </div>
       <Footer />
     </>

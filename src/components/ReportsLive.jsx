@@ -154,20 +154,25 @@ export default function ReportsLive() {
   );
 }
 
-/* Weekly attendance report: GET /api/v1/attendance/summary and /trend (studentservice); the sample week for other roles */
+/* Weekly attendance report: GET /api/v1/attendance/summary and /trend (studentservice); other roles are told it is not available */
 function WeeklyAttendance() {
   const att = useAttendanceWeek();
   const t = att.live ? att.today : null;
   const share = (n) => (t && t.totalStudents ? `${((n / t.totalStudents) * 100).toFixed(1)}%` : '—');
-  const week = att.live
-    ? { period: att.period || 'This week', avg: att.weekAvg === null ? '—' : `${att.weekAvg.toFixed(1)}%`,
-      change: att.change === null ? '—' : `${att.change >= 0 ? '+' : ''}${att.change.toFixed(1)} pp`, up: att.change === null || att.change >= 0,
-      onTarget: att.weekAvg !== null && att.weekAvg >= 95,
-      rows: [['Present', formatNumber(t.present), share(t.present)], ['Excused', String(t.excused), share(t.excused)], ['Unexcused', String(t.unexcused), share(t.unexcused)],
-        ['Not yet marked', String(t.unmarked), share(t.unmarked)]],
-      updated: formatDateTime(new Date()) }
-    : { period: '12–16 October 2026', avg: '95.2%', change: '+0.5 pp', up: true, onTarget: true,
-      rows: [['Present', '1,188', '95.2%'], ['Excused', '42', '3.4%'], ['Unexcused', '18', '1.4%']], updated: '16 Oct 2026 · 09:42' };
+  if (!att.live) {
+    return (
+      <Card>
+        <SectionHead title="Weekly attendance report" sub="Preview" link="Open full report →" to="/attendance" />
+        <p className="xs muted" style={{ margin: '18px 0 4px' }}>{att.allowed ? (att.error ? 'Could not load attendance.' : 'Loading attendance…') : 'Not available for your role.'}</p>
+      </Card>
+    );
+  }
+  const week = { period: att.period || 'This week', avg: att.weekAvg === null ? '—' : `${att.weekAvg.toFixed(1)}%`,
+    change: att.change === null ? '—' : `${att.change >= 0 ? '+' : ''}${att.change.toFixed(1)} pp`, up: att.change === null || att.change >= 0,
+    onTarget: att.weekAvg !== null && att.weekAvg >= 95,
+    rows: [['Present', formatNumber(t.present), share(t.present)], ['Excused', String(t.excused), share(t.excused)], ['Unexcused', String(t.unexcused), share(t.unexcused)],
+      ['Not yet marked', String(t.unmarked), share(t.unmarked)]],
+    updated: formatDateTime(new Date()) };
   return (
     <Card>
       <SectionHead title="Weekly attendance report" sub={`Preview · ${week.period}`} link="Open full report →" to="/attendance" />
@@ -176,7 +181,7 @@ function WeeklyAttendance() {
         <div><div style={{ fontSize: 24, fontWeight: 600, color: week.up ? 'var(--gr)' : 'var(--rd)' }}>{week.change}</div><span className="small muted">Compared with last week</span></div>
         <Pill tone={week.onTarget ? 'green' : 'amber'}>{week.onTarget ? 'Above 95% target' : 'Below 95% target'}</Pill>
       </div>
-      {att.live ? <AttendanceChart points={att.points} /> : <AttendanceChart />}
+      <AttendanceChart points={att.points} />
       <div style={{ marginTop: 18 }}>
         <DataTable boxed cols={[{ label: 'Today’s status', key: 0 }, { label: 'Students', key: 1 }, { label: 'Proportion', key: 2 }]} rows={week.rows} />
       </div>
@@ -184,7 +189,7 @@ function WeeklyAttendance() {
         {/* PDF: the browser's print dialog ("Save as PDF"); CSV: the preview figures */}
         <button className="btn" onClick={() => window.print()}><Download size={14} />Export PDF</button>
         <button className="btn" onClick={() => downloadCsv('weekly-attendance', ['Status', 'Students', 'Proportion'],
-          [...week.rows.map(([a, b, c]) => [a, b.replace(/,/g, ''), c]), ...(att.live ? att.week.map((d) => [`Present ${d.date}`, String(d.present), `${Number(d.presentRate || 0).toFixed(1)}%`]) : []),
+          [...week.rows.map(([a, b, c]) => [a, b.replace(/,/g, ''), c]), ...att.week.map((d) => [`Present ${d.date}`, String(d.present), `${Number(d.presentRate || 0).toFixed(1)}%`]),
             ['Weekly average', '', week.avg], ['Change vs last week', '', week.change]])}>
           <Download size={14} />CSV</button>
       </div>

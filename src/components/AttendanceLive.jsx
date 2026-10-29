@@ -3,7 +3,7 @@ import { Check, Download, LoaderCircle, Phone } from 'lucide-react';
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as studentApi from '../api/studentService.js';
-import { PageHeader, Metrics, scrollToId, Card, DataTable, Tabs, SectionHead, Pill, Person, KV, Footer, downloadCsv, todayIso, useTabParam, schoolDay } from './ui.jsx';
+import { PageHeader, Metrics, scrollToId, Card, DataTable, Tabs, SectionHead, Pill, Person, KV, Footer, downloadCsv, todayIso, useTabParam, schoolDay, useSchoolCalendar } from './ui.jsx';
 import { AttendanceOutlookModal, canOpenAttendanceOutlook, followUpBacklog } from './AttendanceInsights.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
@@ -117,6 +117,7 @@ export function AttendanceLive() {
   const canOutlook = canOpenAttendanceOutlook(hasRole);
   const backlog = followUpBacklog(followUps.data);
   // A weekend or break with no marks: nothing was due, so show "school closed" rather than zeros
+  useSchoolCalendar();
   const dayInfo = schoolDay(date);
   const closedDay = !!s && !dayInfo.open && s.unmarked === s.totalStudents;
   const refresh = () => { register.reload(); summary.reload(); followUps.reload(); };

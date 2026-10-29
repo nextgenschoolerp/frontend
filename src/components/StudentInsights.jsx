@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { SectionHead, Pill, Tabs, avatarTone } from './ui.jsx';
+import { SectionHead, Pill, Tabs, avatarTone, PanelSkeleton } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
@@ -97,6 +97,8 @@ export function AtRiskCard({ list }) {
   };
 
   if (!list.live) return null;
+  // Laid out at once; the flags fill in when attendance, fees and results have loaded
+  if (loading) return <PanelSkeleton title="Students needing attention" sections={[{ chips: 4 }, { cols: ['Student', 'Class', 'Flags'], rows: 6 }]} />;
   return (
     <div className="pulse-panel">
       <SectionHead title="Students needing attention"
@@ -159,6 +161,7 @@ export function CapacityCard({ list }) {
   const tone = (p) => (p >= 100 ? 'var(--rd, #c53030)' : p >= 90 ? 'var(--am, #b7791f)' : 'var(--pr)');
 
   if (!list.live) return null;
+  if (!sections.data && !grades.error && !sections.error) return <PanelSkeleton title="Capacity by class" sections={[{ bars: 10 }]} />;
   return (
     <div className="pulse-panel">
       <SectionHead title="Capacity by class"
@@ -230,7 +233,10 @@ export function MovementCard({ list }) {
 
 const PULSE_TABS = ['Needs attention', 'Capacity by class', 'Movement'];
 
-/** The leader views in one pop-up; each tab reads its data from the services when it opens. */
+/**
+ * The leader views in one pop-up. Every tab is mounted at once (hidden until chosen), so all of them load together and
+ * show their layout with placeholders until the data arrives; switching tabs never reloads.
+ */
 export function SchoolPulseModal({ list, onClose }) {
   const [tab, setTab] = useState(0);
   return (
@@ -238,7 +244,9 @@ export function SchoolPulseModal({ list, onClose }) {
       footer={<button className="btn primary" onClick={onClose}>Done</button>}>
       <Tabs items={PULSE_TABS} value={tab} onChange={setTab} />
       <div style={{ marginTop: 16 }}>
-        {tab === 0 ? <AtRiskCard list={list} /> : tab === 1 ? <CapacityCard list={list} /> : <MovementCard list={list} />}
+        <div hidden={tab !== 0}><AtRiskCard list={list} /></div>
+        <div hidden={tab !== 1}><CapacityCard list={list} /></div>
+        <div hidden={tab !== 2}><MovementCard list={list} /></div>
       </div>
     </Modal>
   );

@@ -541,8 +541,10 @@ body.noscroll{overflow:hidden}
 .uploadrow{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:14px}
 .uploadrow input[type=file]{font-size:11px;color:var(--mu);max-width:100%;height:36px}
 /* The native "Choose File" button matches the app's .btn buttons */
-.uploadrow input[type=file]::file-selector-button{height:36px;margin-right:10px;padding:0 12px;border:1px solid var(--bd);border-radius:8px;background:var(--card);color:var(--tx);font:inherit;font-size:12px;font-weight:500;cursor:pointer}
-.uploadrow input[type=file]::file-selector-button:hover{border-color:var(--pr);color:var(--pr)}
+input[type=file]{font-size:12px;color:var(--mu);max-width:100%}
+input[type=file]::file-selector-button{height:36px;margin-right:10px;padding:0 12px;border:1px solid var(--bd);border-radius:8px;background:var(--card);color:var(--tx);font:inherit;font-size:12px;font-weight:500;cursor:pointer}
+input[type=file]:not(:disabled)::file-selector-button:hover{background:var(--sb)}
+input[type=file]:disabled::file-selector-button{opacity:.55;cursor:not-allowed}
 /* Action rows under the documents and certificates: same height, icon size and spacing as .btn elsewhere */
 .uploadrow .btn,.pills .btn{height:36px;gap:8px}
 .uploadrow .btn svg,.pills .btn svg{width:15px;height:15px;flex:none}
@@ -793,3 +795,36 @@ body.noscroll{overflow:hidden}
 .splan-row input{height:34px;padding:0 10px;border:1px solid var(--bd);border-radius:8px;background:var(--card);color:var(--tx);font:inherit;font-size:12px;min-width:0}
 .splan-row input:disabled{opacity:.6}
 @media (max-width:640px){.splan-head{display:none}.splan-row{grid-template-columns:24px 1fr 1fr}.splan-row input:nth-of-type(1){grid-column:2/-1}}
+
+/* Settings → Data import: the three steps, row problems and the import choice */
+.importsteps{list-style:none;margin:16px 0 0;padding:0;display:grid;gap:10px}
+.importsteps li{border:1px solid var(--bd);border-radius:10px;padding:12px 14px;display:grid;gap:6px}
+.importsteps li.on{border-color:var(--pr);box-shadow:0 0 0 1px var(--pr) inset}
+.importsteps li.done b::after{content:" ✓";color:var(--gr, #2f855a)}
+.importsteps b{font-size:13px;font-weight:600;color:var(--tx)}
+.importsteps p{margin:0;font-size:11px;color:var(--mu)}
+.importsteps input[type=file]{font-size:12px;max-width:100%}
+.importerrs{margin:0;padding-left:16px;font-size:11px;color:var(--rd, #c53030)}
+.importerrs b{font-weight:600}
+.importgo{margin-top:14px;border-top:1px solid var(--bd);padding-top:12px;display:grid;gap:8px;font-size:12px}
+.importgo label{display:flex;gap:8px;align-items:center}
+
+/* Inline placeholder for a single loading value (Skel), sized like the text it stands in for */
+.skel.inline{display:inline-block;vertical-align:middle;max-width:100%}
+.movegrid dd .skel.inline{height:22px}
+
+/* Settings → Classes, sections & houses: one chip per section (letter, students/seats, class teacher) */
+.sectionchips{display:flex;flex-wrap:wrap;gap:6px}
+.sectionchip{display:grid;grid-template-columns:auto auto;gap:0 8px;align-items:baseline;text-align:left;border:1px solid var(--bd);border-radius:8px;padding:5px 9px;background:var(--sf, transparent);font:inherit;color:var(--tx);min-width:96px}
+button.sectionchip{cursor:pointer}
+button.sectionchip:hover{border-color:var(--pr)}
+.sectionchip b{font-size:13px;font-weight:600}
+.sectionchip span{font-size:11px;color:var(--mu);font-variant-numeric:tabular-nums}
+.sectionchip small{grid-column:1/-1;font-size:10px;color:var(--mu);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}
+.sectionchip.full{border-color:var(--am, #b7791f)}
+.sectionchip.full span{color:var(--am, #b7791f);font-weight:600}
+.houseswatch{display:inline-block;width:14px;height:14px;border-radius:4px;border:1px solid var(--bd);flex:none}
+
+/* Delete icon links in the Classes, sections & houses tables */
+.link.danger{color:var(--rd)}
+.link.danger:hover{opacity:.8}

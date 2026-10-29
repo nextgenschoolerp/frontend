@@ -1,0 +1,12 @@
+First name *,Last name *,Date of birth *,Gender *,Class *,Section *,Roll number,House,Admission number,Admission date,Nationality,Blood group,Medical conditions,Allergies,Residential address,Guardian name *,Guardian relationship *,Guardian mobile *,Guardian email,Emergency phone *
+Advait,Khanna,12/05/2016,Male,Class 5,A,21,Tagore,ADM-2026-0201,01/04/2026,Indian,B+,None,,"14 Lajpat Nagar, New Delhi 110024",Rohit Khanna,Father,9810020101,rohit.khanna@example.com,9810020102
+Kiara,Bhatia,03/09/2016,Female,Class 5,A,22,Raman,ADM-2026-0202,01/04/2026,Indian,O+,None,Dust,"7 Greater Kailash II, New Delhi 110048",Pooja Bhatia,Mother,9810020103,pooja.bhatia@example.com,9810020104
+Vihaan,Malhotra,21/01/2015,Male,Class 6,B,31,Shivaji,ADM-2026-0203,01/04/2026,Indian,A+,Mild asthma,,"22 Hauz Khas, New Delhi 110016",Sanjay Malhotra,Father,9810020105,,9810020106
+Anaya,Chopra,30/07/2015,Female,Class 6,B,32,Ashoka,ADM-2026-0204,01/04/2026,Indian,AB+,None,Peanuts,"5 Vasant Vihar, New Delhi 110057",Neha Chopra,Mother,+91 98100 20107,neha.chopra@example.com,9810020108
+Reyansh,Saxena,11/11/2014,Male,Class 7,A,26,Tagore,ADM-2026-0205,01/04/2026,Indian,B-,None,,"9 Defence Colony, New Delhi 110024",Amit Saxena,Father,9810020109,amit.saxena@example.com,9810020110
+Myra,Joshi,25/02/2014,Female,Class 7,A,27,Raman,ADM-2026-0206,01/04/2026,Indian,O-,None,,"31 Saket, New Delhi 110017",Kavita Joshi,Mother,9810020111,kavita.joshi@example.com,9810020112
+Arnav,Gupta,08/06/2013,Male,Class 8,B,24,Shivaji,ADM-2026-0207,01/04/2026,Indian,A-,None,,"18 Malviya Nagar, New Delhi 110017",Vikram Gupta,Father,9810020113,,9810020114
+Sara,Mehra,17/12/2013,Female,Class 8,B,25,Ashoka,ADM-2026-0208,01/04/2026,Indian,B+,None,Shellfish,"4 Green Park, New Delhi 110016",Ritu Mehra,Mother,9810020115,ritu.mehra@example.com,9810020116
+Dhruv,Kapoor,15/04/2016,Male,Class 5,A,23,Tagore,ADM-2026-0209,01/04/2026,Indian,O+,None,,"2 Panchsheel Park, New Delhi 110017",Manish Kapoor,Father,,manish.kapoor@example.com,9810020118
+Ira,Sen,31/02/2015,Female,Class 6,B,33,Raman,ADM-2026-0210,01/04/2026,Indian,A+,None,,"11 Chittaranjan Park, New Delhi 110019",Arup Sen,Father,9810020119,arup.sen@example.com,9810020120
+Kiara,Bhatia,03/09/2016,Female,Class 5,A,24,Raman,ADM-2026-0211,01/04/2026,Indian,O+,None,,"7 Greater Kailash II, New Delhi 110048",Pooja Bhatia,Mother,9810020103,pooja.bhatia@example.com,9810020104

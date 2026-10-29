@@ -136,13 +136,6 @@ const YEAR_GROUPS = Array.from({ length: 13 }, (_, i) => `Year ${i + 4}`);
 export const CLASSES = ['Nursery', 'LKG', 'UKG', ...Array.from({ length: 12 }, (_, i) => `Class ${i + 1}`)];
 const SECTIONS = ['A', 'B', 'C', 'D', 'E'];
 const HOUSES = ['Tagore', 'Raman', 'Shivaji', 'Ashoka'];
-// Form tutors of the known class sections (static until the academic service exists); others show "To be assigned"
-const CLASS_TUTORS = {
-  'Class 6-A': 'Priya Nair',
-  'Class 7-A': 'Priya Nair', 'Class 7-B': 'Thomas Reid', 'Class 8-A': 'Hannah Lewis', 'Class 8-B': 'Omar Siddiqui',
-  'Class 9-A': 'Charlotte Evans', 'Class 9-B': 'James Carter', 'Class 10-A': 'Eleanor Hughes', 'Class 10-B': 'Aisha Rahman',
-  'Class 11-A': 'Daniel Brooks', 'Class 11-B': 'Grace Chen',
-};
 const GENDER_LABEL = { FEMALE: 'Female', MALE: 'Male', OTHER: 'Prefer not to say' };
 
 // Record checklist: a section is done when all of its fields are filled (names are the Field ids)
@@ -154,15 +147,6 @@ const CHECKLIST = [
 ];
 const REQUIRED_DOCS = ['BIRTH_CERTIFICATE', 'TRANSFER_CERTIFICATE'];
 
-// Values of the static sample record (/students/st-2024-106/edit)
-const SAMPLE = {
-  firstName: 'Amara', lastName: 'Thompson', preferredName: 'Amara', dob: '2011-05-12', admissionDate: '2024-09-02', gender: 'Female',
-  admissionNumber: 'OA-2024-106', uid: 'ST-2024-106', nationality: 'British', klass: 'Class 10', section: 'A', house: 'Tagore',
-  yearGroup: 'Year 10', guardian: 'Sarah Thompson', email: 's.thompson@example.com', emergencyContact: 'David Thompson', relationship: 'Mother',
-  secondary: 'David Thompson · Father', emergencyPhone: '+44 7700 900 143', mobile: '+44 7700 900 142', secondaryPhone: '+44 7700 900 143',
-  collection: 'Both guardians authorised', address: '24 Willow Lane, Oxford, OX2 7AB', blood: 'O+', conditions: 'Mild asthma',
-  allergies: 'No known allergies', medication: 'Salbutamol inhaler held at school office.', gp: 'Willow Medical Centre · 01865 555 210',
-};
 /** Form values of a studentservice record (GET /api/v1/students/{id}). */
 const valuesOf = (s) => {
   const [g1, g2] = s.guardians || [];
@@ -194,6 +178,14 @@ export function StudentForm({ mode }) {
   const live = edit && isStudentId(id);
   // Live record: GET /api/v1/students/{id}; the form renders once it has loaded so the fields start with its values
   const record = useStudentRecord(id, live);
+  if (edit && !live) {
+    return (
+      <>
+        <PageHeader context={false} title={<BackTitle to="/students" label="Back to students">Edit student</BackTitle>} desc="Update the student’s information, contacts and supporting documents." />
+        <Card><ApiNote>This student could not be found. Open a student from the directory.</ApiNote></Card>
+      </>
+    );
+  }
   if (live && (record.loading || !record.data)) {
     return (
       <>
@@ -212,7 +204,7 @@ function StudentFormBody({ mode, student: loaded }) {
   const [student, setStudent] = useState(loaded);
   const nav = useNavigate();
   const { id } = useParams();
-  const rec = student ? valuesOf(student) : edit ? SAMPLE : {};
+  const rec = student ? valuesOf(student) : {};
   const v = (k) => rec[k] ?? '';
   const back = edit ? `/students/${id}` : '/students';
   const { user, branchId, hasRole } = useAuth();
@@ -240,7 +232,8 @@ function StudentFormBody({ mode, student: loaded }) {
   const classOptions = gradeList ? gradeList.map((g) => g.gradeName) : CLASSES;
   const sectionOptions = !gradeList ? SECTIONS
     : (gradeSections.data || []).map((s) => s.sectionName).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-  const tutor =CLASS_TUTORS[`${klass}-${section}`];
+  // The class teacher of the chosen section (set in studentservice from hrservice staff)
+  const tutor = (gradeSections.data || []).find((x) => x.sectionName === section)?.classTeacherName;
   const [docs, setDocs] = useState([]);
   // Re-evaluate the checklist whenever any field changes (change/input events bubble to the form)
   const [, setTick] = useState(0);
@@ -410,7 +403,7 @@ function StudentFormBody({ mode, student: loaded }) {
     else if (canCapture) saveApplication(true);
     else enrol();
   };
-  const name = student ? fullName(student) : 'Amara Thompson';
+  const name = student ? fullName(student) : '';
 
   return (
     <form ref={formRef} onSubmit={submit} onChange={touch} noValidate style={{ display: 'contents' }}>
@@ -423,12 +416,12 @@ function StudentFormBody({ mode, student: loaded }) {
           <Card>
             <div className="cardhead"><h3>Student & admission information</h3><p>Required fields are marked with an asterisk.</p></div>
             <div className="photo">
-              {student ? <StudentAvatar student={student} /> : <div className="bigavatar">{edit ? name.split(' ').map((w) => w[0]).join('').slice(0, 2) : '+'}</div>}
+              {student ? <StudentAvatar student={student} /> : <div className="bigavatar">+</div>}
               {student ? <PhotoButton student={student} onUploaded={setStudent} /> : (
                 <div>
-                  <button type="button" className="btn" disabled title={edit ? 'Sample record: open a student from the directory' : 'Enrol the student first, then add the photo from Edit student'}>
-                    <Upload size={15} />{edit ? 'Change photo' : 'Upload student photo'}</button>
-                  <small>{edit ? 'Sample record · photos are stored for enrolled students' : 'Added after enrolment · JPG or PNG · Maximum 5 MB'}</small>
+                  <button type="button" className="btn" disabled title="Enrol the student first, then add the photo from Edit student">
+                    <Upload size={15} />Upload student photo</button>
+                  <small>Added after enrolment · JPG or PNG · Maximum 5 MB</small>
                 </div>
               )}
               {edit && (student ? statusPill(student.studentStatus) : <Pill tone="green">Active student</Pill>)}
@@ -602,9 +595,13 @@ export function StudentProfile() {
   const { id } = useParams();
   const live = isStudentId(id);
   const { hasRole } = useAuth();
-  // Live record: GET /api/v1/students/{id} (studentservice). Other ids show the static sample profile.
+  // Live record: GET /api/v1/students/{id} (studentservice)
   const record = useStudentRecord(id, live);
   const s = live ? record.data : null;
+  // Class teacher of the student's section, shown beside the name (class lists: studentservice sections)
+  const canClasses = hasRole(...ROLES.classes);
+  const sections = useApi(() => studentApi.listSections(s.gradeId), [s?.gradeId], !!s?.gradeId && canClasses);
+  const classTeacher = (sections.data || []).find((x) => x.sectionId === s?.sectionId)?.classTeacherName;
   const [modal, setModal] = useState(null);
   // Fee status: GET /api/v1/finance/students/{id}/fee-account (financeservice, Module 04)
   const fees = useFeeAccount(live ? id : null);
@@ -628,154 +625,98 @@ export function StudentProfile() {
       ]}
     />
   );
-  if (live && !s) {
+  if (!live) {
+    return <><PageHeader context={false} title={<BackTitle to="/students" label="Back to students">Student profile</BackTitle>} desc="A complete view of student progress, wellbeing and school records." /><Card><ApiNote>This student could not be found. Open a student from the directory.</ApiNote></Card></>;
+  }
+  if (!s) {
     return <>{header()}<Card>{!record.canView ? <ApiNote>Student records are not available for your role.</ApiNote> : record.error ? <ApiErr error={record.error} /> : <Loading />}</Card></>;
   }
 
-  const academicCard = s ? <AcademicProgressCard student={s} trend={trend} detailed={tab === 'academics'} /> : (
-    <Card>
-      <SectionHead title="Academic progress" sub="Term 1 · Latest assessment results" link="View academics →" to="/academics" />
-      <>      <div style={{ margin: '18px 0 14px' }}>
-        <DataTable boxed cols={[
-          { label: 'Subject', key: 'a' }, { label: 'Teacher', key: 'b' }, { label: 'Grade', key: 'c', className: 'num' },
-          { label: 'Progress', render: (r) => <span style={{ color: r.d === 'Above expected' ? 'var(--gr)' : 'var(--pr)', fontWeight: 500 }}>{r.d}</span> },
-        ]} rows={[
-          { a: 'Mathematics', b: 'Eleanor Hughes', c: '8', d: 'Above expected' },
-          { a: 'English language', b: 'James Carter', c: '7', d: 'On track' },
-          { a: 'Combined science', b: 'Aisha Rahman', c: '8–8', d: 'Above expected' },
-          { a: 'History', b: 'Charlotte Evans', c: '7', d: 'On track' },
-        ]} />
-      </div>
-      <p className="xs muted">Mid-term progress reports due Friday, 23 October at 16:00.</p></>
-    </Card>
-  );
+  const academicCard = <AcademicProgressCard student={s} trend={trend} detailed={tab === 'academics'} />;
   // Attendance: GET /api/v1/attendance/students/{id} (studentservice AM / PM registers)
-  const attendanceCard = s ? <StudentAttendanceCard student={s} detailed={tab === 'attendance'} /> : (
-    <Card>
-      <SectionHead title="Attendance" sub="Term 1 to date" link="Register →" to="/attendance" />
-      <>
-      <div className="bignum" style={{ marginTop: 18 }}>97.8%</div>
-      <div className="bar" style={{ margin: '14px 0 12px' }}><i style={{ width: '85%' }} /></div>
-      <p className="xs muted" style={{ marginBottom: 14 }}>44 present · 1 excused · 0 unexcused</p>
-      <Pill tone="green">Present today</Pill></>
-    </Card>
-  );
-  const feesCard = s ? <FeeStatusCard student={s} fees={fees} onOpenTab={tab === 'fees' ? undefined : () => openTab('fees')} /> : (
-    <Card>
-      <SectionHead title="Fee status" sub="Term 1 · 2026–2027" link="View account →" to="/fees" />
-      <><div className="bignum" style={{ marginTop: 18 }}>{formatMoney(0, { decimals: 2 })}</div>
-      <p className="xs muted" style={{ margin: '14px 0 12px' }}>Outstanding balance</p>
-      <Pill tone="green">Paid in full</Pill>
-      <p className="xs muted" style={{ marginTop: 12 }}>{formatMoney(2400)} received · {formatDate('2026-09-05')}</p></>
-    </Card>
-  );
+  const attendanceCard = <StudentAttendanceCard student={s} detailed={tab === 'attendance'} />;
+  const feesCard = <FeeStatusCard student={s} fees={fees} onOpenTab={tab === 'fees' ? undefined : () => openTab('fees')} />;
   // Counts on the tab labels, so staff see what needs attention before they open a tab
   const overdueCount = (fees.data?.ledger || []).filter((l) => Number(l.outstanding) > 0 && l.dueDate && l.dueDate < new Date().toISOString().slice(0, 10)).length;
-  const tabBadge = s ? { guardians: s.guardians?.length || '', fees: overdueCount ? `${overdueCount} overdue` : '' } : {};
+  const tabBadge = { guardians: s.guardians?.length || '', fees: overdueCount ? `${overdueCount} overdue` : '' };
   const guardiansCard = (
     <Card>
       <SectionHead title="Guardians & emergency contacts" />
       <div className="contacts" style={{ marginTop: 18 }}>
-        {s ? (s.guardians?.length ? s.guardians.map((g) => (
+        {s.guardians?.length ? s.guardians.map((g) => (
           <div key={g.guardianId}><h4>{g.fullName}</h4>
             <Pill tone={g.primaryContact ? 'purple' : ''}>{g.relationship}{g.primaryContact ? ' · Primary contact' : ' · Emergency contact'}</Pill>
             <p>{g.mobileNumber && <a href={`tel:${g.mobileNumber}`}>{g.mobileNumber}</a>}</p>{g.email && <a className="link" style={{ display: 'block' }} href={`mailto:${g.email}`}>{g.email}</a>}</div>
-        )) : <ApiNote>No guardian on record. Edit the student to add one.</ApiNote>) : (<>
-          <div><h4>Sarah Thompson</h4><Pill tone="purple">Mother · Primary contact</Pill><p>+44 7700 900 142</p><a className="link" style={{ display: 'block' }} href="mailto:s.thompson@example.com">s.thompson@example.com</a></div>
-          <div><h4>David Thompson</h4><Pill>Father · Emergency contact</Pill><p>+44 7700 900 143</p><p>Authorised for collection</p></div></>)}
+        )) : <ApiNote>No guardian on record. Edit the student to add one.</ApiNote>}
       </div>
-      {s?.emergencyContactPhone && <p className="xs muted" style={{ marginTop: 12 }}>Emergency phone on the record: {s.emergencyContactPhone}</p>}
-      {s?.parentAccountId && <p className="xs muted" style={{ marginTop: 4 }}>Linked to a parent account shared with siblings.</p>}
+      {s.emergencyContactPhone && <p className="xs muted" style={{ marginTop: 12 }}>Emergency phone on the record: {s.emergencyContactPhone}</p>}
+      {s.parentAccountId && <p className="xs muted" style={{ marginTop: 4 }}>Linked to a parent account shared with siblings.</p>}
     </Card>
   );
   const personalCard = (
     <Card>
       <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Personal information</h3>
-      <Facts rows={s
-        ? [['Date of birth', `${fmtDate(s.dateOfBirth)} · Age ${age(s.dateOfBirth)}`], ['Gender', GENDER_LABEL[s.gender] || s.gender],
-          ['Student UID', s.studentUid], ['Roll number', s.rollNumber ?? '—'], ['Campus', s.branchId]]
-        : [['Date of birth', '12 May 2011 · Age 15'], ['Gender', 'Female'], ['Nationality', 'British'], ['Admission number', 'OA-2024-106'], ['Address', '24 Willow Lane, Oxford, OX2 7AB']]} />
+      <Facts rows={[['Date of birth', `${fmtDate(s.dateOfBirth)} · Age ${age(s.dateOfBirth)}`], ['Gender', GENDER_LABEL[s.gender] || s.gender],
+        ['Student UID', s.studentUid], ['Roll number', s.rollNumber ?? '—'], ['Campus', s.branchId]]} />
     </Card>
   );
   const medicalCard = (
     <Card>
       <div className="cardhead"><h3>Medical & wellbeing</h3><p>Restricted · Authorised staff only</p></div>
-      {s ? (<>
-        {/* The header already shows the "Medical alert" pill; this card gives the detail */}
-        {hasAlert(s)
-          ? <div style={{ margin: '14px 0' }}>
-              {!isNoneText(s.medicalAlerts) && <p className="body-s">Conditions: {s.medicalAlerts}</p>}
-              {!isNoneText(s.allergies) && <p className="body-s">Allergies: {s.allergies}</p>}
-            </div>
-          : <div style={{ margin: '14px 0' }}><Pill tone="green">No medical alerts</Pill></div>}
-        <KV rows={[['Blood group', s.bloodGroup || 'Not recorded'], ['Emergency phone', s.emergencyContactPhone || 'Not recorded']]} />
-        {hasRole(...ROLES.medical) && <div style={{ marginTop: 14 }}><button className="btn" onClick={() => setModal('medical')}><HeartPulse size={14} />Update medical information</button></div>}
-      </>) : (<>
-        <div style={{ margin: '14px 0' }}><Pill tone="amber">Mild asthma</Pill></div>
-        <p className="body-s">Salbutamol inhaler held at the school office. No known allergies. Care plan reviewed 01 September 2026.</p>
-        <KV rows={[['GP surgery', 'Willow Medical Centre']]} />
-      </>)}
+      {/* The header already shows the "Medical alert" pill; this card gives the detail */}
+      {hasAlert(s)
+        ? <div style={{ margin: '14px 0' }}>
+            {!isNoneText(s.medicalAlerts) && <p className="body-s">Conditions: {s.medicalAlerts}</p>}
+            {!isNoneText(s.allergies) && <p className="body-s">Allergies: {s.allergies}</p>}
+          </div>
+        : <div style={{ margin: '14px 0' }}><Pill tone="green">No medical alerts</Pill></div>}
+      <KV rows={[['Blood group', s.bloodGroup || 'Not recorded'], ['Emergency phone', s.emergencyContactPhone || 'Not recorded']]} />
+      {hasRole(...ROLES.medical) && <div style={{ marginTop: 14 }}><button className="btn" onClick={() => setModal('medical')}><HeartPulse size={14} />Update medical information</button></div>}
     </Card>
   );
-  const documentsCard = s ? <CertificatesCard student={s} onStudentChanged={record.reload} /> : (
-    <Card>
-      <SectionHead title="Documents" link={tab === 'documents' ? undefined : 'View all →'} onClick={() => openTab('documents')} />
-      <div style={{ marginTop: 14 }}>
-        <Docs items={[['Birth certificate.pdf', '284 KB · 02 Sep 2024 · Verified'], ['Proof of address.pdf', '196 KB · 02 Sep 2024 · Verified'], ['Medical care plan.pdf', '312 KB · 01 Sep 2026 · Verified']]} />
-      </div>
-    </Card>
-  );
-  const conductCard = s ? <ConductCard student={s} /> : (
-    <Card><SectionHead title="Conduct & counseling" sub="Disciplinary incidents and counseling notes · Restricted" />
-      <div style={{ marginTop: 14 }}><ApiNote>This is a sample record. Open a student from the directory to see conduct records.</ApiNote></div></Card>
-  );
-  const name = s ? fullName(s) : 'Amara Thompson';
+  const documentsCard = <CertificatesCard student={s} onStudentChanged={record.reload} />;
+  const conductCard = <ConductCard student={s} />;
+  const name = fullName(s);
   // "Message guardian": an email to the primary contact (else the first guardian with an email)
-  const guardianEmail = s ? ([...(s.guardians || [])].sort((a, b) => Number(!!b.primaryContact) - Number(!!a.primaryContact)).find((g) => g.email)?.email) : 's.thompson@example.com';
+  const guardianEmail = [...(s.guardians || [])].sort((a, b) => Number(!!b.primaryContact) - Number(!!a.primaryContact)).find((g) => g.email)?.email;
   // The primary guardian (else the first listed) is shown under the student's name
-  const primaryGuardian = s ? ([...(s.guardians || [])].sort((a, b) => Number(!!b.primaryContact) - Number(!!a.primaryContact))[0]) : null;
+  const primaryGuardian = [...(s.guardians || [])].sort((a, b) => Number(!!b.primaryContact) - Number(!!a.primaryContact))[0];
   // "Download record": the student's record as shown on this page, one field per row
-  const downloadRecord = () => downloadCsv(`student-record-${s ? s.studentUid : 'ST-2024-106'}`, ['Section', 'Field', 'Value'], s ? [
+  const downloadRecord = () => downloadCsv(`student-record-${s.studentUid}`, ['Section', 'Field', 'Value'], [
     ['Student', 'Name', fullName(s)], ['Student', 'Student UID', s.studentUid], ['Student', 'Status', (studentApi.STUDENT_STATUS[s.studentStatus] || [s.studentStatus])[0]],
     ['Student', 'Date of birth', s.dateOfBirth], ['Student', 'Gender', GENDER_LABEL[s.gender] || s.gender], ['Student', 'Campus', s.branchId],
-    ['Placement', 'Class', classLabel(s)], ['Placement', 'Roll number', s.rollNumber ?? ''], ['Placement', 'House', s.houseName || ''],
+    ['Placement', 'Class', classLabel(s)], ['Placement', 'Class teacher', classTeacher || ''], ['Placement', 'Roll number', s.rollNumber ?? ''], ['Placement', 'House', s.houseName || ''],
     ['Medical', 'Blood group', s.bloodGroup || ''], ['Medical', 'Alerts', hasAlert(s) ? s.medicalAlerts : 'None'], ['Medical', 'Emergency phone', s.emergencyContactPhone || ''],
     ...(s.guardians || []).map((g) => ['Guardian', `${g.fullName} (${g.relationship}${g.primaryContact ? ', primary' : ''})`, [g.mobileNumber, g.email].filter(Boolean).join(' · ')]),
     ['Record', 'Created', s.createdAt?.slice(0, 10) || ''], ['Record', 'Updated', s.updatedAt?.slice(0, 10) || ''],
-  ] : [
-    ['Student', 'Name', 'Amara Thompson'], ['Student', 'Student ID', 'ST-2024-106'], ['Student', 'Date of birth', '2011-05-12'], ['Student', 'Gender', 'Female'],
-    ['Placement', 'Class', 'Year 10A'], ['Placement', 'House', 'Willow'], ['Medical', 'Alerts', 'Mild asthma'],
-    ['Guardian', 'Sarah Thompson (Mother, primary)', '+44 7700 900 142 · s.thompson@example.com'], ['Guardian', 'David Thompson (Father)', '+44 7700 900 143'],
   ]);
   return (
     <>
       {header([
         { label: 'Download record', icon: <Download size={15} />, onClick: downloadRecord },
-        s && hasRole(...ROLES.idCard) && { label: 'ID card', icon: <IdCard size={15} />, onClick: () => setModal('idcard') },
+        hasRole(...ROLES.idCard) && { label: 'ID card', icon: <IdCard size={15} />, onClick: () => setModal('idcard') },
       ].filter(Boolean))}
       <Card className="summary">
         {/* Same class colour as the student directory, so the two screens match */}
-        {s ? <StudentAvatar student={s} tone={avatarTone(s.gradeName)} /> : <div className="bigavatar">{name.split(' ').map((w) => w[0]).join('').slice(0, 2)}</div>}
+        <StudentAvatar student={s} tone={avatarTone(s.gradeName)} />
         <div className="id">
           <h2>{name}</h2>
-          <p>{s ? `${s.studentUid} · ${classLabel(s)}${s.houseName ? ` · ${s.houseName} house` : ''}` : 'ST-2024-106 · Year 10A · Willow house'}</p>
+          <p>{`${s.studentUid} · ${classLabel(s)}${s.houseName ? ` · ${s.houseName} house` : ''}`}</p>
           {/* Primary guardian next to the name, with a message button beside it */}
           <div className="guardian-line">
-            {s
-              ? (primaryGuardian
-                ? <span>Guardian <b>{primaryGuardian.fullName}</b>{primaryGuardian.relationship && <> ({primaryGuardian.relationship})</>}{primaryGuardian.mobileNumber && <> · {primaryGuardian.mobileNumber}</>}</span>
-                : <span className="muted">No guardian on record</span>)
-              : <span>Guardian <b>Sarah Thompson</b> (Mother) · +44 7700 900 142</span>}
+            {primaryGuardian
+              ? <span>Guardian <b>{primaryGuardian.fullName}</b>{primaryGuardian.relationship && <> ({primaryGuardian.relationship})</>}{primaryGuardian.mobileNumber && <> · {primaryGuardian.mobileNumber}</>}</span>
+              : <span className="muted">No guardian on record</span>}
             {guardianEmail
               ? <a className="btn" href={`mailto:${guardianEmail}?subject=${encodeURIComponent(`${name} · ${schoolName}`)}`}><Mail size={14} />Message</a>
               : <span className="xs muted">No guardian email</span>}
           </div>
-          <div className="pills">{s ? <>{statusPill(s.studentStatus)}{hasAlert(s) && <Pill tone="purple" icon={HeartPulse}>Medical alert</Pill>}</>
-            : <><Pill tone="green">Active</Pill><Pill tone="purple">Medical care plan</Pill></>}</div>
+          <div className="pills">{statusPill(s.studentStatus)}{hasAlert(s) && <Pill tone="purple" icon={HeartPulse}>Medical alert</Pill>}</div>
         </div>
         <div className="side">
-          {s ? <><span>{s.rollNumber ? `Roll number ${s.rollNumber}` : 'Roll number not assigned'}</span><span>Record created {fmtDate(s.createdAt)}</span></>
-            : <><span>Form tutor: Eleanor Hughes</span><span>Admitted 02 September 2024</span></>}
+          <span>{s.rollNumber ? `Roll number ${s.rollNumber}` : 'Roll number not assigned'}</span>
+          {classTeacher && <span>Class teacher: {classTeacher}</span>}
+          <span>Record created {fmtDate(s.createdAt)}</span>
         </div>
       </Card>
       <Tabs items={PROFILE_TABS.map(([key, label]) => (tabBadge[key] ? `${label} (${tabBadge[key]})` : label))} value={index} onChange={setTab} />
@@ -792,7 +733,7 @@ export function StudentProfile() {
       )}
       {tab === 'academics' && <div className="stack">{academicCard}</div>}
       {tab === 'attendance' && <div className="stack">{attendanceCard}</div>}
-      {tab === 'fees' && <div className="stack">{feesCard}{s && <FeeAccountDetail fees={fees} guardians={s.guardians} />}</div>}
+      {tab === 'fees' && <div className="stack">{feesCard}<FeeAccountDetail fees={fees} guardians={s.guardians} /></div>}
       {tab === 'guardians' && <div className="stack">{guardiansCard}</div>}
       {tab === 'documents' && <div className="stack">{documentsCard}</div>}
       {tab === 'conduct' && <div className="stack">{conductCard}</div>}

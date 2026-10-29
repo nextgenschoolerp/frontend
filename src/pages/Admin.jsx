@@ -19,6 +19,8 @@ import { useSchoolName } from '../useSchoolName.js';
 import { formatDate, formatDateTime, formatTime } from '../regional.js';
 import { getRegional, applyServerRegional, version, zoneName, TIME_ZONES, CURRENCIES, DATE_FORMATS, LANGUAGES, DEFAULT_REGIONAL } from '../regional.js';
 import { saveRegionalSettings } from '../api/authService.js';
+import { DataImportCard, canImportData } from '../components/DataImport.jsx';
+import { ClassStructureCard } from '../components/AcademicStructure.jsx';
 
 const act = (t) => <span className="act">{t}</span>;
 
@@ -462,16 +464,18 @@ function RegionalCard({ draft, setDraft, onSave, onDiscard, canEdit, saving, err
 // One section per tab; the tab is kept in the URL (/settings?tab=academic) so it survives reloads and can be linked to.
 const SETTINGS_TABS = [
   ['general', 'General'], ['academic', 'Academic setup'], ['users', 'Users & permissions'],
-  ['notifications', 'Notifications'], ['security', 'Security & audit'], ['integrations', 'Integrations'],
+  ['notifications', 'Notifications'], ['security', 'Security & audit'], ['integrations', 'Integrations'], ['import', 'Data import'],
 ];
 
 export function Settings() {
   const [params, setParams] = useSearchParams();
-  const index = Math.max(0, SETTINGS_TABS.findIndex(([key]) => key === params.get('tab')));
-  const tab = SETTINGS_TABS[index][0];
-  const setTab = (i) => setParams(i === 0 ? {} : { tab: SETTINGS_TABS[i][0] }, { replace: true });
-  // Regional preferences: edited here, applied to the whole app on Save (the page re-renders with them)
   const { user, hasRole } = useAuth();
+  // Data import is shown to the roles that may bulk-import students or staff
+  const tabs = SETTINGS_TABS.filter(([key]) => key !== 'import' || canImportData(hasRole));
+  const index = Math.max(0, tabs.findIndex(([key]) => key === params.get('tab')));
+  const tab = tabs[index][0];
+  const setTab = (i) => setParams(i === 0 ? {} : { tab: tabs[i][0] }, { replace: true });
+  // Regional preferences: edited here, applied to the whole app on Save (the page re-renders with them)
   const canEditRegional = hasRole(...REGIONAL_EDITORS);
   const [regional, setRegional] = useState(getRegional);
   const [regionalSaving, setRegionalSaving] = useState(false);
@@ -496,7 +500,7 @@ export function Settings() {
         title="Settings"
         desc="Manage your school profile, academic setup and workspace preferences."
       />
-      <Tabs items={SETTINGS_TABS.map(([, label]) => label)} value={index} onChange={setTab} />
+      <Tabs items={tabs.map(([, label]) => label)} value={index} onChange={setTab} />
 
       {/* Each card saves itself: school profile (authservice), regional preferences (authservice) */}
       {tab === 'general' && (
@@ -512,7 +516,7 @@ export function Settings() {
       )}
 
       {/* studentservice: GET /api/v1/academic/calendar, PUT /api/v1/academic/sessions/{id}[/terms] */}
-      {tab === 'academic' && <div className="stack"><AcademicSetupCard /></div>}
+      {tab === 'academic' && <div className="stack"><AcademicSetupCard /><ClassStructureCard /></div>}
 
       {/* authservice: GET /api/v1/roles, GET|POST /api/v1/roles/{roleId}/permissions */}
       {tab === 'users' && <div className="stack"><RolesCard /></div>}
@@ -523,6 +527,7 @@ export function Settings() {
       {/* authservice: GET /api/v1/mfa/config, GET /api/v1/security/session-config, GET /api/v1/audit/logs */}
       {tab === 'security' && <div className="stack"><SecurityCard /></div>}
 
+      {tab === 'import' && <DataImportCard />}
       {tab === 'integrations' && (
         <div className="stack">
           <Card>

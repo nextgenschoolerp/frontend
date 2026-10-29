@@ -11,6 +11,9 @@ import { useApi } from '../api/useApi.js';
 import { THEMES, getTheme, applyTheme, DENSITIES, getDensity, applyDensity } from '../theme.js';
 import { useRegional, version, applyServerRegional } from '../regional.js';
 import { GlobalSearch, NotificationBell } from './ShellTools.jsx';
+import { getAcademicCalendar } from '../api/studentService.js';
+import { listCalendarEvents } from '../api/communicationService.js';
+import { setSchoolCalendar, useSchoolCalendar } from './ui.jsx';
 
 const GROUPS = [
   ['WORKSPACE', [
@@ -41,8 +44,8 @@ function crumbsFor(pathname) {
   const [seg, id, tail] = pathname.split('/').filter(Boolean);
   if (!seg) return ['Overview'];
   const out = [SECTION[seg] || 'Overview'];
-  // Live student records have UUID ids (studentservice); other ids are the static sample people. Staff records come from hrservice.
-  const person = seg === 'students' ? (/^[0-9a-f]{8}-/i.test(id || '') ? 'Student profile' : 'Amara Thompson') : seg === 'staff' ? (id === 'me' ? 'My profile' : 'Staff profile') : null;
+  // Student records come from studentservice and staff records from hrservice.
+  const person = seg === 'students' ? 'Student profile' : seg === 'staff' ? (id === 'me' ? 'My profile' : 'Staff profile') : null;
   if (id === 'new') out.push(seg === 'students' ? 'Add student' : 'Add staff member');
   else if (id && person) out.push(tail === 'edit' ? `${person} / Edit` : person);
   return out;
@@ -70,17 +73,21 @@ function CampusSwitcher({ campusName }) {
   );
 }
 
-const SESSIONS = ['2025–2026', '2026–2027', '2027–2028'];
 const SESSION_KEY = 'erp.academicSession';
 const shortSession = (s) => s.replace(/^(\d{4})–\d{2}(\d{2})$/, '$1-$2'); // 2026–2027 → 2026-27
-const readSession = () => { try { return localStorage.getItem(SESSION_KEY) || '2026–2027'; } catch { return '2026–2027'; } };
+const readSession = () => { try { return localStorage.getItem(SESSION_KEY) || ''; } catch { return ''; } };
+const sessionLabel = (s) => String(s.sessionName).replace('-', '–'); // 2026-2027 → 2026–2027
 
 /** Account menu: the avatar opens the signed-in user's details, the academic session picker and sign out. */
 function AccountMenu({ onSignOut }) {
   const { user } = useAuth();
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
-  const [session, setSession] = useState(readSession);
+  // The school's academic years (Settings → Academic setup); the one chosen on this browser, else the current year
+  const calendar = useSchoolCalendar();
+  const SESSIONS = calendar.sessions.slice().sort((a, b) => a.startDate.localeCompare(b.startDate)).map(sessionLabel);
+  const [saved, setSession] = useState(readSession);
+  const session = SESSIONS.includes(saved) ? saved : (calendar.sessions.find((s) => s.isActive) ? sessionLabel(calendar.sessions.find((s) => s.isActive)) : SESSIONS[SESSIONS.length - 1] || '');
   const [expand, setExpand] = useState(null); // 'session' | 'theme'
   const [theme, setTheme] = useState(getTheme);
   const currentTheme = THEMES.find((t) => t.id === theme) || THEMES[0];
@@ -172,6 +179,18 @@ export default function Layout() {
     return () => window.removeEventListener('school-profile:changed', refresh);
   }, [reloadSchoolProfile]);
   useEffect(() => { if (serverRegional) applyServerRegional(serverRegional); }, [serverRegional]);
+  // Term dates, half-term and holidays for the school day shown across the app: the academic calendar (studentservice) and
+  // the calendar's holiday events (communicationservice). Settings and the Calendar page announce edits to the terms.
+  const academic = useApi(() => getAcademicCalendar(user.tenantId), [user?.tenantId], !!user?.tenantId);
+  const calendarEvents = useApi(() => listCalendarEvents(user.tenantId), [user?.tenantId], !!user?.tenantId);
+  useEffect(() => {
+    const refresh = () => { academic.reload(); calendarEvents.reload(); };
+    window.addEventListener('school-calendar:changed', refresh);
+    return () => window.removeEventListener('school-calendar:changed', refresh);
+  }, [academic.reload, calendarEvents.reload]);
+  useEffect(() => {
+    if (academic.data && !calendarEvents.loading) setSchoolCalendar({ sessions: academic.data.sessions || [], terms: academic.data.terms || [], events: calendarEvents.data || [] });
+  }, [academic.data, calendarEvents.data, calendarEvents.loading]);
   // The tab title carries the school's name from its profile (until it loads, the product name)
   useEffect(() => { window.scrollTo(0, 0); document.title = `${schoolProfile?.schoolName || 'School ERP'} – ${crumbs[crumbs.length - 1]}`; }, [pathname, schoolProfile?.schoolName]);
 
