@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Modal } from './AuthSettings.jsx';
-import { SectionHead, Pill, Tabs, DataTable, schoolDay, todayIso, useSchoolCalendar } from './ui.jsx';
+import { SectionHead, Pill, Tabs, DataTable, schoolDay, todayIso, useSchoolCalendar, PanelSkeleton } from './ui.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
 import { useApi } from '../api/useApi.js';
 import * as studentApi from '../api/studentService.js';
@@ -271,6 +271,15 @@ function FollowUpCompliance({ days, followUps, absences }) {
 /* ---------- the pop-up ---------- */
 
 const TABS = ['Trend and patterns', 'Chronic absence', 'Follow-up and registers'];
+// Each tab's layout while attendance loads (titles, cards and table headers as on the loaded tab)
+const SKELETONS = [
+  <PanelSkeleton key="trend" title="Attendance trend and patterns" cards={['Last school day', 'Last 4 weeks', 'Days below target']}
+    sections={[{ title: 'Week by week', bars: 4 }, { title: 'By day of the week', bars: 5 }]} />,
+  <PanelSkeleton key="chronic" title="Chronic absence" cards={[`Below ${CHRONIC_PCT}% attendance`, `Below ${SEVERE_PCT}%`, 'Mostly unexcused']}
+    sections={[{ title: 'Where they are', bars: 5 }, { title: 'Students to review', cols: ['Student', 'Class', 'Days absent', 'Unexcused', 'Attendance'], rows: 6 }]} />,
+  <PanelSkeleton key="follow" title="Follow-up and register compliance" cards={['Not yet reached', 'Follow-up rate', 'Register compliance']}
+    sections={[{ title: 'Open follow-ups', cols: ['Student', 'Absent', 'Waiting', 'Call'], rows: 4 }, { title: 'Days with missing registers', cols: ['Day', 'Morning', 'Afternoon'], rows: 3 }]} />,
+];
 
 export function AttendanceOutlookModal({ branchId, onClose }) {
   const [tab, setTab] = useState(0);
@@ -291,7 +300,7 @@ export function AttendanceOutlookModal({ branchId, onClose }) {
       footer={<button className="btn primary" onClick={onClose}>Done</button>}>
       <Tabs items={TABS} value={tab} onChange={setTab} />
       <div style={{ marginTop: 16 }}>
-        {error ? <ApiErr error={error} /> : !ready ? <p className="xs muted">Loading attendance…</p>
+        {error ? <ApiErr error={error} /> : !ready ? SKELETONS[tab]
           : tab === 0 ? <TrendPatterns days={days} absences={absences.data} />
             : tab === 1 ? <ChronicAbsence days={days} absences={absences.data} />
               : <FollowUpCompliance days={days} followUps={followUps.data} absences={absences.data} />}

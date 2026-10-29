@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Modal } from './AuthSettings.jsx';
-import { SectionHead, Pill, Tabs, DataTable } from './ui.jsx';
+import { SectionHead, Pill, Tabs, DataTable, Skel, PanelSkeleton } from './ui.jsx';
 import { ApiNote, gradeLabel } from './Admissions.jsx';
 import { useStudents } from './StudentRecords.jsx';
 import { useAuth } from '../auth.jsx';
@@ -72,7 +72,7 @@ function SeatDemand({ rows }) {
   }), [grades.data, sections.data, students.live, students.current, rows, chance]);
 
   if (grades.error || sections.error) return <ApiNote>Class seats are visible to registrars, principals and super administrators.</ApiNote>;
-  if (!sections.data) return <p className="xs muted">Loading seats and applications…</p>;
+  if (!sections.data) return SKELETONS[0];
   const withApps = table.filter((r) => r.open);
   const without = table.filter((r) => !r.open && (r.free ?? r.seats) > 0);
   const free = table.reduce((n, r) => n + (r.free ?? 0), 0);
@@ -124,11 +124,11 @@ function Delays({ rows, calls, callbacks, canReadCalls }) {
     <div className="pulse-panel">
       <SectionHead title="Stuck and slow applications" sub={`${formatNumber(stuck.length)} open application${stuck.length === 1 ? '' : 's'} with no change for ${STUCK_DAYS}+ days`} />
       <dl className="movegrid">
-        <div><dt>Median first response</dt><dd>{canReadCalls ? (calls.loading ? '…' : hoursLabel(median)) : '—'}</dd>
+        <div><dt>Median first response</dt><dd>{canReadCalls ? (calls.loading ? <Skel w="60px" /> : hoursLabel(median)) : '—'}</dd>
           <small>{canReadCalls ? `Enquiry to first counseling call · ${formatNumber(waits.length)} with a call` : noCalls}</small></div>
-        <div><dt>Never contacted</dt><dd className={neverContacted ? 'down' : ''}>{canReadCalls ? (neverContacted ?? '…') : '—'}</dd>
+        <div><dt>Never contacted</dt><dd className={neverContacted ? 'down' : ''}>{canReadCalls ? (neverContacted ?? <Skel w="36px" />) : '—'}</dd>
           <small>{canReadCalls ? 'Open applications with no call logged' : noCalls}</small></div>
-        <div><dt>Overdue callbacks</dt><dd className={overdue ? 'down' : ''}>{canReadCalls ? (overdue ?? '…') : '—'}</dd>
+        <div><dt>Overdue callbacks</dt><dd className={overdue ? 'down' : ''}>{canReadCalls ? (overdue ?? <Skel w="36px" />) : '—'}</dd>
           <small>{canReadCalls ? 'Promised calls past their time' : noCalls}</small></div>
       </dl>
       {stuck.length ? (
@@ -199,10 +199,19 @@ function Effectiveness({ rows, calls, callbacks, canReadCalls }) {
 /* ---------- the pop-up ---------- */
 
 const OUTLOOK_TABS = ['Seat demand', 'Stuck and slow', 'What converts'];
+// Each tab's layout while its data loads (titles, cards and table headers as on the loaded tab)
+const SKELETONS = [
+  <PanelSkeleton key="seats" title="Seat demand by grade" sections={[{ cols: ['Grade', 'Seats free', 'Open applications', 'Expected to enrol', 'Outlook'], rows: 8 }]} />,
+  <PanelSkeleton key="stuck" title="Stuck and slow applications" cards={['Median first response', 'Never contacted', 'Overdue callbacks']}
+    sections={[{ cols: ['Applicant', 'Stage', 'Counselor', 'No change for'], rows: 5 }]} />,
+  <PanelSkeleton key="converts" title="What converts" sections={[{ cols: ['Source', 'Enquiries', 'In progress', 'Enrolled', 'Lost', 'Conversion'], rows: 4 },
+    { title: 'By counselor', cols: ['Counselor', 'Assigned', 'Enrolled', 'Stuck', 'Calls logged', 'Overdue callbacks', 'Conversion'], rows: 3 }]} />,
+];
 
 /**
  * Admissions outlook (last stat card on the Admissions page). Opening it reloads the applications and reads calls,
- * callbacks, seats and students from the services, so the figures are current.
+ * callbacks, seats and students from the services, so the figures are current. It opens fully laid out: every tab is
+ * mounted at once (hidden until chosen) and shows placeholders until its data arrives; switching tabs never reloads.
  */
 export function AdmissionsOutlookModal({ apps, onClose }) {
   const { user, hasRole } = useAuth();
@@ -220,10 +229,9 @@ export function AdmissionsOutlookModal({ apps, onClose }) {
       footer={<button className="btn primary" onClick={onClose}>Done</button>}>
       <Tabs items={OUTLOOK_TABS} value={tab} onChange={setTab} />
       <div style={{ marginTop: 16 }}>
-        {!apps.data ? <p className="xs muted">Loading applications…</p>
-          : tab === 0 ? <SeatDemand rows={rows} />
-            : tab === 1 ? <Delays rows={rows} calls={calls} callbacks={callbacks} canReadCalls={canReadCalls} />
-              : <Effectiveness rows={rows} calls={calls} callbacks={callbacks} canReadCalls={canReadCalls} />}
+        <div hidden={tab !== 0}>{apps.data ? <SeatDemand rows={rows} /> : SKELETONS[0]}</div>
+        <div hidden={tab !== 1}>{apps.data ? <Delays rows={rows} calls={calls} callbacks={callbacks} canReadCalls={canReadCalls} /> : SKELETONS[1]}</div>
+        <div hidden={tab !== 2}>{apps.data ? <Effectiveness rows={rows} calls={calls} callbacks={callbacks} canReadCalls={canReadCalls} /> : SKELETONS[2]}</div>
       </div>
     </Modal>
   );

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Modal } from './AuthSettings.jsx';
-import { SectionHead, Pill, Tabs, DataTable } from './ui.jsx';
+import { SectionHead, Pill, Tabs, DataTable, PanelSkeleton } from './ui.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
@@ -218,10 +218,19 @@ function Support({ cur, prev, term, prevTerm }) {
 /* ---------- the pop-up ---------- */
 
 const OUTLOOK_TABS = ['Results and trend', 'Classes and subjects', 'Needs support'];
+// Each tab's layout while the school results load (titles, cards and table headers as on the loaded tab)
+const skeleton = (tab, term) => [
+  <PanelSkeleton key="results" title={term ? `Results: ${term.termName}` : 'Results'} cards={['School average', 'Pass rate', 'Top grade']}
+    sections={[{ title: 'Grade distribution', bars: 5 }, { title: 'What stands out', chips: 3 }]} />,
+  <PanelSkeleton key="compare" title="Classes and subjects" sections={[{ title: 'By class', cols: ['Class', 'Students', 'Average', 'Change', 'Pass rate', 'Range'], rows: 6 },
+    { title: 'By subject', cols: ['Subject', 'Average', 'Pass rate', 'Below pass mark'], rows: 5 }]} />,
+  <PanelSkeleton key="support" title="Students needing support" sections={[{ chips: 3 }, { cols: ['Student', 'Class', 'Overall', 'Why'], rows: 6 }]} />,
+][tab];
 
 /**
  * Academic outlook (last stat card on the Academics page). Opening it reads the school-wide results of the latest scored
- * term and the term before it from examservice (one request each), so the figures are current.
+ * term and the term before it from examservice (one request each), so the figures are current. Until they arrive each tab
+ * shows its layout with placeholders.
  */
 export function AcademicOutlookModal({ terms, onClose }) {
   const { branchId } = useAuth();
@@ -240,7 +249,7 @@ export function AcademicOutlookModal({ terms, onClose }) {
     if (terms.error) return <ApiErr error={terms.error} />;
     if (!term && !terms.loading) return <ApiNote>No assessment term has started yet.</ApiNote>;
     if (latest.error) return <ApiErr error={latest.error} onRetry={latest.reload} />;
-    if (!cur) return <p className="xs muted">Loading school results…</p>;
+    if (!cur) return skeleton(tab, term);
     const props = { cur, prev: prev && !previous.error ? prev : null, term, prevTerm: prev && !previous.error ? prevTerm : null };
     return tab === 0 ? <Results {...props} /> : tab === 1 ? <Comparison {...props} /> : <Support {...props} />;
   };

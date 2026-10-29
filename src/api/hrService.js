@@ -31,8 +31,25 @@ export const listScans = (staffId) => api.get(`${HR}/attendance/scans/${staffId}
 export const attendanceSummary = (date) => api.get(`${HR}/attendance/summary`, { query: { date } });
 export const listCpd = (staffId) => api.get(`${HR}/development/cpd/${staffId}`);
 
+// --- Bulk staff import (Settings → Data import) --------------------------------------------------------
+const STAFF_IMPORT = `${HR}/employees/import`;
+/** mode: CREATE (new staff) or UPDATE (existing, by employee code); prefill puts the campus's current staff in the file */
+export const staffImportTemplate = (format = 'xlsx', { mode = 'CREATE', prefill = false, branchId = '' } = {}) =>
+  fetchBlob(`${STAFF_IMPORT}/template?format=${format}&mode=${mode}&prefill=${prefill}&branchId=${encodeURIComponent(branchId || '')}`);
+export const checkStaffImport = (branchId, file, mode = 'CREATE') => { const fd = new FormData(); fd.append('file', file); return upload(`${STAFF_IMPORT}/check`, fd, { query: { branchId, mode } }); };
+/** A ZIP of photos named after the employee code; dryRun only reports what would be saved */
+export const staffPhotoZip = (branchId, file, dryRun) => { const fd = new FormData(); fd.append('file', file); return upload(`${STAFF_IMPORT}/photos`, fd, { query: { branchId, dryRun } }); };
+/** Links sign-in accounts (made through authservice) to the staff they belong to: [{ staffId, userId }] */
+export const linkStaffAccounts = (links) => api.post(`${STAFF_IMPORT}/link-accounts`, { links });
+/** mode: VALID_ONLY (the rows without errors) or ALL_OR_NOTHING */
+export const commitStaffImport = (jobId, mode) => api.post(`${STAFF_IMPORT}/${jobId}/commit`, null, { query: { mode } });
+export const staffImportJobs = () => api.get(`${STAFF_IMPORT}/jobs`);
+export const staffImportErrors = (jobId) => fetchBlob(`${STAFF_IMPORT}/jobs/${jobId}/errors`);
+
 /** Roles as enforced by hrservice (HrRoles.java), using the role codes authservice issues. */
+
 export const HR_ROLES = {
+  bulkImport: ['IT_SYSTEM_ADMIN', 'SUPER_ADMIN', 'HR_MANAGER'], // Settings → Data import (staff)
   manage: ['HR_MANAGER', 'SCHOOL_PRINCIPAL', 'PRINCIPAL', 'SUPER_ADMIN'],
   approveLeave: ['HR_MANAGER', 'DEPARTMENT_HEAD', 'SCHOOL_PRINCIPAL', 'PRINCIPAL', 'VICE_PRINCIPAL', 'SUPER_ADMIN'],
   /** May record leave for someone else; everyone else applies only on their own profile */

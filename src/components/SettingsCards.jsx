@@ -26,14 +26,14 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const Saved = ({ children }) => <div className="api-note ok" style={{ marginTop: 10 }}><Check size={14} style={{ flex: 'none' }} /><span>{children}</span></div>;
 
 /** Save / Discard buttons and the result of the last save. */
-function SaveBar({ changed, busy, onSave, onDiscard, saved, error, canEdit, who }) {
+function SaveBar({ changed, busy, invalid, onSave, onDiscard, saved, error, canEdit, who }) {
   if (!canEdit) return <p className="xs muted" style={{ marginTop: 12 }}>Only {who} can change these settings.</p>;
   return (<>
     {saved && !changed && <Saved>{saved}</Saved>}
     {error && <ApiErr error={error} />}
     <div className="pills" style={{ marginTop: 12 }}>
       <button className="btn" disabled={!changed || busy} onClick={onDiscard}>Discard</button>
-      <button className="btn primary" disabled={!changed || busy} onClick={onSave}><Check size={14} />{busy ? 'Saving…' : 'Save changes'}</button>
+      <button className="btn primary" disabled={!changed || busy || invalid} onClick={onSave}><Check size={14} />{busy ? 'Saving…' : 'Save changes'}</button>
     </div>
   </>);
 }
@@ -151,10 +151,20 @@ export function AcademicSetupCard() {
 
   const set = (k) => (e) => setDraft({ ...draft, [k]: e.target.value });
   const changed = !same(draft, base);
-  const bad = draft.endDate < draft.startDate;
+  // The year must end after it starts, must not overlap another year, and its terms must still fit inside it
+  const overlaps = sessions.find((s) => s.academicYearId !== year.academicYearId && draft.startDate <= s.endDate && draft.endDate >= s.startDate);
+  const outside = terms.find((x) => x.startDate < draft.startDate || x.endDate > draft.endDate);
+  const bad = draft.endDate < draft.startDate ? 'The year must end after it starts.'
+    : overlaps ? `These dates overlap ${overlaps.sessionName} (${formatDate(overlaps.startDate)} – ${formatDate(overlaps.endDate)}).`
+      : outside ? `${outside.termName} (${formatDate(outside.startDate)} – ${formatDate(outside.endDate)}) falls outside these dates. Change the term dates first.` : '';
   const current = terms.find((t) => t.termId === draft.currentTermId);
   const day = schoolDay(todayIso());
-  const termPayload = (list, currentId) => list.map((t) => ({ termName: t.termName, startDate: t.startDate, endDate: t.endDate, halfTermStart: t.halfTermStart || null, halfTermEnd: t.halfTermEnd || null, isCurrent: t.termId === currentId }));
+  // The current week only means something for the year (and term) today falls in
+  const today = todayIso();
+  const todayTerm = terms.find((x) => today >= x.startDate && today <= x.endDate);
+  const weekText = todayTerm ? (day.week ? `Week ${day.week} of ${day.weeks}` : todayTerm.termName)
+    : today < year.startDate ? 'Year not started' : today > year.endDate ? 'Year ended' : 'Between terms';
+  const termPayload = (list, currentId) => list.map((t) => ({ termId: t.termId, termName: t.termName, startDate: t.startDate, endDate: t.endDate, halfTermStart: t.halfTermStart || null, halfTermEnd: t.halfTermEnd || null, isCurrent: t.termId === currentId }));
 
   return (
     <Card>
@@ -166,7 +176,7 @@ export function AcademicSetupCard() {
         {box('ac-end', 'YEAR ENDS', <input id="ac-end" type="date" value={draft.endDate} min={draft.startDate} onChange={set('endDate')} disabled={!canEdit} />)}
         {box('ac-term', 'CURRENT TERM', <select id="ac-term" value={draft.currentTermId} onChange={set('currentTermId')} disabled={!canEdit || !terms.length}>
           <option value="">{terms.length ? 'Not set' : 'No terms yet'}</option>{terms.map((t) => <option key={t.termId} value={t.termId}>{t.termName}</option>)}</select>)}
-        {box('ac-week', 'CURRENT WEEK', <input id="ac-week" readOnly value={day.week ? `Week ${day.week} of ${day.weeks}` : '—'} />)}
+        {box('ac-week', 'CURRENT WEEK', <input id="ac-week" readOnly value={weekText} />)}
         {box('ac-struct', 'WEEK STRUCTURE', <select id="ac-struct" value={draft.weekStructure} onChange={set('weekStructure')} disabled={!canEdit}>{WEEKS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>)}
       </div>
       {canEdit && !year.isActive && (
@@ -174,14 +184,14 @@ export function AcademicSetupCard() {
           <input type="checkbox" checked={draft.isActive} onChange={(e) => setDraft({ ...draft, isActive: e.target.checked })} />Make {year.sessionName} the current academic year
         </label>
       )}
-      {bad && <p className="xs" style={{ color: 'var(--rd)', marginTop: 8 }}>The year must end after it starts.</p>}
+      {bad && <p className="xs" role="alert" style={{ color: 'var(--rd)', marginTop: 8 }}>{bad}</p>}
       {current?.halfTermStart && (
         <Card className="notice" style={{ marginTop: 16, padding: 14 }}>
           <h4>Half-term: {formatDate(current.halfTermStart)} – {formatDate(current.halfTermEnd)}</h4>
           <p>{current.termName} runs {formatDate(current.startDate)} – {formatDate(current.endDate)}. Attendance registers and recurring lessons pause during the break. <Link className="link" to="/calendar" onClick={toTerms}>Open the calendar →</Link></p>
         </Card>
       )}
-      <SaveBar canEdit={canEdit} who="the registrar, a principal or a super administrator" changed={changed} busy={save.busy || bad} saved={save.saved} error={save.error}
+      <SaveBar canEdit={canEdit} who="the registrar, a principal or a super administrator" changed={changed} busy={save.busy} invalid={!!bad} saved={save.saved} error={save.error}
         onDiscard={() => { setDraft(base); save.reset(); }}
         onSave={() => save.run(async () => {
           await updateAcademicSession(year.academicYearId, { startDate: draft.startDate, endDate: draft.endDate, weekStructure: draft.weekStructure, isActive: draft.isActive || undefined });
@@ -206,11 +216,13 @@ function TermsModal({ year, terms, canEdit, onClose, onSave }) {
     : rows.some((r) => r.endDate < r.startDate) ? 'A term must end after it starts.'
       : rows.some((r) => !!r.halfTermStart !== !!r.halfTermEnd) ? 'Give both half-term dates or neither.'
         : rows.some((r) => r.halfTermStart && (r.halfTermStart < r.startDate || r.halfTermEnd > r.endDate || r.halfTermEnd < r.halfTermStart)) ? 'Each half-term must fall inside its term.'
-          : sorted.some((r, i) => i > 0 && r.startDate <= sorted[i - 1].endDate) ? 'Terms may not overlap.' : null;
+          : sorted.some((r, i) => i > 0 && r.startDate <= sorted[i - 1].endDate) ? 'Terms may not overlap.'
+            : rows.some((r) => r.startDate < year.startDate || r.endDate > year.endDate)
+              ? `Every term must fall inside ${year.sessionName} (${formatDate(year.startDate)} – ${formatDate(year.endDate)}).` : null;
   const submit = async () => {
     setBusy(true); setError(null);
     try {
-      await onSave(sorted.map((r) => ({ termName: r.termName.trim(), startDate: r.startDate, endDate: r.endDate, halfTermStart: r.halfTermStart || null, halfTermEnd: r.halfTermEnd || null, isCurrent: !!r.isCurrent })));
+      await onSave(sorted.map((r) => ({ termId: r.termId, termName: r.termName.trim(), startDate: r.startDate, endDate: r.endDate, halfTermStart: r.halfTermStart || null, halfTermEnd: r.halfTermEnd || null, isCurrent: !!r.isCurrent })));
     } catch (e) { setError(e); } finally { setBusy(false); }
   };
   return (
@@ -220,8 +232,8 @@ function TermsModal({ year, terms, canEdit, onClose, onSave }) {
       {rows.map((r, i) => (
         <div key={i} className="fieldgrid" style={{ '--cols': 3, marginTop: i ? 12 : 0 }}>
           {box(`t-name-${i}`, 'TERM', <input id={`t-name-${i}`} value={r.termName} maxLength={50} onChange={set(i, 'termName')} disabled={!canEdit} />)}
-          {box(`t-start-${i}`, 'STARTS', <input id={`t-start-${i}`} type="date" value={r.startDate} onChange={set(i, 'startDate')} disabled={!canEdit} />)}
-          {box(`t-end-${i}`, 'ENDS', <input id={`t-end-${i}`} type="date" value={r.endDate} min={r.startDate} onChange={set(i, 'endDate')} disabled={!canEdit} />)}
+          {box(`t-start-${i}`, 'STARTS', <input id={`t-start-${i}`} type="date" value={r.startDate} min={year.startDate} max={year.endDate} onChange={set(i, 'startDate')} disabled={!canEdit} />)}
+          {box(`t-end-${i}`, 'ENDS', <input id={`t-end-${i}`} type="date" value={r.endDate} min={r.startDate || year.startDate} max={year.endDate} onChange={set(i, 'endDate')} disabled={!canEdit} />)}
           {box(`t-hs-${i}`, 'HALF-TERM STARTS', <input id={`t-hs-${i}`} type="date" value={r.halfTermStart} min={r.startDate} max={r.endDate} onChange={set(i, 'halfTermStart')} disabled={!canEdit} />)}
           {box(`t-he-${i}`, 'HALF-TERM ENDS', <input id={`t-he-${i}`} type="date" value={r.halfTermEnd} min={r.halfTermStart || r.startDate} max={r.endDate} onChange={set(i, 'halfTermEnd')} disabled={!canEdit} />)}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

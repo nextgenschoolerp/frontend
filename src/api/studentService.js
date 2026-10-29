@@ -36,6 +36,17 @@ export const recordIncident = (studentId, body) => api.post(`${STUDENTS}/${stude
 export const listGrades = (tenantId) => api.get(`${ACADEMIC}/grades`, { query: { tenantId } });
 export const listSections = (gradeId) => api.get(`${ACADEMIC}/sections`, { query: { gradeId } });
 export const listHouses = (tenantId) => api.get(`${ACADEMIC}/houses`, { query: { tenantId } });
+// Settings → Academic setup → Classes, sections & houses
+export const createGrade = (body) => api.post(`${ACADEMIC}/grades`, body); // { tenantId, gradeName, gradeCode, sequenceOrder }
+export const createSection = (body) => api.post(`${ACADEMIC}/sections`, body); // { gradeId, sectionName, maxCapacity }
+export const updateSection = (sectionId, body) => api.put(`${ACADEMIC}/sections/${sectionId}`, body); // { maxCapacity }
+export const assignClassTeacher = (sectionId, body) => api.patch(`${ACADEMIC}/sections/${sectionId}/class-teacher`, body); // { staffId, staffName }
+export const createHouse = (body) => api.post(`${ACADEMIC}/houses`, body); // { tenantId, houseName, colorHex }
+export const updateHouse = (houseId, body) => api.put(`${ACADEMIC}/houses/${houseId}`, body); // { houseName, colorHex }
+// Deletes only what nothing refers to; a 409 names what still uses it (students, attendance, timetable, marks …)
+export const deleteGrade = (gradeId) => api.del(`${ACADEMIC}/grades/${gradeId}`); // the class and its sections
+export const deleteSection = (sectionId) => api.del(`${ACADEMIC}/sections/${sectionId}`);
+export const deleteHouse = (houseId) => api.del(`${ACADEMIC}/houses/${houseId}`);
 export const listSessions = (tenantId) => api.get(`${ACADEMIC}/sessions`, { query: { tenantId } });
 // Settings → Academic setup, Calendar → Term dates: academic years with their terms
 export const getAcademicCalendar = (tenantId) => api.get(`${ACADEMIC}/calendar`, { query: { tenantId } });
@@ -65,8 +76,25 @@ export const ATTENDANCE_STATUS = {
 };
 export const FOLLOW_UP_STATUS = { OPEN: ['Guardian not yet reached', 'red'], GUARDIAN_CONTACTED: ['Guardian contacted', 'amber'], RESOLVED: ['Resolved', 'green'] };
 
+// --- Bulk student import (Settings → Data import) ------------------------------------------------------
+const IMPORT = `${STUDENTS}/import`;
+/** mode: CREATE (new students) or UPDATE (existing, by Student UID); prefill puts the campus's current students in the file */
+export const studentImportTemplate = (tenantId, format = 'xlsx', { mode = 'CREATE', prefill = false, branchId = '' } = {}) =>
+  fetchBlob(`${IMPORT}/template?tenantId=${encodeURIComponent(tenantId)}&format=${format}&mode=${mode}&prefill=${prefill}&branchId=${encodeURIComponent(branchId || '')}`);
+export const checkStudentImport = (tenantId, branchId, file, mode = 'CREATE') => { const fd = new FormData(); fd.append('file', file); return upload(`${IMPORT}/check`, fd, { query: { tenantId, branchId, mode } }); };
+/** A ZIP of photos named STU-….jpg; dryRun only reports what would be saved */
+export const studentPhotoZip = (tenantId, branchId, file, dryRun) => { const fd = new FormData(); fd.append('file', file); return upload(`${IMPORT}/photos`, fd, { query: { tenantId, branchId, dryRun } }); };
+/** mode: VALID_ONLY (the rows without errors) or ALL_OR_NOTHING */
+export const commitStudentImport = (jobId, mode) => api.post(`${IMPORT}/${jobId}/commit`, null, { query: { mode } });
+export const studentImportJobs = (tenantId) => api.get(`${IMPORT}/jobs`, { query: { tenantId } });
+export const studentImportErrors = (jobId) => fetchBlob(`${IMPORT}/jobs/${jobId}/errors`);
+
 /** Roles each action allows (the @PreAuthorize of the studentservice endpoint; SUPER_ADMIN everywhere). */
+
 export const ROLES = {
+  bulkImport: ['IT_SYSTEM_ADMIN', 'SUPER_ADMIN', 'REGISTRAR'], // Settings → Data import (students)
+  structure: ['REGISTRAR', 'SUPER_ADMIN'], // add classes, sections and houses; section capacity; house name and colour
+  classTeacher: ['REGISTRAR', 'SCHOOL_PRINCIPAL', 'VICE_PRINCIPAL', 'SUPER_ADMIN'], // PATCH /sections/{id}/class-teacher
   list: ['REGISTRAR', 'OFFICE_CLERK', 'CLASS_TEACHER', 'SCHOOL_PRINCIPAL', 'SCHOOL_NURSE', 'SUPER_ADMIN'],
   view: ['REGISTRAR', 'OFFICE_CLERK', 'CLASS_TEACHER', 'SCHOOL_PRINCIPAL', 'SCHOOL_NURSE', 'SUPER_ADMIN'],
   enroll: ['REGISTRAR', 'OFFICE_CLERK', 'SUPER_ADMIN'],

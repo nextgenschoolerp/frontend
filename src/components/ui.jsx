@@ -285,6 +285,40 @@ function SortHead({ label, sort }) {
  * `cards`: on phones and tablets each row becomes a card (labelled fields, no sideways scrolling).
  * A column with `hideOnCards` is left out of the card; the first column is the card's title.
  */
+/** Placeholder for one value that is still loading, so a panel keeps its layout while its data arrives (see SkeletonTable). */
+export const Skel = ({ w = '60%', h = 11, style }) => <span className="skel inline" aria-hidden="true" style={{ width: w, height: h, ...style }} />;
+
+/**
+ * A pop-up panel's layout while its data loads: the real title, stat-card labels and section headings with placeholders
+ * for the values, so the pop-up opens fully formed and only the numbers fill in.
+ * sections: [{ title (optional), cols (a table's column labels) | bars (number of bar rows) | chips (number of pills), rows }]
+ */
+export function PanelSkeleton({ title, cards = [], sections = [] }) {
+  return (
+    <div className="pulse-panel" aria-busy="true">
+      <SectionHead title={title} sub={<Skel w="65%" />} />
+      {cards.length > 0 && (
+        <dl className="movegrid">
+          {cards.map((c) => <div key={c}><dt>{c}</dt><dd><Skel w="44px" /></dd><small><Skel w="80%" /></small></div>)}
+        </dl>
+      )}
+      {sections.map((s, n) => (
+        <div key={n} style={s.title ? undefined : { marginTop: 14 }}>
+          {s.title && <h4 style={{ fontSize: 13, fontWeight: 600, margin: '18px 0 8px' }}>{s.title}</h4>}
+          {s.cols ? <SkeletonTable cols={s.cols} rows={s.rows || 5} />
+            : s.bars ? (
+              <div className="capbars">
+                {Array.from({ length: s.bars }, (_, i) => (
+                  <div className="caprow" key={i}><Skel w="64px" /><span className="track"><Skel w={`${[80, 65, 50, 72, 40, 58][i % 6]}%`} h={8} /></span><Skel w="40px" /></div>
+                ))}
+              </div>
+            ) : <div className="riskchips">{Array.from({ length: s.chips || 3 }, (_, i) => <Skel key={i} w={`${[140, 110, 160, 120][i % 4]}px`} h={20} />)}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function DataTable({ cols, rows, boxed, sort, cards }) {
   const t = (
     <div className="tablewrap">

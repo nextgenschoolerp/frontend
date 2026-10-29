@@ -15,6 +15,8 @@ export const changePassword = (currentPassword, newPassword, confirmPassword) =>
 // --- Roles & screen permissions (US-00002) ----------------------------------------------------------
 export const listRoles = () => api.get('/api/v1/roles');
 export const getRolePermissions = (roleId) => api.get(`/api/v1/roles/${roleId}/permissions`);
+/** Sign-in accounts for staff added by the import: [{ employeeCode, firstName, lastName, email, roleName, branchId }]; the reply holds one-time temporary passwords */
+export const createStaffAccounts = (accounts) => api.post('/api/v1/users/staff-accounts', { accounts });
 export const assignRolePermissions = (roleId, permissions) => api.post(`/api/v1/roles/${roleId}/permissions`, { permissions });
 
 // --- Security & audit (US-00003, US-00004, US-00005) -------------------------------------------------
