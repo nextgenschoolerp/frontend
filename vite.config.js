@@ -1,6 +1,11 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { loadEnv } from 'vite';
+import fs from 'node:fs';
+
+// Shown in the sign-in footer: package version, plus the commit when CI provides one (GITHUB_SHA)
+const pkg = JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
+const build = (process.env.GITHUB_SHA || process.env.VITE_BUILD_SHA || '').slice(0, 7);
 
 // Dev proxy: the browser talks to the Vite origin, so the backend services need no CORS setup.
 // Targets can be set in the active mode's .env file or overridden by the shell environment.
@@ -28,6 +33,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    define: { __APP_VERSION__: JSON.stringify(pkg.version), __APP_BUILD__: JSON.stringify(build) },
     server: {
       proxy: {
         '/api/v1/admissions': { target: admission, changeOrigin: true },

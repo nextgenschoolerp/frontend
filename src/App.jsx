@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout.jsx';
 import Login from './pages/Login.jsx';
+import { Privacy, Terms } from './pages/Legal.jsx';
 import Setup from './pages/Setup.jsx';
 import { ForgotPassword, ResetPassword, ChangePassword } from './pages/PasswordPages.jsx';
 import { RequireAuth } from './auth.jsx';
@@ -16,6 +17,8 @@ export default function App() {
     <Routes>
       <Route path="setup" element={<Setup />} />
       <Route path="login" element={<Login />} />
+      <Route path="privacy" element={<Privacy />} />
+      <Route path="terms" element={<Terms />} />
       <Route path="forgot-password" element={<ForgotPassword />} />
       <Route path="reset-password" element={<ResetPassword />} />
       <Route path="change-password" element={<RequireAuth allowPasswordChange><ChangePassword /></RequireAuth>} />
