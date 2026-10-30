@@ -10,6 +10,7 @@ import {
 import { ApiErr, ApiNote } from '../components/Admissions.jsx';
 import { SchoolProfileCard, AcademicSetupCard, AlertPreferencesCard } from '../components/SettingsCards.jsx';
 import { RolesCard, SecurityCard, Modal } from '../components/AuthSettings.jsx';
+import { RolesOverview } from '../components/RolesOverview.jsx';
 import CommunicationsLive from '../components/CommunicationsLive.jsx';
 import ReportsLive from '../components/ReportsLive.jsx';
 import * as commApi from '../api/communicationService.js';
@@ -463,7 +464,7 @@ function RegionalCard({ draft, setDraft, onSave, onDiscard, canEdit, saving, err
 
 // One section per tab; the tab is kept in the URL (/settings?tab=academic) so it survives reloads and can be linked to.
 const SETTINGS_TABS = [
-  ['general', 'General'], ['academic', 'Academic setup'], ['users', 'Users & permissions'],
+  ['general', 'General'], ['academic', 'Academic setup'], ['users', 'Users & permissions'], ['roles', 'Roles & staff'],
   ['notifications', 'Notifications'], ['security', 'Security & audit'], ['integrations', 'Integrations'], ['import', 'Data import'],
 ];
 
@@ -471,7 +472,8 @@ export function Settings() {
   const [params, setParams] = useSearchParams();
   const { user, hasRole } = useAuth();
   // Data import is shown to the roles that may bulk-import students or staff
-  const tabs = SETTINGS_TABS.filter(([key]) => key !== 'import' || canImportData(hasRole));
+  // Roles & staff is for those who manage roles: trustees and super administrators
+  const tabs = SETTINGS_TABS.filter(([key]) => (key !== 'import' || canImportData(hasRole)) && (key !== 'roles' || hasRole('TRUSTEE', 'SUPER_ADMIN')));
   const index = Math.max(0, tabs.findIndex(([key]) => key === params.get('tab')));
   const tab = tabs[index][0];
   const setTab = (i) => setParams(i === 0 ? {} : { tab: tabs[i][0] }, { replace: true });
@@ -520,6 +522,9 @@ export function Settings() {
 
       {/* authservice: GET /api/v1/roles, GET|POST /api/v1/roles/{roleId}/permissions */}
       {tab === 'users' && <div className="stack"><RolesCard /></div>}
+
+      {/* authservice: roles, role permissions and the school's accounts; hrservice: job titles */}
+      {tab === 'roles' && <RolesOverview />}
 
       {/* communicationservice: GET|PUT /api/v1/communication/staff-alerts/preferences */}
       {tab === 'notifications' && <div className="stack"><AlertPreferencesCard /></div>}

@@ -3,7 +3,7 @@ import {
   Calendar as CalIcon, Download, Plus, GraduationCap, ClipboardCheck, Users, Wallet,
   ArrowUpRight, Send, CalendarDays, ShieldCheck, ChevronDown,
 } from 'lucide-react';
-import { PageHeader, Metrics, SectionHead, Pill, Card, Footer, downloadCsv, TodayLabel, todayIso } from '../components/ui.jsx';
+import { PageHeader, Metrics, SectionHead, Pill, Card, Footer, downloadCsv, TodayLabel, todayIso, schoolDay, useSchoolCalendar } from '../components/ui.jsx';
 import { useAuth } from '../auth.jsx';
 import { useApplications } from '../components/Admissions.jsx';
 import { useStudents } from '../components/StudentRecords.jsx';
@@ -92,7 +92,9 @@ export default function Overview() {
   // Staff on campus: live from hrservice (staff records and today's biometric summary); only roles that can read them see it
   const today = new Date().toISOString().slice(0, 10);
   const canStaff = hasRole(...hr.HR_ROLES.attendance);
-  const staff = useApi(() => hr.listEmployees(user.branchId ? { branchId: user.branchId } : {}), [user.branchId], canStaff);
+  // the staff list is open to every staff role (the Staff page uses it); "punched in today" is only for the roles above
+  const canDirectory = !hasRole('APPLICANT_PARENT');
+  const staff = useApi(() => hr.listEmployees(user.branchId ? { branchId: user.branchId } : {}), [user.branchId], canDirectory);
   const staffToday = useApi(() => hr.attendanceSummary(today), [today], canStaff);
   const leaves = useApi(() => hr.listLeaves(), [], canStaff);
   const pendingLeave = (leaves.data || []).filter((l) => l.status === 'PENDING').length;
@@ -100,6 +102,10 @@ export default function Overview() {
   // "Student attendance" and "Attendance trends": GET /api/v1/attendance/summary and /trend (studentservice)
   const att = useAttendanceWeek();
   const t = att.today;
+  useSchoolCalendar();
+  const todayInfo = schoolDay(todayIso());
+  // a weekend or break with no marks: nothing was due, so show "school closed" rather than zeros
+  const closedToday = !!t && !todayInfo.open && t.unmarked === t.totalStudents;
   // "Upcoming events": the next three school events still to happen; "Notice board": the latest active circulars
   const calendar = useApi(() => listCalendarEvents(user.tenantId), [user.tenantId]);
   const circulars = useApi(() => listBroadcasts(user.tenantId), [user.tenantId]);
@@ -133,13 +139,17 @@ export default function Overview() {
       ? ['Total students', formatNumber(students.current.length), `Across ${students.classCount} class sections`, `+${students.newThisYear.length} this year`, true, GraduationCap, '/students']
       : ['Total students', students.canRead && !students.error ? '…' : '—', students.canRead && !students.error ? '' : 'Not available for your role', '', true, GraduationCap, students.canRead && '/students'],
     att.live
-      ? ['Student attendance', t.presentRate === null ? '—' : `${Number(t.presentRate).toFixed(1)}%`, `${formatNumber(t.present)} of ${formatNumber(t.totalStudents - t.unmarked)} marked present`,
-        att.change !== null ? pp(att.change) : `${t.amRegistersSubmitted} / ${t.registersExpected} registers in`, att.change === null || att.change >= 0, ClipboardCheck, '/attendance']
+      ? (closedToday
+        ? ['Student attendance', '—', `${todayInfo.status} · no registers expected`, 'Weekly average is on the chart below', true, ClipboardCheck, '/attendance']
+        : ['Student attendance', t.presentRate === null ? '—' : `${Number(t.presentRate).toFixed(1)}%`, `${formatNumber(t.present)} of ${formatNumber(t.totalStudents - t.unmarked)} marked present`,
+          att.change !== null ? pp(att.change) : `${t.amRegistersSubmitted} / ${t.registersExpected} registers in`, att.change === null || att.change >= 0, ClipboardCheck, '/attendance'])
       : ['Student attendance', att.allowed && !att.error ? '…' : '—', att.allowed ? (att.error ? 'Could not load attendance' : '') : 'Not available for your role', '', true, ClipboardCheck, att.allowed && '/attendance'],
     canStaff && staff.data && staffToday.data
       ? ['Staff on campus', `${formatNumber(staffToday.data.presentCount)} / ${formatNumber(staffCount)}`,
         staffCount ? `${formatNumber(staffToday.data.attendancePercentage)}% punched in` : 'No staff records yet', '', false, Users, '/staff']
-      : ['Staff on campus', canStaff && (staff.loading || staffToday.loading) ? '…' : '—', canStaff ? '' : 'Not available for your role', '', false, Users, canStaff && '/staff'],
+      : !canStaff && staff.data
+        ? ['Staff on campus', formatNumber(staffCount), 'Active staff · daily attendance is for principals and HR', '', false, Users, '/staff']
+        : ['Staff on campus', canDirectory && (staff.loading || (canStaff && staffToday.loading)) ? '…' : '—', canDirectory ? (staff.error ? 'Could not load staff' : '') : 'Not available for your role', '', false, Users, canDirectory && '/staff'],
     !fee
       ? ['Fees collected', fees.allowed && !fees.error ? '…' : '—', feeState, '', true, Wallet]
       : ['Fees collected', moneyShort(fee.collected), `${moneyShort(fee.outstanding)} outstanding`, `${fee.collectedPct.toFixed(1)}% of billing`, fee.collectedPct >= 85, Wallet, '/fees'],

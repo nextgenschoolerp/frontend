@@ -14,6 +14,8 @@ export const changePassword = (currentPassword, newPassword, confirmPassword) =>
 
 // --- Roles & screen permissions (US-00002) ----------------------------------------------------------
 export const listRoles = () => api.get('/api/v1/roles');
+/** Every account of the school with its roles (SUPER_ADMIN): Settings → Roles & staff */
+export const listTenantUsers = (tenantId, branchId) => api.get(`/api/v1/tenants/${tenantId}/users`, { query: { branchId } });
 export const getRolePermissions = (roleId) => api.get(`/api/v1/roles/${roleId}/permissions`);
 /** Sign-in accounts for staff added by the import: [{ employeeCode, firstName, lastName, email, roleName, branchId }]; the reply holds one-time temporary passwords */
 export const createStaffAccounts = (accounts) => api.post('/api/v1/users/staff-accounts', { accounts });
