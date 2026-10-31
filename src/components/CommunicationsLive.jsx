@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { Plus, QrCode, ShieldAlert, LoaderCircle, Check, Send } from 'lucide-react';
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
@@ -21,14 +21,17 @@ const label = (code) => (code ? code.charAt(0) + code.slice(1).toLowerCase().rep
 const when = (t) => (t ? formatDateTime(t, { year: false }) : '—');
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-const CHANNELS = [['MULTI_CHANNEL', 'WhatsApp, SMS & app push'], ['WHATSAPP', 'WhatsApp'], ['SMS', 'SMS'], ['PUSH', 'App push'], ['EMAIL', 'Email']];
-const AUDIENCES = [['ALL_PARENTS', 'All parents & guardians'], ['ALL_STAKEHOLDERS', 'All parents, students & staff'], ['ALL_TEACHERS', 'All teaching staff'],
-  ['GRADE_10', 'Class 10 families'], ['TRANSPORT_COMMUTERS', 'School bus families']];
+// Sent through the school's own providers (Settings → Integrations); WhatsApp that fails goes again by SMS
+const CHANNELS = [['MULTI_CHANNEL', 'WhatsApp, then SMS if WhatsApp fails'], ['WHATSAPP', 'WhatsApp (SMS if it fails)'], ['SMS', 'SMS'], ['EMAIL', 'Email'], ['PUSH', 'App push (not available yet)']];
+// GRADE_<n>: one primary guardian per family in that class (studentservice); staff come from hrservice
+const AUDIENCES = [['ALL_PARENTS', 'All parents & guardians'], ...Array.from({ length: 12 }, (_, i) => [`GRADE_${i + 1}`, `Class ${i + 1} families`]),
+  ['ALL_TEACHERS', 'All staff'], ['ALL_STAKEHOLDERS', 'All families & staff'], ['TRANSPORT_COMMUTERS', 'School bus families']];
+const PICKABLE = AUDIENCES.filter(([c]) => !['ALL_STAKEHOLDERS', 'TRANSPORT_COMMUTERS'].includes(c));
 const PRIORITIES = [['NORMAL', 'Normal'], ['URGENT', 'Urgent']];
 const CATEGORIES = [['TRANSPORT', 'Transport & bus routes'], ['ACADEMIC', 'Academics & teaching'], ['FEES', 'Fees & payments'], ['FACILITY', 'Facilities & cafeteria']];
 const text = (list, code) => list.find(([c]) => c === code)?.[1] || label(code);
 const tone = {
-  delivery: { DELIVERED: 'green', READ: 'green', SENT: '', FAILED: 'red' },
+  delivery: { DELIVERED: 'green', READ: 'green', SENT: 'green', FAILED: 'red', SKIPPED: 'amber', QUEUED: 'purple' },
   pass: { ISSUED: 'amber', VERIFIED: 'purple', DEPARTED: 'green', CANCELLED: '' },
   ticket: { OPEN: 'amber', IN_PROGRESS: 'purple', ESCALATED: 'red', RESOLVED: 'green' },
   visitor: { SCHEDULED: 'amber', CHECKED_IN: 'green', CHECKED_OUT: '' },
@@ -103,8 +106,8 @@ export default function CommunicationsLive() {
                       : <PreferencesTab onDone={setMsg} />}
         </div>
       </Card>
-      {modal === 'circular' && <CircularModal initial={draft} onClose={() => setModal(null)} onSaved={(b) => { active.reload(); done(`“${b.title}” sent to ${text(AUDIENCES, b.targetAudience).toLowerCase()}.`); }} />}
-      {modal === 'emergency' && <EmergencyModal onClose={() => setModal(null)} onSaved={(b) => { active.reload(); done(`Emergency alert “${b.title}” sent and pinned.`); }} />}
+      {modal === 'circular' && <CircularModal initial={draft} onClose={() => setModal(null)} onSaved={(b) => { active.reload(); done(`“${b.title}” posted for ${text(AUDIENCES, b.targetAudience).toLowerCase()}; sending to ${plural(b.delivery?.QUEUED || 0, 'recipient')}${b.delivery?.SKIPPED ? ` (${b.delivery.SKIPPED} skipped)` : ''}. Open Delivery for the results.`); }} />}
+      {modal === 'emergency' && <EmergencyModal onClose={() => setModal(null)} onSaved={(b) => { active.reload(); done(`Emergency alert “${b.title}” pinned; sending to ${plural(b.delivery?.QUEUED || 0, 'recipient')}. Open Delivery for the results.`); }} />}
       {modal === 'scan' && <ScanModal onClose={() => setModal(null)} onSaved={(p) => done(`Pass ${p.qrCode} verified: ${p.studentName} may leave${p.exitTime ? ` (exit ${formatTime(p.exitTime)})` : ''}.`)} />}
     </>
   );
@@ -122,6 +125,9 @@ function CircularsTab({ active, onDone }) {
   const [error, setError] = useState(null);
   const [logsFor, setLogsFor] = useState(null);
   const res = view === 'pinned' ? pinned : view === 'archived' ? archived : active;
+  // circulars still being sent: look again every 3 seconds until every row has an outcome
+  const sending = (res.data || []).some((b) => b.delivery?.QUEUED);
+  useEffect(() => { if (!sending) return undefined; const t = setTimeout(res.reload, 3000); return () => clearTimeout(t); }, [sending, res.data]);
   const rows = (res.data || []).filter((b) => view !== 'active' || !b.isArchived);
   const act = async (b, call, text) => {
     setBusy(b.broadcastId); setError(null);
@@ -134,7 +140,7 @@ function CircularsTab({ active, onDone }) {
       ))}</div>
     </div>
     {error && <div style={{ marginBottom: 12 }}><ApiErr error={error} /></div>}
-    {res.error ? <ApiErr error={res.error} /> : res.loading || !res.data ? <Loading />
+    {res.error ? <ApiErr error={res.error} /> : !res.data ? <Loading />
       : !rows.length ? <ApiNote>{view === 'active' ? 'No circulars yet. Use New circular to send the first one.' : `No ${view} circulars.`}</ApiNote>
         : rows.map((b) => (
           <div key={b.broadcastId} style={{ border: '1px solid var(--bd)', borderRadius: 10, padding: 16, marginTop: 12 }}>
@@ -144,7 +150,7 @@ function CircularsTab({ active, onDone }) {
                 {b.isPinned && <Pill tone="purple">Pinned</Pill>}
                 {b.isArchived && <Pill>Archived</Pill>}
               </span>
-              <span className="xs muted">{text(AUDIENCES, b.targetAudience)}</span>
+              <span className="xs muted">{text(AUDIENCES, b.targetAudience)}{manage && <DeliverySummary delivery={b.delivery} />}</span>
             </div>
             <h4 style={{ fontSize: 14, fontWeight: 600, margin: '10px 0 6px' }}>{b.title}</h4>
             <p className="body-s" style={{ whiteSpace: 'pre-line' }}>{b.messageBody}</p>
@@ -164,14 +170,17 @@ function CircularsTab({ active, onDone }) {
 
 function DeliveryModal({ broadcast, onClose }) {
   const logs = useApi(() => comm.getDeliveryLogs(broadcast.broadcastId), [broadcast.broadcastId]);
-  const failed = (logs.data || []).filter((l) => l.fallbackTriggered).length;
+  const fallback = (logs.data || []).filter((l) => l.fallbackTriggered).length;
+  const counts = (logs.data || []).reduce((m, l) => ({ ...m, [l.deliveryStatus]: (m[l.deliveryStatus] || 0) + 1 }), {});
+  useEffect(() => { if (!counts.QUEUED) return undefined; const t = setTimeout(logs.reload, 3000); return () => clearTimeout(t); }, [logs.data]);
   return (
     <Modal title="Delivery" sub={broadcast.title} onClose={onClose} footer={<button className="btn" onClick={onClose}>Close</button>}>
-      {logs.error ? <ApiErr error={logs.error} /> : logs.loading || !logs.data ? <Loading />
+      {logs.error ? <ApiErr error={logs.error} /> : !logs.data ? <Loading />
         : !logs.data.length ? <ApiNote>No delivery records for this circular yet.</ApiNote> : (<>
-          <p className="xs muted" style={{ marginBottom: 10 }}>{plural(logs.data.length, 'recipient')} · {failed} sent again by SMS after WhatsApp failed</p>
-          <DataTable boxed cols={[
-            { label: 'Recipient', render: (l) => <span className="cell-id"><b>{l.recipientPhone || l.recipientEmail || '—'}</b><small>{l.errorMessage || ''}</small></span> },
+          <p className="xs muted" style={{ marginBottom: 10 }}>{plural(logs.data.length, 'recipient')}<DeliverySummary delivery={counts} /> · {fallback} tried again by SMS after WhatsApp</p>
+          {!!counts.SKIPPED && <ApiNote>Skipped messages were not sent: the reason is under each recipient. Set up providers in <Link to="/settings?tab=integrations">Settings → Integrations</Link>.</ApiNote>}
+          <DataTable busy={logs.loading} boxed cols={[
+            { label: 'Recipient', render: (l) => <span className="cell-id"><b>{l.recipientName || l.recipientPhone || l.recipientEmail || '—'}</b><small>{l.channel === 'EMAIL' ? l.recipientEmail : l.recipientPhone}{l.errorMessage ? ` · ${l.errorMessage}` : ''}</small></span> },
             { label: 'Channel', render: (l) => text(CHANNELS, l.channel) },
             { label: 'Status', render: (l) => <Pill tone={tone.delivery[l.deliveryStatus]}>{label(l.deliveryStatus)}</Pill> },
             { label: 'SMS fallback', render: (l) => (l.fallbackTriggered ? <Pill tone="amber">Yes</Pill> : <span className="muted">—</span>) },
@@ -192,13 +201,14 @@ function CircularModal({ initial, onClose, onSaved }) {
     try { onSaved(await comm.createBroadcast({ tenantId: user.tenantId, senderUserId: user.userId, senderName: user.name, ...f, title: f.title.trim(), messageBody: f.messageBody.trim() })); } catch (e) { setError(e); } finally { setBusy(false); }
   };
   return (
-    <Modal title="New circular" sub="Sent to every channel at once; SMS takes over when WhatsApp fails" onClose={onClose}
+    <Modal title="New circular" sub="Sent through the school’s own WhatsApp, SMS or email; SMS takes over when WhatsApp fails" onClose={onClose}
       footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={busy || !f.title.trim() || !f.messageBody.trim()} onClick={save}>{busy ? <LoaderCircle size={14} className="spin" /> : <Send size={14} />}Send circular</button></>}>
       <Box id="cc-title" label="Title" required><input id="cc-title" maxLength={200} value={f.title} placeholder="e.g. Half-term break: 26–30 October" onChange={(e) => set('title')(e.target.value)} /></Box>
-      <Box id="cc-audience" label="Audience" required><Choice id="cc-audience" value={f.targetAudience} onChange={set('targetAudience')} options={AUDIENCES.filter(([c]) => c !== 'ALL_STAKEHOLDERS')} /></Box>
+      <Box id="cc-audience" label="Audience" required><Choice id="cc-audience" value={f.targetAudience} onChange={set('targetAudience')} options={PICKABLE} /></Box>
       <Box id="cc-channel" label="Channel" required><Choice id="cc-channel" value={f.channel} onChange={set('channel')} options={CHANNELS} /></Box>
       <Box id="cc-priority" label="Priority"><Choice id="cc-priority" value={f.priority} onChange={set('priority')} options={PRIORITIES} /></Box>
       <Box id="cc-body" label="Message" required><textarea id="cc-body" rows={4} maxLength={4000} value={f.messageBody} onChange={(e) => set('messageBody')(e.target.value)} /></Box>
+      <ReachPreview audience={f.targetAudience} channel={f.channel} />
       {error && <ApiErr error={error} />}
     </Modal>
   );
@@ -217,13 +227,48 @@ function EmergencyModal({ onClose, onSaved }) {
     } catch (e) { setError(e); } finally { setBusy(false); }
   };
   return (
-    <Modal title="Emergency alert" sub="Goes to every parent, student and staff member, ignores quiet hours and is pinned to the top of the app" onClose={onClose}
+    <Modal title="Emergency alert" sub="Goes to every family and staff member by WhatsApp (SMS if it fails), ignores quiet hours and is pinned to the top of the app" onClose={onClose}
       footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={busy || !title.trim() || !body.trim()} onClick={save}>{busy ? <LoaderCircle size={14} className="spin" /> : <ShieldAlert size={14} />}Send emergency alert</button></>}>
       <ApiNote>Use this only for closures and safety incidents: it cannot be held until morning.</ApiNote>
       <Box id="em-title" label="Headline" required><input id="em-title" maxLength={200} value={title} placeholder="e.g. School closed today: heavy rain" onChange={(e) => setTitle(e.target.value)} /></Box>
       <Box id="em-body" label="Message" required><textarea id="em-body" rows={3} maxLength={2000} value={body} onChange={(e) => setBody(e.target.value)} /></Box>
+      <ReachPreview audience="ALL_STAKEHOLDERS" channel="MULTI_CHANNEL" />
       {error && <ApiErr error={error} />}
     </Modal>
+  );
+}
+
+/** "· 5 sent · 2 failed · 3 skipped", or "· sending 5…" while rows are queued */
+function DeliverySummary({ delivery }) {
+  if (!delivery || !Object.keys(delivery).length) return null;
+  const parts = [['QUEUED', 'sending'], ['SENT', 'sent'], ['DELIVERED', 'delivered'], ['READ', 'read'], ['FAILED', 'failed'], ['SKIPPED', 'skipped']]
+    .filter(([k]) => delivery[k]).map(([k, t]) => (k === 'QUEUED' ? `${t} ${delivery[k]}…` : `${delivery[k]} ${t}`));
+  const bad = delivery.FAILED || delivery.SKIPPED;
+  return <span style={{ color: bad ? 'var(--am)' : undefined }}> · {parts.join(' · ')}</span>;
+}
+
+/** Before sending: how many families / staff the audience reaches, and whether the school's channels can send. */
+function ReachPreview({ audience, channel }) {
+  const { user, hasRole } = useAuth();
+  const p = useApi(() => comm.previewAudience(user.tenantId, audience, channel), [user.tenantId, audience, channel]);
+  if (p.error) return <ApiErr error={p.error} />;
+  if (!p.data) return <p className="xs muted" style={{ marginTop: 10 }}><LoaderCircle size={12} className="spin" /> Counting recipients…</p>;
+  const d = p.data;
+  const ready = Object.fromEntries((d.channels || []).map((c) => [c.channel, c.ready]));
+  const uses = channel === 'EMAIL' ? ['EMAIL'] : channel === 'SMS' ? ['SMS'] : channel === 'PUSH' ? [] : ['WHATSAPP', 'SMS'];
+  const can = uses.filter((c) => ready[c]);
+  const who = [d.families && `${d.families} ${d.families === 1 ? 'family' : 'families'}`, d.staff && `${d.staff} staff`].filter(Boolean).join(' and ') || 'nobody';
+  const reachable = channel === 'EMAIL' ? d.withEmail : d.withPhone;
+  const names = { WHATSAPP: 'WhatsApp', SMS: 'SMS', EMAIL: 'Email' };
+  const note = channel === 'PUSH' ? 'App push is not available yet: nothing will be sent, the circular is only posted.'
+    : !d.channels ? 'Could not check the school’s messaging settings.'
+      : !can.length ? `${uses.map((c) => names[c]).join(' and ')} ${uses.length > 1 ? 'are' : 'is'} not set up, so nothing will be sent: the circular is posted and every recipient is marked skipped.`
+        : `Sends by ${can.map((c) => names[c]).join(', then ')}${uses.length > can.length ? ` (${uses.filter((c) => !ready[c]).map((c) => names[c]).join(', ')} not set up)` : ''}.`;
+  return (
+    <div className={`api-note ${can.length || channel === 'PUSH' ? 'ok' : ''}`} style={{ marginTop: 10 }} role="status">
+      <span>Reaches <b>{who}</b>{d.recipients ? ` · ${reachable} with ${channel === 'EMAIL' ? 'an email address' : 'a mobile number'}` : ''}. {note}
+        {!can.length && channel !== 'PUSH' && hasRole('SUPER_ADMIN', 'IT_SYSTEM_ADMIN') && <> <Link to="/settings?tab=integrations">Set up in Settings → Integrations</Link></>}</span>
+    </div>
   );
 }
 
@@ -233,11 +278,11 @@ function MessagesTab() {
   const inbox = useApi(() => comm.getUserInbox(user.userId), [user.userId]);
   const [open, setOpen] = useState(null);
   if (inbox.error) return <ApiErr error={inbox.error} />;
-  if (inbox.loading || !inbox.data) return <Loading />;
+  if (!inbox.data && !inbox.error) return <Loading />;
   const rows = inbox.data.slice().sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   return (<>
     <p className="xs muted" style={{ marginBottom: 10 }}>Private conversations between parents and teachers. {plural(rows.filter((m) => !m.isRead).length, 'unread message')}.</p>
-    {!rows.length ? <ApiNote>Your inbox is empty.</ApiNote> : <DataTable boxed cols={[
+    {!rows.length ? <ApiNote>Your inbox is empty.</ApiNote> : <DataTable busy={inbox.loading} boxed cols={[
       { label: 'From', render: (m) => <span className="cell-id"><b>{m.senderName}</b><small>{label(String(m.senderRole || '').replace(/^ROLE_/, ''))}</small></span> },
       { label: 'Message', render: (m) => <span><b style={{ fontWeight: m.isRead ? 400 : 600 }}>{m.subject}</b> <span className="muted">{m.content}</span></span> },
       { label: 'Received', render: (m) => when(m.createdAt) },
@@ -266,7 +311,7 @@ function ThreadModal({ first, onClose }) {
   return (
     <Modal title={first.subject} sub={`With ${first.senderName}`} onClose={onClose}
       footer={<><button className="btn" onClick={onClose}>Close</button><button className="btn primary" disabled={busy || !reply.trim()} onClick={send}>{busy ? <LoaderCircle size={14} className="spin" /> : <Send size={14} />}Send reply</button></>}>
-      {thread.error ? <ApiErr error={thread.error} /> : thread.loading || !thread.data ? <Loading /> : (
+      {thread.error ? <ApiErr error={thread.error} /> : !thread.data ? <Loading /> : (
         <div style={{ display: 'grid', gap: 8, maxHeight: 320, overflowY: 'auto' }}>
           {thread.data.map((m) => (
             <div key={m.messageId} className={mine(m) ? 'notice' : ''} style={{ border: '1px solid var(--bd)', borderRadius: 10, padding: '10px 12px', justifySelf: mine(m) ? 'end' : 'start', maxWidth: '85%' }}>
@@ -303,8 +348,8 @@ function GatePassTab({ onDone }) {
       ]} rows={issued} />
     </div>)}
     {security && <p className="xs muted" style={{ marginBottom: 8 }}>Gate log: scans, exits and refused attempts</p>}
-    {!security ? (!issued.length && <ApiNote>Passes you issue appear here; security scans them at the gate.</ApiNote>) : audits.error ? <ApiErr error={audits.error} /> : audits.loading || !audits.data ? <Loading />
-      : !audits.data.length ? <ApiNote>No gate scans recorded yet.</ApiNote> : <DataTable boxed cols={[
+    {!security ? (!issued.length && <ApiNote>Passes you issue appear here; security scans them at the gate.</ApiNote>) : audits.error ? <ApiErr error={audits.error} /> : !audits.data ? <Loading />
+      : !audits.data.length ? <ApiNote>No gate scans recorded yet.</ApiNote> : <DataTable busy={audits.loading} boxed cols={[
         { label: 'Time', render: (a) => when(a.timestamp) },
         { label: 'Gate', render: (a) => a.gateName || label(a.gateId) },
         { label: 'Person', render: (a) => <span className="cell-id"><b>{a.personName}</b><small>{a.notes || ''}</small></span> },
@@ -374,8 +419,8 @@ function VisitorsTab({ visitors, onDone }) {
   return (<>
     <div className="filters" style={{ marginBottom: 12 }}><button className="btn primary" onClick={() => setAdding(true)}><Plus size={14} />Register visitor</button></div>
     {error && <div style={{ marginBottom: 12 }}><ApiErr error={error} /></div>}
-    {visitors.error ? <ApiErr error={visitors.error} /> : visitors.loading || !visitors.data ? <Loading />
-      : !rows.length ? <ApiNote>No visitor appointments yet.</ApiNote> : <DataTable boxed cols={[
+    {visitors.error ? <ApiErr error={visitors.error} /> : !visitors.data ? <Loading />
+      : !rows.length ? <ApiNote>No visitor appointments yet.</ApiNote> : <DataTable busy={visitors.loading} boxed cols={[
         { label: 'Visitor', render: (v) => <span className="cell-id"><b>{v.visitorName}</b><small>{v.visitorPhone}</small></span> },
         { label: 'Purpose', render: (v) => <span className="cell-id"><b style={{ fontWeight: 400 }}>{v.purpose}</b><small>Meeting {v.hostStaffName || '—'}</small></span> },
         { label: 'Appointment', render: (v) => when(v.appointmentTime) },
@@ -427,8 +472,8 @@ function GrievancesTab({ grievances, onDone }) {
   const rows = (grievances.data || []).slice().sort((a, b) => (a.status === 'RESOLVED') - (b.status === 'RESOLVED') || String(b.createdAt).localeCompare(String(a.createdAt)));
   return (<>
     {hasRole(...ROLES.parent) && <div className="filters" style={{ marginBottom: 12 }}><button className="btn primary" onClick={() => setAdding(true)}><Plus size={14} />Log grievance</button></div>}
-    {!desk ? <ApiNote>The reception desk answers grievances; you are told when yours is resolved.</ApiNote> : grievances.error ? <ApiErr error={grievances.error} /> : grievances.loading || !grievances.data ? <Loading />
-      : !rows.length ? <ApiNote>No grievances logged.</ApiNote> : <DataTable boxed cols={[
+    {!desk ? <ApiNote>The reception desk answers grievances; you are told when yours is resolved.</ApiNote> : grievances.error ? <ApiErr error={grievances.error} /> : !grievances.data ? <Loading />
+      : !rows.length ? <ApiNote>No grievances logged.</ApiNote> : <DataTable busy={grievances.loading} boxed cols={[
         { label: 'Ticket', render: (g) => <span className="cell-id"><b>{g.subject}</b><small>{g.parentName}{g.studentName ? ` · ${g.studentName}` : ''}</small></span> },
         { label: 'Category', render: (g) => text(CATEGORIES, g.category) },
         { label: 'Priority', render: (g) => <Pill tone={g.priority === 'URGENT' || g.priority === 'HIGH' ? 'red' : ''}>{label(g.priority)}</Pill> },
@@ -507,8 +552,8 @@ function AbsenceTab({ today, onDone }) {
     </div>
     {error && <div style={{ marginBottom: 12 }}><ApiErr error={error} /></div>}
     <p className="xs muted" style={{ marginBottom: 8 }}>Guardians are messaged 30 minutes after the morning register when a student is absent without notice</p>
-    {!allowed ? <ApiNote>Absence alerts are handled by the attendance office.</ApiNote> : alerts.error ? <ApiErr error={alerts.error} /> : alerts.loading || !alerts.data ? <Loading />
-      : !alerts.data.length ? <ApiNote>No absence alerts on {formatDate(date)}.</ApiNote> : <DataTable boxed cols={[
+    {!allowed ? <ApiNote>Absence alerts are handled by the attendance office.</ApiNote> : alerts.error ? <ApiErr error={alerts.error} /> : !alerts.data ? <Loading />
+      : !alerts.data.length ? <ApiNote>No absence alerts on {formatDate(date)}.</ApiNote> : <DataTable busy={alerts.loading} boxed cols={[
         { label: 'Student', render: (a) => <span className="cell-id"><b>{a.studentName}</b><small>{a.guardianName || ''}</small></span> },
         { label: 'Guardian mobile', key: 'guardianPhone' },
         { label: 'Sent', render: (a) => <span className="cell-id"><b style={{ fontWeight: 400 }}>{when(a.createdAt)}</b><small>{text(CHANNELS, a.alertChannel)}</small></span> },
@@ -516,7 +561,7 @@ function AbsenceTab({ today, onDone }) {
         { label: 'Escalation', render: (a) => (a.escalated ? <Pill tone="red">Escalated</Pill> : <button className="btn" disabled={busy === a.alertId} onClick={() => escalate(a)}>Escalate</button>) },
       ]} rows={alerts.data} />}
     <p className="xs muted" style={{ margin: '18px 0 8px' }}>Daily bulletins: menus and bus notices</p>
-    {bulletins.error ? <ApiErr error={bulletins.error} /> : bulletins.loading || !bulletins.data ? <Loading />
+    {bulletins.error ? <ApiErr error={bulletins.error} /> : !bulletins.data ? <Loading />
       : !bulletins.data.length ? <ApiNote>No bulletins for {formatDate(date)}.</ApiNote>
         : bulletins.data.map((b) => (
           <div className="attrow" key={b.bulletinId}>
@@ -538,7 +583,7 @@ function PreferencesTab({ onDone }) {
     setSaving(true); setError(null);
     try { await comm.configurePreferences({ tenantId: user.tenantId, userId: user.userId, ...p, ...change }); prefs.reload(); onDone('Alert preferences saved.'); } catch (e) { setError(e); } finally { setSaving(false); }
   };
-  if (prefs.loading) return <Loading />;
+  if (prefs.loading && !prefs.data) return <Loading />;
   return (<>
     {prefs.error && prefs.error.status !== 404 && <div style={{ marginBottom: 12 }}><ApiErr error={prefs.error} /></div>}
     {error && <div style={{ marginBottom: 12 }}><ApiErr error={error} /></div>}

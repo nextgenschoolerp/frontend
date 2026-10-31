@@ -7,7 +7,7 @@ import { ApiErr, ApiNote } from './Admissions.jsx';
 import { useApi } from '../api/useApi.js';
 import { useAuth } from '../auth.jsx';
 import { getSchoolProfile, saveSchoolProfile, fetchSchoolCrest, uploadSchoolCrest } from '../api/authService.js';
-import { getAcademicCalendar, updateAcademicSession, saveAcademicTerms } from '../api/studentService.js';
+import { getAcademicCalendar, updateAcademicSession, saveAcademicTerms, attendanceSettings, saveAttendanceSettings, ROLES as STUDENT_ROLES } from '../api/studentService.js';
 import { getStaffAlerts, saveStaffAlerts } from '../api/communicationService.js';
 import { formatDate } from '../regional.js';
 
@@ -258,6 +258,50 @@ const ALERTS = [
   ['attendanceAlerts', 'Attendance alerts', 'Unexcused absences and late registers'], ['feeReminders', 'Fee reminders', 'Overdue accounts and reconciliations'],
   ['leaveRequests', 'Leave requests', 'New staff requests awaiting approval'], ['dailyDigest', 'Daily school digest', 'A summary at 16:30 each school day'],
 ];
+
+/* ---------- Academic setup → Attendance registers ---------- */
+const ATTENDANCE_MODES = [
+  ['DAILY', 'One register a day', 'Each class is marked once a day. Figures count students: "46 of 52 present".'],
+  ['AM_PM', 'Morning and afternoon registers', 'Each class is marked twice a day (AM and PM). Figures count half-day sessions, so a student counts twice: "91 of 104 half-days present".'],
+];
+
+/** One register a day or morning and afternoon registers (studentservice GET|PUT /api/v1/attendance/settings). */
+export function AttendanceModeCard() {
+  const { hasRole } = useAuth();
+  const canEdit = hasRole(...STUDENT_ROLES.attendanceSettings);
+  const res = useApi(() => attendanceSettings(), []);
+  const [mode, setMode] = useState(null);
+  const saver = useSaver();
+  useEffect(() => { if (res.data) setMode(res.data.mode); }, [res.data]);
+  const current = res.data?.mode;
+  const changed = !!mode && mode !== current;
+  const save = () => saver.run(async () => { await saveAttendanceSettings(mode); await res.reload(); },
+    mode === 'DAILY' ? 'Saved. Classes now take one register a day.' : 'Saved. Classes now take a morning and an afternoon register.');
+  return (
+    <Card>
+      <SectionHead title="Attendance registers" sub="How often each class is marked. The registers, the attendance figures and the reports follow this choice." />
+      {res.error ? <div style={{ marginTop: 12 }}><ApiErr error={res.error} /></div> : !res.data ? <p className="xs muted" style={{ marginTop: 12 }}>Loading…</p> : (<>
+        <div className="modechoice" role="radiogroup" aria-label="Attendance registers">
+          {ATTENDANCE_MODES.map(([value, title, help]) => (
+            <label key={value} className={`modeopt${mode === value ? ' on' : ''}${canEdit ? '' : ' ro'}`}>
+              <input type="radio" name="attendance-mode" value={value} checked={mode === value} disabled={!canEdit || saver.busy}
+                onChange={() => { setMode(value); saver.reset(); }} />
+              <span><b>{title}</b>{current === value && <em className="xs"> · in use</em>}<small>{help}</small></span>
+            </label>
+          ))}
+        </div>
+        {changed && (
+          <div style={{ marginTop: 12 }}><ApiNote>{mode === 'DAILY'
+            ? 'Marks already taken are kept. From now on the figures use the morning (or day) register only; afternoon marks stay on record but are not counted.'
+            : 'Marks already taken are kept. Days marked once count as morning only, so their afternoon shows as not marked.'}</ApiNote></div>
+        )}
+        {res.data.updatedAt && <p className="xs muted" style={{ marginTop: 10 }}>Last changed {formatDate(res.data.updatedAt)} by {res.data.updatedBy}.</p>}
+        <SaveBar changed={changed} busy={saver.busy} onSave={save} onDiscard={() => { setMode(current); saver.reset(); }} saved={saver.saved} error={saver.error}
+          canEdit={canEdit} who="a principal or a super administrator" />
+      </>)}
+    </Card>
+  );
+}
 
 export function AlertPreferencesCard() {
   const { user } = useAuth();

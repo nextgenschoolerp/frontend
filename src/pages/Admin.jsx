@@ -8,8 +8,9 @@ import {
   PageHeader, Metrics, Card, SectionHead, useBackLink, Tabs, SearchBox, Select, DataTable, Pager, Pill, Footer, Field, FieldGrid, KV, downloadFile, downloadCsv, schoolDay, todayIso,
 } from '../components/ui.jsx';
 import { ApiErr, ApiNote } from '../components/Admissions.jsx';
-import { SchoolProfileCard, AcademicSetupCard, AlertPreferencesCard } from '../components/SettingsCards.jsx';
+import { SchoolProfileCard, AcademicSetupCard, AttendanceModeCard, AlertPreferencesCard } from '../components/SettingsCards.jsx';
 import { RolesCard, SecurityCard, Modal } from '../components/AuthSettings.jsx';
+import { RolesOverview } from '../components/RolesOverview.jsx';
 import CommunicationsLive from '../components/CommunicationsLive.jsx';
 import ReportsLive from '../components/ReportsLive.jsx';
 import * as commApi from '../api/communicationService.js';
@@ -21,6 +22,7 @@ import { getRegional, applyServerRegional, version, zoneName, TIME_ZONES, CURREN
 import { saveRegionalSettings } from '../api/authService.js';
 import { DataImportCard, canImportData } from '../components/DataImport.jsx';
 import { ClassStructureCard } from '../components/AcademicStructure.jsx';
+import { IntegrationsPanel } from '../components/Integrations.jsx';
 
 const act = (t) => <span className="act">{t}</span>;
 
@@ -463,7 +465,7 @@ function RegionalCard({ draft, setDraft, onSave, onDiscard, canEdit, saving, err
 
 // One section per tab; the tab is kept in the URL (/settings?tab=academic) so it survives reloads and can be linked to.
 const SETTINGS_TABS = [
-  ['general', 'General'], ['academic', 'Academic setup'], ['users', 'Users & permissions'],
+  ['general', 'General'], ['academic', 'Academic setup'], ['users', 'Users & permissions'], ['roles', 'Roles & staff'],
   ['notifications', 'Notifications'], ['security', 'Security & audit'], ['integrations', 'Integrations'], ['import', 'Data import'],
 ];
 
@@ -471,7 +473,8 @@ export function Settings() {
   const [params, setParams] = useSearchParams();
   const { user, hasRole } = useAuth();
   // Data import is shown to the roles that may bulk-import students or staff
-  const tabs = SETTINGS_TABS.filter(([key]) => key !== 'import' || canImportData(hasRole));
+  // Roles & staff is for those who manage roles: trustees and super administrators
+  const tabs = SETTINGS_TABS.filter(([key]) => (key !== 'import' || canImportData(hasRole)) && (key !== 'roles' || hasRole('TRUSTEE', 'SUPER_ADMIN')));
   const index = Math.max(0, tabs.findIndex(([key]) => key === params.get('tab')));
   const tab = tabs[index][0];
   const setTab = (i) => setParams(i === 0 ? {} : { tab: tabs[i][0] }, { replace: true });
@@ -516,10 +519,13 @@ export function Settings() {
       )}
 
       {/* studentservice: GET /api/v1/academic/calendar, PUT /api/v1/academic/sessions/{id}[/terms] */}
-      {tab === 'academic' && <div className="stack"><AcademicSetupCard /><ClassStructureCard /></div>}
+      {tab === 'academic' && <div className="stack"><AcademicSetupCard /><AttendanceModeCard /><ClassStructureCard /></div>}
 
       {/* authservice: GET /api/v1/roles, GET|POST /api/v1/roles/{roleId}/permissions */}
       {tab === 'users' && <div className="stack"><RolesCard /></div>}
+
+      {/* authservice: roles, role permissions and the school's accounts; hrservice: job titles */}
+      {tab === 'roles' && <RolesOverview />}
 
       {/* communicationservice: GET|PUT /api/v1/communication/staff-alerts/preferences */}
       {tab === 'notifications' && <div className="stack"><AlertPreferencesCard /></div>}
@@ -528,14 +534,8 @@ export function Settings() {
       {tab === 'security' && <div className="stack"><SecurityCard /></div>}
 
       {tab === 'import' && <DataImportCard />}
-      {tab === 'integrations' && (
-        <div className="stack">
-          <Card>
-            <div className="cardhead"><h3>Integrations</h3><p>Connect payment gateways, SMS providers and other systems.</p></div>
-            <p className="body-s muted" style={{ marginTop: 12 }}>No integrations are configured for this school yet. API tokens for third-party systems are issued by authservice (US-00007) and will be managed here.</p>
-          </Card>
-        </div>
-      )}
+      {/* authservice: GET /api/v1/tenants/{tenantId}/integrations, PUT|DELETE /{channel}, POST /{channel}/test */}
+      {tab === 'integrations' && <IntegrationsPanel />}
       <Footer />
     </>
   );

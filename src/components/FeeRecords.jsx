@@ -120,10 +120,14 @@ function SendReceiptModal({ receipt, contacts, onClose }) {
   const [done, setDone] = useState(null);
   const { busy, error, submit } = useSubmit((v) => fin.dispatchReceipt(receipt.receiptId, { channel: v.channel, recipient: v.recipient.trim() }), setDone);
   if (done) {
+    const by = done.channel === 'EMAIL' ? 'e-mail' : done.channel === 'SMS' ? 'SMS' : 'WhatsApp';
+    // SENT / FAILED come back at once; SMS has no sender yet and stays QUEUED
+    const title = done.status === 'SENT' ? 'Receipt sent' : done.status === 'FAILED' ? 'Receipt not sent' : 'Receipt queued';
     return (
-      <Modal title="Receipt queued" sub={receipt.receiptNumber} onClose={onClose} footer={<button className="btn primary" onClick={onClose}>Done</button>}>
-        <p className="body-s">{receipt.receiptNumber} will be sent by {done.channel === 'EMAIL' ? 'e-mail' : done.channel === 'SMS' ? 'SMS' : 'WhatsApp'} to {done.recipient}.</p>
-        <ApiNote>Messages are delivered once the communication module is connected; until then the request stays queued.</ApiNote>
+      <Modal title={title} sub={receipt.receiptNumber} onClose={onClose} footer={<button className="btn primary" onClick={onClose}>Done</button>}>
+        <p className="body-s">{receipt.receiptNumber} {done.status === 'SENT' ? 'was sent' : done.status === 'FAILED' ? 'could not be sent' : 'will be sent'} by {by} to {done.recipient}.</p>
+        {done.statusDetail && <div className={done.status === 'SENT' ? 'api-note ok' : 'api-note err'} style={{ marginTop: 10 }}><span>{done.statusDetail}</span></div>}
+        {done.status === 'QUEUED' && <ApiNote>SMS is not connected yet; the request stays queued.</ApiNote>}
       </Modal>
     );
   }
@@ -218,7 +222,7 @@ function RaiseFees({ student, onDone }) {
   const [error, setError] = useState(null);
   const schedule = (schedules.data || []).filter((s) => s.gradeName === student.gradeName)
     .sort((a, b) => b.academicYear.localeCompare(a.academicYear))[0];
-  if (schedules.loading) return <Loading />;
+  if (schedules.loading && !schedules.data) return <Loading />;
   if (!schedule) return <p className="xs muted" style={{ marginTop: 10 }}>{student.gradeName ? `There is no fee schedule for ${student.gradeName} yet.` : 'Place the student in a class first.'}</p>;
   const post = async () => {
     setBusy(true); setError(null);

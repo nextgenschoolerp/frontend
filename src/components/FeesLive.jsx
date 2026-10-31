@@ -3,7 +3,7 @@ import { Plus, Download, Timer, LoaderCircle } from 'lucide-react';
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as fin from '../api/financeService.js';
-import { PageHeader, Metrics, scrollToId, Card, SectionHead, DataTable, Pager, Pill, KV, Footer, SearchBox, downloadCsv, todayIso, useSort, sortRows } from './ui.jsx';
+import { PageHeader, Metrics, scrollToId, Card, SectionHead, DataTable, Pager, Pill, KV, Footer, SearchBox, downloadCsv, todayIso, useSort, sortRows, Stale } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
 import { Loading, fmtDate, feePill, RecordPaymentModal, ReceiptsTable, receiptCols } from './FeeRecords.jsx';
@@ -89,7 +89,7 @@ export function FeesLive() {
           <Card id="fees-overview">
             <h3 style={{ fontSize: 15, fontWeight: 600 }}>Collection overview</h3>
             <p className="small muted" style={{ margin: '4px 0 14px' }}>{s ? `${fmtDate(s.fromDate)} – ${fmtDate(s.toDate)}` : 'Academic year to date'}</p>
-            {summary.loading ? <Loading /> : s && (<>
+            {summary.loading && !summary.data ? <Loading /> : s && (<>
               <div className="bignum">{money(s.totalCollected)}</div>
               <div style={{ margin: '14px 0' }}>{pct !== null && <Pill tone={pct >= 85 ? 'green' : 'amber'}>{pct.toFixed(1)}% collected</Pill>}
                 {s.bouncedCount > 0 && <> <Pill tone="amber">{s.bouncedCount} bounced</Pill></>}</div>
@@ -141,8 +141,8 @@ function TransactionsCard({ receipts, onChanged }) {
           {Object.entries(PAYMENT_MODES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
       </div>
-      {receipts.loading ? <Loading /> : receipts.error ? <ApiErr error={receipts.error} /> : !rows.length ? <p className="xs muted">No receipts match.</p> : (<>
-        <ReceiptsTable rows={sortRows(rows, cols, sort).slice((current - 1) * PAGE, current * PAGE)} onChanged={onChanged} showStudent sort={sort} />
+      {receipts.loading && !receipts.data ? <Loading /> : receipts.error ? <ApiErr error={receipts.error} /> : !rows.length ? <p className="xs muted">No receipts match.</p> : (<>
+        <Stale busy={receipts.loading}><ReceiptsTable rows={sortRows(rows, cols, sort).slice((current - 1) * PAGE, current * PAGE)} onChanged={onChanged} showStudent sort={sort} /></Stale>
         <Pager page={current} pages={pages} onPage={setPage}
           text={`Showing ${(current - 1) * PAGE + 1}–${Math.min(current * PAGE, rows.length)} of ${rows.length} receipts${rows.length < all.length ? ` (filtered from ${all.length})` : ''}`} />
       </>)}
@@ -177,8 +177,8 @@ function DefaultersCard({ overdue, onPay }) {
           {classes.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
       </div>
-      {overdue.loading ? <Loading /> : overdue.error ? <ApiErr error={overdue.error} /> : !rows.length ? <p className="xs muted">No overdue accounts.</p> : (
-        <DataTable boxed sort={sort} rows={sortRows(rows, defaulterCols, sort)} cols={defaulterCols} />
+      {overdue.loading && !overdue.data ? <Loading /> : overdue.error ? <ApiErr error={overdue.error} /> : !rows.length ? <p className="xs muted">No overdue accounts.</p> : (
+        <DataTable busy={overdue.loading} boxed sort={sort} rows={sortRows(rows, defaulterCols, sort)} cols={defaulterCols} />
       )}
     </Card>
   );
@@ -192,7 +192,7 @@ function FeeHeadsCard({ heads, onMap }) {
     <Card>
       <h3 style={{ fontSize: 15, fontWeight: 600 }}>Fee heads & ledgers</h3>
       <p className="small muted" style={{ margin: '4px 0 14px' }}>Accounting ledger each fee head posts to</p>
-      {heads.loading ? <Loading /> : heads.error ? <ApiErr error={heads.error} /> : heads.data.map((h) => (
+      {heads.loading && !heads.data ? <Loading /> : heads.error ? <ApiErr error={heads.error} /> : heads.data.map((h) => (
         <div className="detail" key={h.feeHeadId}>{h.headName}<span>·</span>
           {h.ledgerCode ? <b title={h.ledgerName}>{h.ledgerCode}</b> : <Pill tone="amber">Not mapped</Pill>}
           {canMap && <button type="button" className="link" style={{ marginLeft: 'auto' }} onClick={() => onMap(h)}>{h.ledgerCode ? 'Change' : 'Map ledger'}</button>}

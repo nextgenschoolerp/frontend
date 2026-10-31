@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Download, LoaderCircle, Wand2, UserX, Shuffle, Plus, Check, Send, CalendarPlus } from 'lucide-react';
+import { Download, LoaderCircle, Wand2, UserX, Shuffle, Plus, Check, Send, CalendarPlus, Pencil, Trash2, X } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as lms from '../api/academicService.js';
 import * as hr from '../api/hrService.js';
-import { PageHeader, Metrics, scrollToId, Card, Tabs, DataTable, Pill, Footer, SectionHead, downloadFile, todayIso, useTabParam } from './ui.jsx';
+import { PageHeader, Metrics, scrollToId, Card, Tabs, DataTable, Pill, Footer, SectionHead, downloadFile, todayIso, useTabParam, IconAction, Stale } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
 import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
@@ -72,10 +73,11 @@ export function TeachingLive() {
       {pdf && pdf !== 'busy' && <Card><ApiErr error={pdf} /></Card>}
       <Metrics items={[
         ['Bell schedule', schedule ? schedule.scheduleName : schedules.loading ? '…' : 'None', schedule ? `${schedule.teachingPeriodsPerDay} periods a day · ${hhmm(schedule.schoolStart)}–${hhmm(schedule.schoolEnd)}` : ''],
-        ['Teachers', workloads.data ? String(teachers.length) : '…', workloads.data ? `Average load ${avgUse.toFixed(0)}% of weekly cap` : '', null, false, null,
-          workloads.data && { onClick: () => { setTab(TABS.indexOf('Workload')); scrollToId('teaching-tabs'); }, hint: 'Open teacher workload', active: TABS[tab] === 'Workload' }],
-        ['Classes', classes.data ? `${allocated.length} of ${sections.length}` : '…', 'With subject teachers allocated', null, false, null,
+        ['Classes staffed', classes.data ? `${allocated.length} of ${sections.length}` : '…', 'have subject teachers allocated', null, false, null,
           classes.data && { onClick: () => { setTab(TABS.indexOf('Allocations')); scrollToId('teaching-tabs'); }, hint: 'Open class allocations', active: TABS[tab] === 'Allocations' }],
+        // the headline is the workload; the number of teachers is the context
+        ['Teaching load', workloads.data ? `${avgUse.toFixed(0)}%` : '…', workloads.data ? `average of the weekly cap · ${teachers.length} teacher${teachers.length === 1 ? '' : 's'}` : '', null, false, null,
+          workloads.data && { onClick: () => { setTab(TABS.indexOf('Workload')); scrollToId('teaching-tabs'); }, hint: 'Open teacher workload', active: TABS[tab] === 'Workload' }],
         [`Cover · ${t ? fmtDate(t.date) : '…'}`, t ? `${t.assigned} / ${t.periodsToCover}` : '…', t ? (t.periodsToCover ? `${t.absentTeachers} absent · ${t.uncovered} not covered` : 'No absences recorded') : '', null, false, null,
           t && { onClick: () => { setTab(TABS.indexOf('Cover')); scrollToId('teaching-tabs'); }, hint: 'Open cover and substitutions', active: TABS[tab] === 'Cover' }],
       ]} />
@@ -115,8 +117,11 @@ const SectionPicker = ({ sections, sectionId, setSectionId }) => {
 
 /* ---------- Timetable (US-06002) ---------- */
 function TimetableTab({ sections, allocated, sectionId, setSectionId, teachers, schedule, me }) {
-  const [mode, setMode] = useState('class');
-  const [teacherId, setTeacherId] = useState('');
+  // ?teacher=<userId> (e.g. from a staff profile) opens the teacher view on that teacher
+  const [params] = useSearchParams();
+  const linked = params.get('teacher') || '';
+  const [mode, setMode] = useState(linked ? 'teacher' : 'class');
+  const [teacherId, setTeacherId] = useState(linked);
   useEffect(() => { if (!teacherId && teachers.length) setTeacherId((teachers.find((x) => x.teacherId === me) || teachers[0]).teacherId); }, [teachers, teacherId, me]);
   const tt = useApi(() => (mode === 'class' ? lms.sectionTimetable(sectionId) : lms.teacherTimetable(teacherId)),
     [mode, sectionId, teacherId], mode === 'class' ? !!sectionId : !!teacherId);
@@ -129,7 +134,7 @@ function TimetableTab({ sections, allocated, sectionId, setSectionId, teachers, 
       {mode === 'class' ? <SectionPicker sections={sections} sectionId={sectionId} setSectionId={setSectionId} />
         : <Picker label="Teacher" value={teacherId} onChange={setTeacherId} options={teachers.map((x) => [x.teacherId, x.teacherName])} />}
     </div>
-    {tt.error ? <ApiErr error={tt.error} /> : bell.error ? <ApiErr error={bell.error} /> : tt.loading || bell.loading || !d ? <Loading /> : !bell.data ? <ApiNote>No bell schedule is set up yet.</ApiNote> : (<>
+    {tt.error ? <ApiErr error={tt.error} /> : bell.error ? <ApiErr error={bell.error} /> : !d || (bell.loading && !bell.data) ? <Loading /> : !bell.data ? <ApiNote>No bell schedule is set up yet.</ApiNote> : (<Stale busy={tt.loading}>
       <p className="xs muted" style={{ marginBottom: 10 }}>
         {mode === 'class' ? `${d.className} · ${d.periodsPerWeek} periods a week` : `${d.teacherName} · ${d.periodsPerWeek} of ${d.weeklyMaxPeriods ?? '—'} periods a week`} · {bell.data.scheduleName}
       </p>
@@ -137,7 +142,7 @@ function TimetableTab({ sections, allocated, sectionId, setSectionId, teachers, 
         ? <ApiNote>No subject teachers are allocated to {d.className} yet, so there is nothing to timetable.</ApiNote>
         : !d.entries.length ? <ApiNote>No timetable yet. The timetable in-charge generates it with <b>Generate timetables</b>.</ApiNote>
         : <TimetableGrid bell={bell.data} entries={d.entries} show={mode === 'class' ? 'teacher' : 'class'} />}
-    </>)}
+    </Stale>)}
   </>);
 }
 
@@ -256,14 +261,14 @@ function WorkloadTab({ workloads, canManage }) {
   const [editing, setEditing] = useState(null); // {} = a new teacher, or the workload being changed
   const subjects = useApi(() => lms.listSubjects(), []);
   if (workloads.error) return <ApiErr error={workloads.error} />;
-  if (workloads.loading || !workloads.data) return <Loading />;
+  if (!workloads.data && !workloads.error) return <Loading />;
   return (<>
     {canManage && (
       <div className="filters" style={{ marginBottom: 12, justifyContent: 'flex-end' }}>
         <button className="btn primary" onClick={() => setEditing({})}><Plus size={14} />Add teacher workload</button>
       </div>
     )}
-    <DataTable boxed cols={[
+    <DataTable busy={workloads.loading} boxed cols={[
       { label: 'Teacher', render: (w) => <span className="cell-id"><b>{w.teacherName}</b><small>{w.qualifiedSubjectCodes.join(', ') || 'Any subject'}</small></span> },
       { label: 'Allocated', className: 'num', render: (w) => `${w.allocatedPeriods} / ${w.weeklyMaxPeriods}` },
       { label: 'Timetabled', className: 'num', key: 'timetabledPeriods' },
@@ -384,14 +389,14 @@ function AllocationsTab({ classes, sectionId, setSectionId, teachers, schedule, 
     {/* Only the first load shows the placeholder; a reload after a change keeps the table on screen (dimmed) so the page does not flicker */}
     {list.error ? <ApiErr error={list.error} /> : !list.data ? <Loading />
       : !rows.length ? <ApiNote>No subject teachers are allocated to {cls?.className || 'this class'} yet.{can ? <> Use <b>Allocate subject</b> to add the first.</> : ' The timetable in-charge allocates them.'}</ApiNote>
-        : <div aria-busy={list.loading} style={{ opacity: list.loading ? 0.6 : 1, transition: 'opacity 150ms ease' }}><DataTable boxed cols={[
+        : <div aria-busy={list.loading} style={{ opacity: list.loading ? 0.6 : 1, transition: 'opacity 150ms ease' }}><DataTable busy={list.loading} boxed cols={[
           { label: 'Subject', render: (a) => <span className="cell-id"><b>{a.subjectName}</b><small>{a.subjectCode}</small></span> },
           { label: 'Teacher', key: 'teacherName' },
           { label: 'Periods a week', className: 'num', key: 'periodsPerWeek' },
           ...(can ? [{ label: '', render: (a) => (
             <span style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-              <button className="btn" onClick={() => setEditing(a)}>Change</button>
-              <button className="btn" disabled={removing === a.allocationId} onClick={() => setToRemove(a)}>{removing === a.allocationId && <LoaderCircle size={14} className="spin" />}Remove</button>
+              <IconAction icon={Pencil} label={`Change ${a.subjectName}`} onClick={() => setEditing(a)} />
+              <IconAction icon={Trash2} danger label={`Remove ${a.subjectName}`} busy={removing === a.allocationId} onClick={() => setToRemove(a)} />
             </span>) }] : []),
         ]} rows={rows} /></div>}
     {toRemove && (
@@ -494,7 +499,7 @@ function CoverTab({ teachers, onChanged }) {
             </select>
           : <b style={{ fontWeight: 500 }}>{s.proxyTeacherName || '—'}</b>)}{s.matchReason && <small className="xs muted" style={{ display: 'block' }}>{s.matchReason}</small>}</> },
         { label: 'Status', render: (s) => <>{pill(lms.PROXY_STATUS, s.status)} {s.assignmentMode === 'MANUAL' && <small className="xs muted">manual</small>}</> },
-        { label: 'Action', render: (s) => (can && s.status === 'ASSIGNED' ? <button type="button" className="link" onClick={() => change(s, null)}>Cancel</button> : null) },
+        { label: 'Action', render: (s) => (can && s.status === 'ASSIGNED' ? <IconAction icon={X} danger label={`Cancel cover for ${s.absentTeacherName || 'this period'}`} onClick={() => change(s, null)} /> : null) },
       ]} rows={d.substitutions} />}
       {!d.substitutions.length && !!d.periodsToCover && <p className="xs muted">No cover assigned yet{can ? ': use Auto-assign cover' : ''}.</p>}
     </>)}
@@ -546,7 +551,7 @@ function SyllabusTab({ sections, classes, sectionId, setSectionId }) {
       {canPlan && cls && <button className="btn primary" style={{ marginLeft: 'auto' }} onClick={() => setPlanning({})}><Plus size={14} />Set syllabus plan</button>}
     </div>
     {error && <ApiErr error={error} />}
-    {cov.loading || !c ? (cov.error ? <ApiErr error={cov.error} /> : <Loading />) : !c.subjects.length
+    <Stale busy={cov.loading && !!c}>{!c ? (cov.error ? <ApiErr error={cov.error} /> : <Loading />) : !c.subjects.length
       ? <ApiNote>No syllabus plan for {c.className} yet. {canPlan ? <>Use <b>Set syllabus plan</b> to add chapters and target dates; the plan applies to every section of {cls?.gradeName || 'the class'}.</> : 'The academic coordinator sets chapters and target dates.'}</ApiNote>
       : c.subjects.map((s) => (
         <div key={s.subjectId} style={{ marginBottom: 18 }}>
@@ -563,7 +568,7 @@ function SyllabusTab({ sections, classes, sectionId, setSectionId }) {
               ? <button type="button" className="link" disabled={busy === t.topicId} onClick={() => mark(t.topicId)}>Mark taught today</button> : null) },
           ]} rows={s.topics} />
         </div>
-      ))}
+      ))}</Stale>
     {planning && cls && <SyllabusPlanModal gradeId={cls.gradeId} gradeName={cls.gradeName} initialSubjectId={planning.subjectId || ''}
       onClose={() => setPlanning(null)} onSaved={() => { setPlanning(null); cov.reload(); }} />}
   </>);
@@ -622,7 +627,7 @@ function SyllabusPlanModal({ gradeId, gradeName, initialSubjectId, onClose, onSa
               <input aria-label={`Chapter ${i + 1} title`} maxLength={200} value={r.title} placeholder="e.g. Fractions" disabled={taught} onChange={(e) => set(r.key, { title: e.target.value })} />
               <input aria-label={`Chapter ${i + 1} target date`} type="date" value={r.date} disabled={taught} onChange={(e) => set(r.key, { date: e.target.value })} />
               <input aria-label={`Chapter ${i + 1} planned periods`} type="number" min={1} max={200} value={r.periods} placeholder="—" disabled={taught} onChange={(e) => set(r.key, { periods: e.target.value })} />
-              <button type="button" className="link" disabled={taught || rows.length === 1} onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))} aria-label={`Remove chapter ${i + 1}`}>Remove</button>
+              <IconAction icon={Trash2} danger label={`Remove chapter ${i + 1}`} disabled={taught || rows.length === 1} onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))} />
             </div>
           ))}
         </div>
@@ -654,11 +659,11 @@ function HomeworkTab({ sections, sectionId, setSectionId, allocations }) {
       {canSet && <button className="btn primary" disabled={!subjectsHere.length} title={subjectsHere.length ? undefined : `No subject teachers are allocated to ${className || 'this class'} yet`}
         onClick={() => setSetting(true)}><Plus size={14} />Set homework</button>}
     </div>
-    {list.error ? <ApiErr error={list.error} /> : list.loading || !list.data ? <Loading /> : !list.data.length
+    {list.error ? <ApiErr error={list.error} /> : !list.data ? <Loading /> : !list.data.length
       ? <ApiNote>No homework set for {className || 'this class'} yet. {canSet
         ? (subjectsHere.length ? <>Use <b>Set homework</b> to add the first.</> : <>Subject teachers must be allocated to the class first (Allocations tab).</>)
         : 'Subject teachers and class teachers set homework.'}</ApiNote> : (
-      <DataTable boxed cols={[
+      <DataTable busy={list.loading} boxed cols={[
         // A teacher name that is only an ID (no faculty record) is not shown as if it were a name
         { label: 'Homework', render: (h) => <span className="cell-id"><b>{h.title}</b><small>{h.subjectName} · {/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(h.teacherName || '') ? 'Teacher not on record' : h.teacherName}</small></span> },
         { label: 'Due', render: (h) => <span className="cell-id"><b>{when(h.dueAt)}</b>{h.missing > 0 && new Date(h.dueAt) < new Date() && <span><Pill tone="amber">Overdue</Pill></span>}</span> },
@@ -678,12 +683,12 @@ function Roster({ homeworkId, onChanged }) {
   const roster = useApi(() => lms.homeworkRoster(homeworkId), [homeworkId]);
   const [marking, setMarking] = useState(null);
   if (roster.error) return <ApiErr error={roster.error} />;
-  if (roster.loading || !roster.data) return <Loading />;
+  if (!roster.data && !roster.error) return <Loading />;
   const { homework: h, rows } = roster.data;
   const tone = { EVALUATED: 'green', SUBMITTED: 'purple', LATE: 'amber', MISSING: '' };
   return (<>
     <SectionHead title={h.title} sub={`${h.className} · ${h.subjectName} · out of ${h.maxMarks ?? '—'}`} />
-    <div style={{ marginTop: 10 }}><DataTable boxed cols={[
+    <div style={{ marginTop: 10 }}><DataTable busy={roster.loading} boxed cols={[
       { label: 'Roll', render: (r) => r.rollNumber ?? '—' },
       { label: 'Student', render: (r) => <b style={{ fontWeight: 500 }}>{r.studentName}</b> },
       { label: 'Status', render: (r) => <Pill tone={tone[r.state]}>{r.state === 'MISSING' ? 'Not handed in' : r.state[0] + r.state.slice(1).toLowerCase()}</Pill> },
@@ -772,8 +777,8 @@ function LessonPlansTab({ allocations }) {
       {writer && <button className="btn primary" disabled={!mine.length && !hasRole('SUPER_ADMIN')} title={mine.length ? undefined : 'You have no classes allocated'} onClick={() => setWriting(true)}><Plus size={14} />New lesson plan</button>}
     </div>
     {error && <ApiErr error={error} />}
-    {plans.error ? <ApiErr error={plans.error} /> : plans.loading || !plans.data ? <Loading /> : !plans.data.length ? <ApiNote>No lesson plans{status ? ` with status “${lms.PLAN_STATUS[status][0]}”` : ''}.</ApiNote> : (
-      <DataTable boxed cols={[
+    {plans.error ? <ApiErr error={plans.error} /> : !plans.data ? <Loading /> : !plans.data.length ? <ApiNote>No lesson plans{status ? ` with status “${lms.PLAN_STATUS[status][0]}”` : ''}.</ApiNote> : (
+      <DataTable busy={plans.loading} boxed cols={[
         { label: 'Date', render: (p) => fmtDate(p.planDate) },
         { label: 'Class · subject', render: (p) => <span className="cell-id"><b>{p.className} · {p.subjectCode}</b><small>{p.teacherName}{p.chapterTitle ? ` · ${p.chapterTitle}` : ''}</small></span> },
         { label: 'Objectives', render: (p) => <small className="xs">{p.objectives || '—'}</small> },
@@ -788,8 +793,8 @@ function LessonPlansTab({ allocations }) {
       <div style={{ marginTop: 18 }}>
         <SectionHead title="Submission compliance" sub={`This week · ${fmtDate(from)} – ${fmtDate(isoPlus(from, 5))}`} />
         <div style={{ marginTop: 10 }}>
-          {compliance.error ? <ApiErr error={compliance.error} /> : compliance.loading || !compliance.data ? <Loading /> : (
-            <DataTable boxed cols={[
+          {compliance.error ? <ApiErr error={compliance.error} /> : !compliance.data ? <Loading /> : (
+            <DataTable busy={compliance.loading} boxed cols={[
               { label: 'Teacher', key: 'teacherName' },
               { label: 'Teaching days', className: 'num', key: 'teachingDays' },
               { label: 'Submitted', className: 'num', key: 'plansSubmitted' },
@@ -875,7 +880,7 @@ function LabsTab({ sections }) {
   const can = hasRole(...ROLES.bookLab);
   const cancel = async (r) => { setError(null); try { await lms.cancelReservation(r.reservationId, 'Cancelled from the timetable screen'); res.reload(); } catch (e) { setError(e); } };
   if (rooms.error) return <ApiErr error={rooms.error} />;
-  if (rooms.loading || !rooms.data) return <Loading />;
+  if (!rooms.data && !rooms.error) return <Loading />;
   if (!rooms.data.length) return <ApiNote>No lab rooms are registered for this campus.</ApiNote>;
   const room = rooms.data.find((r) => r.roomId === roomId);
   return (<>
@@ -886,15 +891,15 @@ function LabsTab({ sections }) {
       {can && <button className="btn primary" disabled={!room} onClick={() => setBooking(true)}><CalendarPlus size={14} />Book slot</button>}
     </div>
     {error && <ApiErr error={error} />}
-    {res.error ? <ApiErr error={res.error} /> : res.loading || !res.data ? <Loading /> : !res.data.length ? <ApiNote>No bookings in the next two weeks.</ApiNote> : (
-      <DataTable boxed cols={[
+    {res.error ? <ApiErr error={res.error} /> : !res.data ? <Loading /> : !res.data.length ? <ApiNote>No bookings in the next two weeks.</ApiNote> : (
+      <DataTable busy={res.loading} boxed cols={[
         { label: 'When', render: (r) => <span className="cell-id"><b>{fmtDate(r.reservationDate)}</b><small>{hhmm(r.startTime)}–{hhmm(r.endTime)}</small></span> },
         { label: 'Class', render: (r) => r.className || '—' },
         { label: 'Teacher', key: 'teacherName' },
         { label: 'Purpose', render: (r) => <small className="xs">{r.purpose || '—'}</small> },
         { label: 'Status', render: (r) => (r.status === 'BOOKED' ? <Pill tone="green">Booked</Pill> : <Pill>Cancelled</Pill>) },
         { label: 'Action', render: (r) => (r.status === 'BOOKED' && can && (r.teacherId === user.userId || hasRole('ACADEMIC_COORDINATOR', 'TIMETABLE_INCHARGE', 'SUPER_ADMIN'))
-          ? <button type="button" className="link" onClick={() => cancel(r)}>Cancel</button> : null) },
+          ? <IconAction icon={X} danger label={`Cancel the lab booking on ${fmtDate(r.reservationDate)}${r.className ? ` for ${r.className}` : ''}`} onClick={() => cancel(r)} /> : null) },
       ]} rows={res.data} />
     )}
     {booking && <BookingModal room={room} sections={sections} onClose={() => setBooking(false)} onSaved={res.reload} />}

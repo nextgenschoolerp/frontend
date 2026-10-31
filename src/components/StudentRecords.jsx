@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { LoaderCircle, Plus, FileCheck2, ShieldAlert, Upload, FileText, Download, HeartPulse, Minus } from 'lucide-react';
+import { LoaderCircle, Plus, FileCheck2, ShieldAlert, Upload, FileText, Download, HeartPulse, Minus, Eye, Pencil } from 'lucide-react';
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as studentApi from '../api/studentService.js';
-import { DataTable, Person, Pill, KV, Actions, Pager, FilterChips, SearchBox, useSort, sortRows, avatarTone, SkeletonTable, EmptyState, Card, SectionHead, downloadCsv, downloadFile } from './ui.jsx';
+import { DataTable, Person, Pill, KV, Actions, IconAction, Pager, FilterChips, SearchBox, useSort, sortRows, avatarTone, SkeletonTable, EmptyState, Card, SectionHead, downloadCsv, downloadFile } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
 import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
@@ -90,7 +90,7 @@ export function StudentsTable({ list, archived, only = '', onSetOnly, onClearOnl
   const sort = useSort();
   if (!list.canRead) return <ApiNote>Student records are visible to registrars, office clerks, class teachers, principals, school nurses and super administrators.</ApiNote>;
   if (list.missingBranch) return <ApiNote>Select a campus to see its students.</ApiNote>;
-  if (list.loading) return <SkeletonTable cols={['Student', 'Class', 'House', 'Primary guardian', 'Medical', 'Status', 'Actions']} />;
+  if (list.loading && !list.data) return <SkeletonTable cols={['Student', 'Class', 'House', 'Primary guardian', 'Medical', 'Status', 'Actions']} />;
   if (list.error) return <ApiErr error={list.error} onRetry={list.reload} />;
   const all = archived ? list.left : list.current;
   const opts = (f) => [...new Set(all.map(f).filter(Boolean))];
@@ -121,7 +121,7 @@ export function StudentsTable({ list, archived, only = '', onSetOnly, onClearOnl
     { label: 'Medical', hideOnCards: true, render: (s) => (hasAlert(s) ? <span title={s.medicalAlerts}><Pill tone="amber" icon={HeartPulse}>Medical alert</Pill></span> : <span className="muted">—</span>) },
     { label: 'Status', sortBy: (s) => (isIncomplete(s) && !archived ? 'Needs update' : s.studentStatus), render: (s) => (isIncomplete(s) && !archived ? <Pill tone="amber">Needs update</Pill> : statusPill(s.studentStatus)) },
     { label: 'Actions', render: (s) => (
-      <Actions><Link to={`/students/${s.studentId}`}>View profile</Link>{!archived && <Link to={`/students/${s.studentId}/edit`}>Edit</Link>}</Actions>
+      <Actions><IconAction icon={Eye} label={`View profile of ${s.firstName} ${s.lastName}`} to={`/students/${s.studentId}`} />{!archived && <IconAction icon={Pencil} label={`Edit ${s.firstName} ${s.lastName}`} to={`/students/${s.studentId}/edit`} />}</Actions>
     ) },
   ];
   const shown = sortRows(rows, cols, sort).slice((current - 1) * PAGE, current * PAGE);
@@ -187,6 +187,7 @@ export function StudentsTable({ list, archived, only = '', onSetOnly, onClearOnl
           ) : (
           <div className="tablebox">
             <DataTable
+              busy={list.loading}
               cols={cols}
               sort={sort}
               cards
@@ -286,7 +287,7 @@ export function StudentDocuments({ student, upload = true }) {
   };
   return (
     <>
-      {docs.loading ? <Loading /> : docs.error ? <ApiErr error={docs.error} /> : !docs.data?.length ? <p className="xs muted">No files on the record yet.</p> : (
+      {docs.loading && !docs.data ? <Loading /> : docs.error ? <ApiErr error={docs.error} /> : !docs.data?.length ? <p className="xs muted">No files on the record yet.</p> : (
         <div className="docs">
           {docs.data.map((d) => (
             <div className="doc" key={d.documentId}><FileText size={20} />
@@ -374,7 +375,7 @@ export function IdCardModal({ student, onClose }) {
   const link = d?.verificationUrl && /^https?:\/\//.test(d.verificationUrl) ? d.verificationUrl : null;
   return (
     <Modal title="Student ID card" sub="Barcode and online verification for this student's ID" onClose={onClose} footer={<button className="btn primary" onClick={onClose}>Done</button>}>
-      {card.loading ? <Loading /> : card.error ? <ApiErr error={card.error} /> : (
+      {card.loading && !card.data ? <Loading /> : card.error ? <ApiErr error={card.error} /> : (
         <div className="idcard">
           <div className="idcard-top">
             <span className="idcard-avatar" style={{ background: tone[0], color: tone[1] }} aria-hidden="true">{initials}</span>
@@ -412,7 +413,7 @@ export function CertificatesCard({ student, onStudentChanged }) {
       <h4 style={{ fontSize: 13, fontWeight: 600, marginTop: 18 }}>Certificates issued</h4>
       <div style={{ margin: '10px 0 14px' }}>
         {!canList ? <ApiNote>Certificates are visible to registrars, office clerks, class teachers, principals and super administrators.</ApiNote>
-          : certs.loading ? <Loading /> : certs.error ? <ApiErr error={certs.error} />
+          : certs.loading && !certs.data ? <Loading /> : certs.error ? <ApiErr error={certs.error} />
             : !certs.data.length ? <p className="xs muted">No certificates issued yet.</p> : (
               <div className="docs">
                 {certs.data.map((c) => (
@@ -474,9 +475,9 @@ export function ConductCard({ student }) {
       <SectionHead title="Conduct & counseling" sub="Disciplinary incidents and counseling notes · Restricted" />
       <div style={{ marginTop: 14 }}>
         {!allowed ? <ApiNote>Conduct records are visible to class teachers, principals, vice principals and super administrators.</ApiNote>
-          : list.loading ? <Loading /> : list.error ? <ApiErr error={list.error} />
+          : list.loading && !list.data ? <Loading /> : list.error ? <ApiErr error={list.error} />
             : !list.data.length ? <p className="xs muted">No incidents recorded.</p> : (
-              <DataTable boxed cols={[
+              <DataTable busy={list.loading} boxed cols={[
                 { label: 'Date', render: (r) => fmtDate(r.incidentDate) },
                 { label: 'Incident', render: (r) => <span className="cell-id"><b>{r.incidentCategory}</b><small>{r.description}</small></span> },
                 { label: 'Severity', render: (r) => <Pill tone={r.severity === 'MINOR' ? '' : r.severity === 'MODERATE' ? 'amber' : 'red'}>{label(r.severity)}</Pill> },
