@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { ShieldAlert, Info, LoaderCircle } from 'lucide-react';
+import { ShieldAlert, Info, LoaderCircle, Eye, Check, X } from 'lucide-react';
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as admissionApi from '../api/admissionService.js';
-import { DataTable, Person, Pill, Actions, EmptyState, Pager, avatarTone, downloadCsv, useSort, sortRows } from './ui.jsx';
+import { DataTable, Person, Pill, Actions, IconAction, EmptyState, Pager, avatarTone, downloadCsv, useSort, sortRows, Stale } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { NextStep } from './AdmissionActions.jsx';
 import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
@@ -91,7 +91,7 @@ export function ApplicationsTable({ apps }) {
     { label: 'Source', sortBy: (e) => label(e.referralSource), render: (e) => label(e.referralSource) },
     { label: 'Received', sortBy: (e) => e.createdAt, render: (e) => fmtDate(e.createdAt) },
     { label: 'Status', sortBy: (e) => e.enquiryStatus, render: (e) => statusPill(e.enquiryStatus) },
-    { label: 'Actions', render: (e) => <Actions><button className="link" onClick={() => setViewing(e)}>Review application</button></Actions> },
+    { label: 'Actions', render: (e) => <Actions><IconAction icon={Eye} label={`Review application of ${e.candidateFirstName || ''} ${e.candidateLastName || ''}`.replace(/\s+/g, ' ').trim()} onClick={() => setViewing(e)} /></Actions> },
   ];
   if (!apps.canRead) return <ApiNote>Admission applications are visible to admissions staff: counselors, admission officers, registrars, evaluators, cashiers, principals and super administrators.</ApiNote>;
   if (apps.missingBranch) return <ApiNote>Select a campus to see its applications.</ApiNote>;
@@ -127,7 +127,7 @@ function Section({ id, title, res, children }) {
   return (
     <div id={id} className="reviewsection">
       <h4>{title}<small>{count}</small></h4>
-      {res.loading ? <Loading /> : res.error ? <ApiErr error={res.error} /> : children(res.data || [])}
+      {res.loading && !res.data ? <Loading /> : res.error ? <ApiErr error={res.error} /> : <Stale busy={res.loading}>{children(res.data || [])}</Stale>}
     </div>
   );
 }
@@ -201,8 +201,8 @@ export function ApplicationModal({ enquiry, onClose, onChanged }) {
             // Registrar / admission officer: PATCH /documents/{id}/verification (US-02004)
             ...(canVerify ? [{ label: 'Verify', render: (d) => (d.verificationStatus === 'PENDING' ? (
               <Actions>
-                <button className="link" onClick={() => verify(d, 'VERIFIED')}>Verify</button>
-                <button className="link" onClick={() => verify(d, 'REJECTED')}>Reject</button>
+                <IconAction icon={Check} label={`Verify ${d.documentType || 'document'}`} onClick={() => verify(d, 'VERIFIED')} />
+                <IconAction icon={X} danger label={`Reject ${d.documentType || 'document'}`} onClick={() => verify(d, 'REJECTED')} />
               </Actions>) : '—') }] : []),
           ]} rows={rows} />
         ) : <EmptyState title="No documents uploaded yet" />)}

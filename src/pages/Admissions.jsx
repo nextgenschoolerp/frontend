@@ -2,7 +2,7 @@ import { Fragment, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   UserPlus, Phone, CalendarClock, ClipboardCheck, FileText, GraduationCap, ChevronRight, Plus, Download, LoaderCircle,
-  UserX, LogOut, MessageSquare,
+  UserX, LogOut, MessageSquare, Eye, MessageSquarePlus,
 } from 'lucide-react';
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
@@ -10,7 +10,7 @@ import * as admissionApi from '../api/admissionService.js';
 import { GENDERS } from '../api/studentService.js';
 import {
   PageHeader, Metrics, Card, SectionHead, Tabs, DataTable, Pill, Person, Footer, SearchBox, Pager, FilterChips, EmptyState, SkeletonTable,
-  Actions, useSort, sortRows, scrollToId, useTabParam,
+  Actions, IconAction, useSort, sortRows, scrollToId, useTabParam,
 } from '../components/ui.jsx';
 import { Modal } from '../components/AuthSettings.jsx';
 import { ApplicationModal, ApplicantCell, ApiErr, ApiNote, statusPill, gradeLabel, useApplications, exportApplicationsCsv } from '../components/Admissions.jsx';
@@ -286,8 +286,8 @@ export default function AdmissionsWorkspace() {
     { label: 'Status', sortBy: (e) => STAGE_ORDER.indexOf(e.enquiryStatus), render: (e) => statusPill(e.enquiryStatus) },
     { label: 'Actions', render: (e) => (
       <Actions>
-        <button type="button" className="link" onClick={() => setViewing(e)}>Review</button>
-        {canLog && OPEN.includes(e.enquiryStatus) && <button type="button" className="link" onClick={() => setModal({ session: e })}>Log session</button>}
+        <IconAction icon={Eye} label={`Review ${e.candidateFirstName || 'application'}`} onClick={() => setViewing(e)} />
+        {canLog && OPEN.includes(e.enquiryStatus) && <IconAction icon={MessageSquarePlus} label={`Log a counselling session for ${e.candidateFirstName || 'this applicant'}`} onClick={() => setModal({ session: e })} />}
       </Actions>
     ) },
   ];
@@ -365,7 +365,7 @@ export default function AdmissionsWorkspace() {
                               { label: 'Applicant', render: (c) => <Person name={`${c.enquiry.candidateFirstName} ${c.enquiry.candidateLastName}`} sub={c.applicationNumber} /> },
                               { label: 'Outcome', render: (c) => <Pill tone={OUTCOME_TONE[c.outcome]}>{label(c.outcome)}</Pill> },
                               { label: 'Notes', hideOnCards: true, render: (c) => <span className="xs logNotes" title={c.notes || undefined}>{c.notes || '—'}</span> },
-                              { label: 'Actions', render: (c) => <Actions><button type="button" className="link" onClick={() => setViewing(c.enquiry)}>Review</button></Actions> },
+                              { label: 'Actions', render: (c) => <Actions><IconAction icon={Eye} label={`Review ${c.enquiry?.candidateFirstName || 'application'}`} onClick={() => setViewing(c.enquiry)} /></Actions> },
                             ]} rows={log.data} />
                           </div>
                         ))}
@@ -383,8 +383,8 @@ export default function AdmissionsWorkspace() {
                               { label: 'Reason', hideOnCards: true, render: (c) => <span className="xs">{c.reason || '—'}</span> },
                               { label: 'Actions', render: (c) => (
                                 <Actions>
-                                  <button type="button" className="link" onClick={() => withEnquiry(c.enquiryId, setViewing)}>Review</button>
-                                  {canLog && <button type="button" className="link" onClick={() => withEnquiry(c.enquiryId, (e) => setModal({ session: e }))}>Log session</button>}
+                                  <IconAction icon={Eye} label={`Review ${c.candidateName || 'application'}`} onClick={() => withEnquiry(c.enquiryId, setViewing)} />
+                                  {canLog && <IconAction icon={MessageSquarePlus} label={`Log a counselling session for ${c.candidateName || 'this applicant'}`} onClick={() => withEnquiry(c.enquiryId, (e) => setModal({ session: e }))} />}
                                 </Actions>
                               ) },
                             ]} rows={callbacks.data} />

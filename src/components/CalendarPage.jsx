@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Download, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
-import { PageHeader, Card, SectionHead, DataTable, Pill, Footer, KV, downloadFile, downloadCsv, todayIso, useBackLink } from './ui.jsx';
+import { Download, Plus, ChevronLeft, ChevronRight, Pencil } from 'lucide-react';
+import { PageHeader, Card, SectionHead, DataTable, Pill, Footer, KV, downloadFile, downloadCsv, todayIso, useBackLink, IconAction } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
 import * as commApi from '../api/communicationService.js';
@@ -223,7 +223,7 @@ export function Calendar() {
             {featured ? (<>
               <div className="row" style={{ alignItems: 'flex-start' }}>
                 <div><h3 style={{ fontSize: 15, fontWeight: 600 }}>{featured.title}</h3><p className="small muted" style={{ marginTop: 4 }}>{featured.endDate && featured.endDate !== featured.startDate ? `${longDate(featured.startDate)} – ${longDate(featured.endDate)}` : longDate(featured.startDate)}</p></div>
-                {canManage && <button className="link" onClick={() => setModal('edit')}>Edit</button>}
+                {canManage && <IconAction icon={Pencil} label={`Edit ${featured.title}`} onClick={() => setModal('edit')} />}
               </div>
               {dayEvents.length > 1 && (
                 <div className="pills" style={{ marginTop: 10 }}>{dayEvents.map((e, i) => <button type="button" key={e.eventId} className={`pill ${i === picked ? 'purple' : ''}`} onClick={() => setPicked(i)}>{e.title}</button>)}</div>

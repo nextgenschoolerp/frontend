@@ -47,3 +47,11 @@ export const bootstrapUpload = (file) => {
   f.append('file', file);
   return upload('/api/v1/auth/bootstrap/upload', f);
 };
+
+// Settings → Integrations: Email (SMTP), SMS (MSG91, Twilio), WhatsApp (Meta Cloud API); payment gateway pending.
+// Secrets are write-only: send `secret` blank to keep the saved one.
+export const listIntegrations = (tenantId) => api.get(`/api/v1/tenants/${tenantId}/integrations`);
+export const integrationCatalog = (tenantId) => api.get(`/api/v1/tenants/${tenantId}/integrations/catalog`);
+export const saveIntegration = (tenantId, channel, body) => api.put(`/api/v1/tenants/${tenantId}/integrations/${channel}`, body);
+export const testIntegration = (tenantId, channel, recipient) => api.post(`/api/v1/tenants/${tenantId}/integrations/${channel}/test`, { recipient });
+export const removeIntegration = (tenantId, channel) => api.del(`/api/v1/tenants/${tenantId}/integrations/${channel}`);

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Download, Plus, ArrowLeft, Pencil, Check, X, LoaderCircle, Upload } from 'lucide-react';
+import { Download, Plus, ArrowLeft, Pencil, Check, X, LoaderCircle, Upload, Eye } from 'lucide-react';
 import {
-  PageHeader, BackTitle, Metrics, scrollToId, useSort, sortRows, avatarTone, Card, SectionHead, Tabs, SearchBox, DataTable, Pager, Person, Actions,
+  PageHeader, BackTitle, Metrics, scrollToId, useSort, sortRows, avatarTone, Card, SectionHead, Tabs, SearchBox, DataTable, Pager, Person, Actions, IconAction,
   Pill, FieldGrid, Field, Footer, KV, downloadCsv, todayIso,
 } from '../components/ui.jsx';
 import { Modal } from '../components/AuthSettings.jsx';
@@ -84,8 +84,8 @@ export function StaffDirectory() {
     { label: 'Availability', sortBy: (s) => s.avail[0], render: (s) => <Pill tone={s.avail[1]}>{s.avail[0]}</Pill> },
     { label: 'Actions', render: (s) => (
       <Actions>
-        <Link to={`/staff/${s.staffId}`}>View profile</Link>
-        {hasRole(...hr.HR_ROLES.manage) && <Link to={`/staff/${s.staffId}/edit`}>Edit</Link>}
+        <IconAction icon={Eye} label={`View profile of ${s.firstName} ${s.lastName}`} to={`/staff/${s.staffId}`} />
+        {hasRole(...hr.HR_ROLES.manage) && <IconAction icon={Pencil} label={`Edit ${s.firstName} ${s.lastName}`} to={`/staff/${s.staffId}/edit`} />}
       </Actions>
     ) },
   ];
@@ -131,9 +131,9 @@ export function StaffDirectory() {
             <option value="">All availability</option><option value="available">Available</option><option value="leave">On leave today</option>
           </select>
         </div>
-        {staff.error ? <ApiErr error={staff.error} /> : staff.loading ? <Loading /> : (
+        {staff.error ? <ApiErr error={staff.error} /> : staff.loading && !staff.data ? <Loading /> : (
           <div className="tablebox">
-            <DataTable
+            <DataTable busy={staff.loading}
               cols={cols}
               sort={sort}
               cards
@@ -294,11 +294,14 @@ export function StaffProfile() {
   const timetableNote = !teaches
     ? <ApiNote>{s.userId ? 'Support staff have no teaching timetable.' : 'No sign-in account is linked to this record, so the timetable cannot be looked up.'}</ApiNote>
     : tt.error ? (tt.error.status === 404 ? <ApiNote>No timetable has been generated for this teacher yet.</ApiNote> : <ApiErr error={tt.error} />)
-      : tt.loading ? <Loading /> : null;
+      : tt.loading && !tt.data ? <Loading /> : null;
 
   const assignmentsCard = (
     <Card>
-      <SectionHead title="Teaching assignments" sub="From the generated timetable (Teaching & learning)" link="Full timetable →" to="/teaching" />
+      <SectionHead title="Teaching assignments" sub="From the generated timetable (Teaching & learning)"
+        {...(tab === 'teaching'
+          ? { link: 'Teacher workload →', to: '/teaching?tab=workload' }
+          : { link: 'All assignments →', to: `/staff/${id}?tab=teaching` })} />
       {timetableNote || (!assignments.length ? <ApiNote>No lessons are timetabled for this teacher.</ApiNote> : (<>
         <div style={{ margin: '18px 0 14px' }}>
           <DataTable boxed cols={[{ label: 'Class', key: 'cls' }, { label: 'Subject', key: 'subject' }, { label: 'Lessons / week', key: 'periods', className: 'num' }]}
@@ -310,7 +313,10 @@ export function StaffProfile() {
   );
   const timetableCard = (
     <Card>
-      <SectionHead title="Today’s timetable" sub={formatDate(today, { weekday: 'long', year: false })} link="Full timetable →" to="/teaching" />
+      <SectionHead title="Today’s timetable" sub={formatDate(today, { weekday: 'long', year: false })}
+        {...(tab === 'timetable'
+          ? (s?.userId ? { link: 'Open in Teaching & learning →', to: `/teaching?tab=timetable&teacher=${encodeURIComponent(s.userId)}` } : {})
+          : { link: 'Full timetable →', to: `/staff/${id}?tab=timetable` })} />
       <div style={{ marginTop: 18 }}>
         {timetableNote || (!todayLessons.length ? <ApiNote>No lessons today.</ApiNote> : (
           <DataTable boxed cols={[

@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { Plus, X, KeyRound, ShieldAlert, LoaderCircle, Info, Check, Search } from 'lucide-react';
+import { Plus, X, KeyRound, ShieldAlert, LoaderCircle, Info, Check, Search, Pencil } from 'lucide-react';
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as authApi from '../api/authService.js';
-import { Card, SectionHead, DataTable, Pill, KV, SkeletonTable } from './ui.jsx';
+import { Card, SectionHead, DataTable, Pill, KV, SkeletonTable, IconAction } from './ui.jsx';
 import { formatDate, formatDateTime, formatTime, formatNumber } from '../regional.js';
 
 // Screens a role can be granted, matching the names already used by authservice role_permissions.
@@ -77,7 +77,7 @@ export function RolesCard() {
                 { label: 'Role', render: (r) => <b style={{ fontWeight: 500 }}>{label(r.name)}</b> },
                 { label: 'Description', render: (r) => <span className="xs muted">{r.description}</span> },
                 { label: 'Status', render: (r) => <Pill tone={r.active ? 'green' : ''}>{r.active ? 'Active' : 'Inactive'}</Pill> },
-                { label: 'Action', render: (r) => <button className="link" aria-label={`Edit role ${label(r.name)}`} onClick={() => setEditing(r)}>Edit role</button> },
+                { label: 'Action', render: (r) => <IconAction icon={Pencil} label={`Edit role ${label(r.name)}`} onClick={() => setEditing(r)} /> },
               ]} rows={shown} />
             ) : <ApiNote>No role matches “{query.trim()}”.</ApiNote>}
           </>

@@ -105,7 +105,7 @@ export default function Overview() {
   useSchoolCalendar();
   const todayInfo = schoolDay(todayIso());
   // a weekend or break with no marks: nothing was due, so show "school closed" rather than zeros
-  const closedToday = !!t && !todayInfo.open && t.unmarked === t.totalStudents;
+  const closedToday = !!t && !todayInfo.open && t.unmarked === t.possible;
   // "Upcoming events": the next three school events still to happen; "Notice board": the latest active circulars
   const calendar = useApi(() => listCalendarEvents(user.tenantId), [user.tenantId]);
   const circulars = useApi(() => listBroadcasts(user.tenantId), [user.tenantId]);
@@ -141,8 +141,8 @@ export default function Overview() {
     att.live
       ? (closedToday
         ? ['Student attendance', '—', `${todayInfo.status} · no registers expected`, 'Weekly average is on the chart below', true, ClipboardCheck, '/attendance']
-        : ['Student attendance', t.presentRate === null ? '—' : `${Number(t.presentRate).toFixed(1)}%`, `${formatNumber(t.present)} of ${formatNumber(t.totalStudents - t.unmarked)} marked present`,
-          att.change !== null ? pp(att.change) : `${t.amRegistersSubmitted} / ${t.registersExpected} registers in`, att.change === null || att.change >= 0, ClipboardCheck, '/attendance'])
+        : ['Student attendance', t.presentRate === null ? '—' : `${Number(t.presentRate).toFixed(1)}%`, `${formatNumber(t.present)} of ${formatNumber(t.possible - t.unmarked)} ${t.mode === 'AM_PM' ? 'half-day marks' : 'marked'} present`,
+          att.change !== null ? pp(att.change) : `${t.registersSubmitted} / ${t.registersExpected} registers in`, att.change === null || att.change >= 0, ClipboardCheck, '/attendance'])
       : ['Student attendance', att.allowed && !att.error ? '…' : '—', att.allowed ? (att.error ? 'Could not load attendance' : '') : 'Not available for your role', '', true, ClipboardCheck, att.allowed && '/attendance'],
     canStaff && staff.data && staffToday.data
       ? ['Staff on campus', `${formatNumber(staffToday.data.presentCount)} / ${formatNumber(staffCount)}`,

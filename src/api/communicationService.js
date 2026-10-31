@@ -17,6 +17,8 @@ export const listArchivedBroadcasts = (tenantId) => api.get(`${COMM}/broadcasts/
 // --- Delivery Tracking & SMS Fallback (US-09011) ---------------------------------------------------
 export const updateDeliveryStatus = (deliveryId, body) => api.put(`${COMM}/broadcasts/delivery/${deliveryId}`, body);
 export const getDeliveryLogs = (broadcastId) => api.get(`${COMM}/broadcasts/${broadcastId}/delivery-logs`);
+// Who a circular would reach and which of the school's channels (Settings → Integrations) can send now
+export const previewAudience = (tenantId, audience, channel) => api.get(`${COMM}/broadcasts/audience-preview`, { query: { tenantId, audience, channel } });
 
 // --- 30-Minute Student Absence Alerts (US-09001) ----------------------------------------------------
 export const dispatchAbsenceAlert = (body) => api.post(`${COMM}/absence-alerts`, body);

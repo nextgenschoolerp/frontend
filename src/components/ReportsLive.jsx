@@ -158,7 +158,8 @@ export default function ReportsLive() {
 function WeeklyAttendance() {
   const att = useAttendanceWeek();
   const t = att.live ? att.today : null;
-  const share = (n) => (t && t.totalStudents ? `${((n / t.totalStudents) * 100).toFixed(1)}%` : '—');
+  // shares of the marks possible today: students (one register a day) or half-day sessions (AM and PM)
+  const share = (n) => (t && t.possible ? `${((n / t.possible) * 100).toFixed(1)}%` : '—');
   if (!att.live) {
     return (
       <Card>
