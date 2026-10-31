@@ -43,6 +43,7 @@ export function followUpBacklog(list) {
 /* ---------- attendance trend and patterns ---------- */
 
 function TrendPatterns({ days, absences }) {
+  const daily = days[0]?.mode !== 'AM_PM';
   const weeks = useMemo(() => {
     const m = new Map();
     days.forEach((d) => { const k = mondayOf(d.date); m.set(k, [...(m.get(k) || []), Number(d.presentRate)]); });
@@ -112,11 +113,12 @@ function TrendPatterns({ days, absences }) {
       </div>
       {worst && byWeekday.length > 1 && <p className="xs muted" style={{ marginTop: 8 }}>{worst.name}s are the weakest day, averaging {pct(worst.rate)} over {plural(worst.n, 'day')}.</p>}
 
-      <h4 style={{ fontSize: 13, fontWeight: 600, margin: '18px 0 8px' }}>Mornings, afternoons and late arrivals</h4>
+      <h4 style={{ fontSize: 13, fontWeight: 600, margin: '18px 0 8px' }}>{daily ? 'Absences and late arrivals' : 'Mornings, afternoons and late arrivals'}</h4>
       <dl className="movegrid" style={{ marginTop: 0 }}>
+        {daily ? <div><dt>Absences</dt><dd>{formatNumber(sessions.am)}</dd><small>student-days absent (one register a day)</small></div> : (<>
         <div><dt>Morning absences</dt><dd>{formatNumber(sessions.am)}</dd><small>student-days absent in the AM register</small></div>
         <div><dt>Left after morning</dt><dd className={sessions.pmOnly ? 'down' : ''}>{formatNumber(sessions.pmOnly)}</dd>
-          <small>{sessions.pmOnly ? 'present in the morning, absent in the afternoon' : 'nobody absent in the afternoon only'}</small></div>
+          <small>{sessions.pmOnly ? 'present in the morning, absent in the afternoon' : 'nobody absent in the afternoon only'}</small></div></>)}
         <div><dt>Late arrivals</dt><dd>{formatNumber(late.length)}</dd>
           <small>{lateBy.length ? `Most in ${lateBy.map(([c, n]) => `${c} (${n})`).join(', ')}` : 'None recorded'}</small></div>
       </dl>
@@ -197,6 +199,9 @@ function ChronicAbsence({ days, absences }) {
 /* ---------- follow-up and register compliance ---------- */
 
 function FollowUpCompliance({ days, followUps, absences }) {
+  // registers due per session: registersExpected covers every session of the day (one, or AM and PM)
+  const daily = days[0]?.mode !== 'AM_PM';
+  const perSession = (d) => d.registersExpected / (d.sessionsPerDay || 1);
   const today = todayIso();
   const open = followUps.filter((a) => a.followUpStatus === 'OPEN');
   const contacted = followUps.filter((a) => a.followUpStatus === 'GUARDIAN_CONTACTED');
@@ -216,9 +221,11 @@ function FollowUpCompliance({ days, followUps, absences }) {
   }, [absences]);
 
   const expected = days.reduce((n, d) => n + d.registersExpected, 0);
+  const submittedAll = days.reduce((n, d) => n + d.registersSubmitted, 0);
+  const sessionDue = days.reduce((n, d) => n + perSession(d), 0);
   const am = days.reduce((n, d) => n + d.amRegistersSubmitted, 0);
   const pm = days.reduce((n, d) => n + d.pmRegistersSubmitted, 0);
-  const gaps = days.filter((d) => d.amRegistersSubmitted < d.registersExpected || d.pmRegistersSubmitted < d.registersExpected).slice(-6).reverse();
+  const gaps = days.filter((d) => d.registersSubmitted < d.registersExpected).slice(-6).reverse();
 
   return (
     <div className="pulse-panel">
@@ -229,15 +236,15 @@ function FollowUpCompliance({ days, followUps, absences }) {
           <small>{overdue.length ? `${overdue.length} waiting ${SLOW_DAYS}+ days` : open.length ? 'none overdue yet' : 'every guardian reached'}</small></div>
         <div><dt>Follow-up rate</dt><dd className={followUps.length && handled / followUps.length < 0.8 ? 'down' : 'up'}>{followUps.length ? pct((handled / followUps.length) * 100, 0) : '—'}</dd>
           <small>{followUps.length ? `${handled} of ${followUps.length} contacted or resolved${avgWait === null ? '' : avgWait < 0.5 ? ' · usually the same day' : ` · about ${avgWait.toFixed(1)} days to reach`}` : 'Nothing to follow up'}</small></div>
-        <div><dt>Register compliance</dt><dd className={expected && am / expected < 1 ? 'down' : 'up'}>{expected ? pct((am / expected) * 100, 0) : '—'}</dd>
-          <small>{expected ? `${pct((pm / expected) * 100, 0)} for afternoon registers` : 'No registers expected'}</small></div>
+        <div><dt>Register compliance</dt><dd className={expected && submittedAll / expected < 1 ? 'down' : 'up'}>{expected ? pct((submittedAll / expected) * 100, 0) : '—'}</dd>
+          <small>{!expected ? 'No registers expected' : daily ? 'One register a day per class' : `${pct((am / sessionDue) * 100, 0)} morning · ${pct((pm / sessionDue) * 100, 0)} afternoon`}</small></div>
       </dl>
 
       <h4 style={{ fontSize: 13, fontWeight: 600, margin: '18px 0 8px' }}>{overdue.length ? 'Waiting the longest' : 'Open follow-ups'}</h4>
       {open.length ? (
         <DataTable boxed cols={[
           { label: 'Student', render: (a) => <><b style={{ fontWeight: 600 }}>{a.fullName}</b><br /><small className="muted">{className(a)}</small></> },
-          { label: 'Absent', render: (a) => `${formatDate(a.date, { year: false })} · ${a.session}` },
+          { label: 'Absent', render: (a) => `${formatDate(a.date, { year: false })}${daily ? '' : ` · ${a.session}`}` },
           { label: 'Waiting', render: (a) => { const d = daysBetween(a.date, today); return <Pill tone={d >= SLOW_DAYS ? 'red' : 'amber'}>{plural(d, 'day')}</Pill>; } },
           { label: 'Call', render: (a) => a.emergencyContactPhone || '—' },
         ]} rows={[...open].sort((a, b) => a.date.localeCompare(b.date)).slice(0, 8)} />
@@ -247,10 +254,11 @@ function FollowUpCompliance({ days, followUps, absences }) {
       {gaps.length ? (
         <DataTable boxed cols={[
           { label: 'Day', render: (d) => formatDate(d.date, { weekday: 'short' }) },
-          { label: 'Morning', className: 'num', render: (d) => <Pill tone={d.amRegistersSubmitted < d.registersExpected ? 'amber' : 'green'}>{d.amRegistersSubmitted} / {d.registersExpected}</Pill> },
-          { label: 'Afternoon', className: 'num', render: (d) => <Pill tone={d.pmRegistersSubmitted < d.registersExpected ? 'amber' : 'green'}>{d.pmRegistersSubmitted} / {d.registersExpected}</Pill> },
+          ...(daily ? [{ label: 'Registers', className: 'num', render: (d) => <Pill tone={d.registersSubmitted < d.registersExpected ? 'amber' : 'green'}>{d.registersSubmitted} / {d.registersExpected}</Pill> }] : [
+            { label: 'Morning', className: 'num', render: (d) => <Pill tone={d.amRegistersSubmitted < perSession(d) ? 'amber' : 'green'}>{d.amRegistersSubmitted} / {perSession(d)}</Pill> },
+            { label: 'Afternoon', className: 'num', render: (d) => <Pill tone={d.pmRegistersSubmitted < perSession(d) ? 'amber' : 'green'}>{d.pmRegistersSubmitted} / {perSession(d)}</Pill> }]),
         ]} rows={gaps} />
-      ) : <p className="xs muted">Every class submitted both registers on every school day.</p>}
+      ) : <p className="xs muted">{daily ? 'Every class submitted its register on every school day.' : 'Every class submitted both registers on every school day.'}</p>}
 
       {reasons.length > 0 && (<>
         <h4 style={{ fontSize: 13, fontWeight: 600, margin: '18px 0 0' }}>Reasons given for excused absences</h4>

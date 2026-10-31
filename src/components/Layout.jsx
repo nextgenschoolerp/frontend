@@ -6,7 +6,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth.jsx';
-import { listBranches, getRegionalSettings, getSchoolProfile } from '../api/authService.js';
+import { listBranches, getRegionalSettings, getSchoolProfile, fetchSchoolCrest } from '../api/authService.js';
+import { saveBranding } from '../branding.js';
 import { useApi } from '../api/useApi.js';
 import { THEMES, getTheme, applyTheme, DENSITIES, getDensity, applyDensity } from '../theme.js';
 import { useRegional, version, applyServerRegional } from '../regional.js';
@@ -179,6 +180,20 @@ export default function Layout() {
     return () => window.removeEventListener('school-profile:changed', refresh);
   }, [reloadSchoolProfile]);
   useEffect(() => { if (serverRegional) applyServerRegional(serverRegional); }, [serverRegional]);
+  // the sign-in page shows this school's name and crest next time (small crests only, kept as a data URL)
+  useEffect(() => {
+    if (!schoolProfile?.schoolName) return undefined;
+    let live = true;
+    const keep = (crest) => { if (live) saveBranding({ name: schoolProfile.schoolName, crest, email: schoolProfile.schoolEmail || '', phone: schoolProfile.schoolPhone || '' }); };
+    if (!schoolProfile.hasCrest) { keep(null); return () => { live = false; }; }
+    fetchSchoolCrest(user.tenantId).then((blob) => {
+      if (blob.size > 150000) { keep(null); return; }
+      const reader = new FileReader();
+      reader.onload = () => keep(String(reader.result));
+      reader.readAsDataURL(blob);
+    }).catch(() => keep(null));
+    return () => { live = false; };
+  }, [schoolProfile?.schoolName, schoolProfile?.schoolEmail, schoolProfile?.schoolPhone, schoolProfile?.hasCrest, schoolProfile?.updatedAt, user?.tenantId]);
   // Term dates, half-term and holidays for the school day shown across the app: the academic calendar (studentservice) and
   // the calendar's holiday events (communicationservice). Settings and the Calendar page announce edits to the terms.
   const academic = useApi(() => getAcademicCalendar(user.tenantId), [user?.tenantId], !!user?.tenantId);

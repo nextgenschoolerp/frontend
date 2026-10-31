@@ -14,6 +14,8 @@ export const changePassword = (currentPassword, newPassword, confirmPassword) =>
 
 // --- Roles & screen permissions (US-00002) ----------------------------------------------------------
 export const listRoles = () => api.get('/api/v1/roles');
+/** Every account of the school with its roles (SUPER_ADMIN): Settings → Roles & staff */
+export const listTenantUsers = (tenantId, branchId) => api.get(`/api/v1/tenants/${tenantId}/users`, { query: { branchId } });
 export const getRolePermissions = (roleId) => api.get(`/api/v1/roles/${roleId}/permissions`);
 /** Sign-in accounts for staff added by the import: [{ employeeCode, firstName, lastName, email, roleName, branchId }]; the reply holds one-time temporary passwords */
 export const createStaffAccounts = (accounts) => api.post('/api/v1/users/staff-accounts', { accounts });
@@ -45,3 +47,11 @@ export const bootstrapUpload = (file) => {
   f.append('file', file);
   return upload('/api/v1/auth/bootstrap/upload', f);
 };
+
+// Settings → Integrations: Email (SMTP), SMS (MSG91, Twilio), WhatsApp (Meta Cloud API); payment gateway pending.
+// Secrets are write-only: send `secret` blank to keep the saved one.
+export const listIntegrations = (tenantId) => api.get(`/api/v1/tenants/${tenantId}/integrations`);
+export const integrationCatalog = (tenantId) => api.get(`/api/v1/tenants/${tenantId}/integrations/catalog`);
+export const saveIntegration = (tenantId, channel, body) => api.put(`/api/v1/tenants/${tenantId}/integrations/${channel}`, body);
+export const testIntegration = (tenantId, channel, recipient) => api.post(`/api/v1/tenants/${tenantId}/integrations/${channel}/test`, { recipient });
+export const removeIntegration = (tenantId, channel) => api.del(`/api/v1/tenants/${tenantId}/integrations/${channel}`);

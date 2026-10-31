@@ -167,6 +167,8 @@ table.t .act{color:var(--pr);font-weight:600;font-size:10px;display:inline-flex;
 .select{height:36px;border:1px solid var(--bd);border-radius:8px;background:var(--card);padding:0 12px;font-size:11px;color:var(--mu);display:inline-flex;align-items:center;gap:8px}
 select.select{appearance:none;padding-right:26px;background:var(--card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%239597a1' stroke-width='2' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center}
 .filters .btn{font-weight:400;color:var(--tx)}
+/* a primary action placed in a filter bar keeps its white label and weight, like every other primary button */
+.filters .btn.primary{color:#fff;font-weight:500}
 
 /* profile */
 .summary{display:flex;align-items:center;gap:20px;padding:25px 20px}
@@ -345,7 +347,7 @@ button.reportcard:not(:disabled):hover{border-color:var(--tint2)}
 .login-form{width:100%;max-width:380px;display:flex;flex-direction:column;gap:18px}
 .login-form h1{font-size:27px;font-weight:600;line-height:1.2}
 .login-form h1+p{color:var(--mu);margin-top:6px;font-size:13px}
-.login-mobile-brand{display:none;padding:0}
+.login-foot-mobile{display:none}
 .lfield{display:flex;flex-direction:column;gap:7px;font-weight:500}
 .linput{display:flex;align-items:center;gap:9px;height:42px;padding:0 12px;border:1px solid var(--bd);border-radius:8px;background:var(--card);color:var(--mu);transition:border-color .15s,box-shadow .15s}
 .linput:focus-within{border-color:var(--pr);box-shadow:0 0 0 3px var(--tint)}
@@ -365,10 +367,26 @@ button.reportcard:not(:disabled):hover{border-color:var(--tint2)}
 .login-demo b{color:var(--tx);font-weight:500}
 .spin{animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
+/* Tablet: the art panel gets narrower and quieter so the form keeps its room */
+@media (min-width:861px) and (max-width:1100px){
+  .login{grid-template-columns:minmax(0,5fr) minmax(0,6fr)}
+  .login-art{padding:32px}
+  .login-quote h2{font-size:25px}
+  .login-quote p{font-size:13px}
+}
+/* Phone and small tablet: the purple panel shrinks to a slim brand bar above the form; the form is what you see first */
 @media (max-width:860px){
-  .login{grid-template-columns:1fr}
-  .login-art{display:none}
-  .login-mobile-brand{display:flex}
+  .login{grid-template-columns:1fr;grid-template-rows:auto 1fr;min-height:100vh;min-height:100dvh}
+  .login-art{padding:14px 20px;flex-direction:row;align-items:center;justify-content:flex-start}
+  .login-art:after,.login-quote,.login-art .login-foot{display:none}
+  .login-panel{align-items:start;padding:clamp(24px,6vh,64px) 20px 24px}
+  .login-form{max-width:420px;margin:0 auto}
+  .login-form h1{font-size:24px}
+  .login-foot-mobile{display:grid;justify-items:center;gap:4px;margin-top:6px;text-align:center;color:#555867;font-size:12px}
+}
+@media (max-width:360px){
+  .login-art{padding:12px 16px}
+  .login-panel{padding:20px 16px}
 }
 @media (max-width:1200px){.toolbar .account>div:not(.acctmenu){display:none}}
 
@@ -828,3 +846,131 @@ button.sectionchip:hover{border-color:var(--pr)}
 /* Delete icon links in the Classes, sections & houses tables */
 .link.danger{color:var(--rd)}
 .link.danger:hover{opacity:.8}
+
+.caps-warn{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;font-weight:500;color:var(--am)}
+.crest img{width:100%;height:100%;object-fit:contain;border-radius:inherit}
+.crest:has(img){background:#fff;padding:3px}
+.login-helpbtn{display:inline-flex;align-items:center;gap:6px;align-self:flex-start;border:0;background:none;padding:0;color:var(--pr);font:inherit;font-size:12px;font-weight:500;cursor:pointer}
+.login-helpbtn:hover{text-decoration:underline}
+.login-help{display:grid;gap:8px;padding:12px 14px;border:1px solid var(--bd);border-radius:10px;background:var(--card);font-size:12px;color:var(--mu)}
+.login-help ul{margin:0;padding-left:18px;display:grid;gap:6px}
+.login-help b{color:var(--tx);font-weight:600}
+.login-help p{margin:0;color:var(--tx)}
+.login-help a{display:inline-flex;align-items:center;gap:6px;color:var(--pr);font-weight:500}
+.linput.invalid{border-color:var(--rd);box-shadow:0 0 0 1px var(--rd)}
+
+/* Sign-in pages: WCAG AA contrast (4.5:1 for text, 3:1 for field borders) and readable sizes.
+   Measured on the white fields and the page background of every theme. */
+.login .lfield input::placeholder{color:#5b5e6b;opacity:1}
+.login .linput{border-color:#8a8d99}
+.login .linput:focus-within{border-color:var(--pr)}
+.login .linput.invalid{border-color:#9b2f33;box-shadow:0 0 0 1px #9b2f33}
+.login .linput input{font-size:14px}
+.login .linput svg,.login .linput button{color:#555867}
+.login-form h1+p,.login .check,.login-back,.login-help,.login-help ul{color:#555867}
+.login .check{font-size:13px}
+.login-back{font-size:13px}
+.login-help{font-size:13px}
+.login-error{color:#9b2f33}
+.login-success{color:#1d6b54}
+.login .caps-warn{color:#7d5016;font-size:13px}
+.login-art .login-quote p,.login-art .brand small,.login-art .login-foot{color:rgba(255,255,255,.92)}
+.login-art .login-foot{font-size:12px}
+.login-art .brand small{font-size:11px;letter-spacing:.04em}
+
+/* sign-in footer: copyright, product and version, privacy and terms */
+.login-foot{display:grid;gap:4px}
+.foot-links{display:flex;gap:14px;flex-wrap:wrap}
+.login-foot a,.login-foot-mobile a{color:inherit;text-decoration:underline;text-underline-offset:2px}
+.login-foot a:hover,.login-foot-mobile a:hover{text-decoration-thickness:2px}
+.login-foot-mobile .foot-links{justify-content:center}
+
+/* privacy policy and terms of use */
+.legal{max-width:760px;margin:0 auto;padding:40px 20px 64px;display:flex;flex-direction:column;gap:12px;line-height:1.65;font-size:14px;color:var(--tx)}
+.legal h1{font-size:28px;font-weight:600;margin-top:8px}
+.legal h2{font-size:17px;font-weight:600;margin-top:18px}
+.legal .legal-meta{color:#555867;font-size:13px;margin-top:-6px}
+.legal ul{margin:0;padding-left:20px;display:grid;gap:6px}
+.legal a{color:var(--pr);text-decoration:underline;text-underline-offset:2px}
+/* the decorative circle must never catch clicks, and the footer links sit above it */
+.login-art:after{pointer-events:none}
+.login-art .login-foot{position:relative;z-index:1}
+
+/* Settings → Roles & staff */
+.rs-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-top:16px}
+.rs-tile{display:flex;flex-direction:column;gap:2px;align-items:flex-start;text-align:left;padding:12px 14px;border:1px solid var(--bd);border-radius:12px;background:var(--card);position:relative}
+.rs-tile b{font-size:24px;font-weight:600;line-height:1.2;margin-top:6px}
+.rs-tile .rs-title{font-weight:500;font-size:12px}
+.rs-tile small{font-size:11px;color:#555867}
+.rs-tile small.amber{color:var(--am)}
+.rs-tile.click{cursor:pointer}.rs-tile.click:hover{border-color:var(--pr)}
+.rs-tile.on{border-color:var(--pr);box-shadow:0 0 0 2px var(--tint)}
+.rs-ico{display:grid;place-items:center;width:28px;height:28px;border-radius:8px;background:var(--tint);color:var(--pr)}
+.rs-ico.amber{background:var(--ambg);color:var(--am)}.rs-ico.green{background:var(--grbg);color:var(--gr)}
+.rs-bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:16px}
+.rs-select{height:36px;border:1px solid var(--bd);border-radius:8px;padding:0 10px;background:var(--card)}
+.rs-area{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:10px}
+.rs-area h3{font-size:14px;font-weight:600}
+.rs-roles{display:grid;gap:8px}
+.rs-role{border:1px solid var(--bd);border-radius:10px;background:var(--card)}
+.rs-role.open{border-color:var(--tint2,#dcd5f0)}
+.rs-head{display:flex;gap:12px;align-items:center;width:100%;padding:10px 14px;text-align:left}
+.rs-chev{flex:none;transition:transform .15s;color:#555867}.rs-role.open .rs-chev{transform:rotate(90deg)}
+.rs-name{flex:1;min-width:0;display:flex;flex-direction:column}
+.rs-name b{font-weight:600;font-size:13px}
+.rs-name small{color:#555867;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rs-avas{display:flex}
+.rs-ava{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--tint);color:var(--pr);border:2px solid var(--card);margin-left:-6px;font-size:10px;font-weight:600}
+.rs-ava:first-child{margin-left:0}.rs-ava.more{background:var(--gl);color:#555867}
+.rs-body{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:24px;padding:4px 16px 16px 41px;border-top:1px solid var(--bd)}
+.rs-body h4{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#555867;margin:12px 0 6px}
+.rs-perms,.rs-people{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.rs-perms li{display:flex;justify-content:space-between;gap:12px;align-items:center;font-size:12px}
+.rs-flags{display:flex;gap:3px}
+.rs-flags i{display:grid;place-items:center;width:20px;height:20px;border-radius:5px;font-style:normal;font-size:10px;font-weight:600;background:var(--gl);color:#8a8d99}
+.rs-flags i.on{background:var(--tint);color:var(--pr)}
+.rs-people li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;align-items:center}
+.rs-chip{display:inline-block;padding:2px 8px;margin:1px 4px 1px 0;border-radius:999px;background:var(--tint);color:var(--pr);font-size:11px;font-weight:500}
+@media (max-width:760px){.rs-body{grid-template-columns:1fr;padding-left:16px}.rs-avas{display:none}}
+.rs-person{display:flex;gap:10px;align-items:center;min-width:0}
+.rs-roles{grid-template-columns:minmax(0,1fr)}
+.rs-role,.rs-body>div{min-width:0}
+.rs-people li{grid-template-columns:minmax(0,1fr) auto}
+@media (max-width:760px){.rs-people li{grid-template-columns:minmax(0,1fr)}.rs-people li>.xs{display:none}}
+
+/* Settings → Academic setup → Attendance registers */
+.modechoice{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:14px}
+.modeopt{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border:1px solid var(--bd);border-radius:10px;background:var(--card);cursor:pointer}
+.modeopt.on{border-color:var(--pr);box-shadow:0 0 0 2px var(--tint)}
+.modeopt.ro{cursor:default}
+.modeopt input{margin-top:3px;accent-color:var(--pr)}
+.modeopt b{font-weight:600;font-size:13px}
+.modeopt em{font-style:normal;color:var(--gr);font-weight:600}
+.modeopt small{display:block;margin-top:4px;font-size:12px;color:#555867;line-height:1.45}
+
+/* row actions shown as icons (IconAction): 32 px targets, tooltip from the label */
+.iconact{display:inline-grid;place-items:center;width:32px;height:32px;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:#555867;cursor:pointer;flex:none;transition:background .12s,color .12s,border-color .12s}
+.iconact:hover{background:var(--tint);color:var(--pr);border-color:var(--tint2,#dcd5f0)}
+.iconact.danger:hover{background:var(--rdbg);color:var(--rd);border-color:var(--rdbg)}
+.iconact:focus-visible{outline:2px solid var(--pr);outline-offset:2px}
+.iconact:disabled{opacity:.45;cursor:not-allowed}
+.act .iconact+.iconact{margin-left:6px}
+
+/* a table being refreshed after a filter change stays in place, dimmed and inert, instead of collapsing to "Loading…" */
+.stale{transition:opacity .15s ease}
+.stale[aria-busy="true"]{opacity:.5;pointer-events:none}
+@media (prefers-reduced-motion:reduce){.stale{transition:none}}
+
+/* Settings → Integrations */
+.api-note.err{background:var(--rdbg);color:var(--rd)}
+.intpane{margin-top:16px}
+.mailboxes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:16px}
+.mailboxes button{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:10px 12px;border:1px solid var(--bd);border-radius:10px;background:var(--card);text-align:left;font-size:12px;min-width:0}
+.mailboxes button.on{border-color:var(--pr);background:var(--tint)}
+@media (max-width:640px){.mailboxes{grid-template-columns:minmax(0,1fr)}}
+.inthead{display:flex;gap:12px;align-items:flex-start}
+.inthead h3{margin:0}
+.intic{flex:none;width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:var(--tint);color:var(--pr)}
+.inttest{display:flex;gap:10px;align-items:flex-end;margin-top:16px;padding-top:14px;border-top:1px solid var(--bd)}
+.inttest .btn{flex:none}
+@media (max-width:520px){.inttest{flex-direction:column;align-items:stretch}}

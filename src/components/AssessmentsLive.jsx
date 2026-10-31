@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Lock, Download, LoaderCircle, Save, Unlock, Send, Check } from 'lucide-react';
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../api/useApi.js';
 import * as exam from '../api/examService.js';
 import * as studentApi from '../api/studentService.js';
-import { PageHeader, Metrics, scrollToId, Card, SectionHead, Tabs, DataTable, Pill, Footer, EmptyState, downloadCsv, useTabParam } from './ui.jsx';
+import { PageHeader, Metrics, scrollToId, Card, SectionHead, Tabs, DataTable, Pill, Footer, EmptyState, downloadCsv, useTabParam, SkeletonTable, Stale } from './ui.jsx';
 import { Modal } from './AuthSettings.jsx';
 import { ApiErr, ApiNote } from './Admissions.jsx';
 import { AcademicOutlookModal, canOpenAcademicOutlook, startedTerms } from './AcademicInsights.jsx';
@@ -12,6 +12,11 @@ import { formatDate, formatDateTime, formatTime, formatNumber } from '../regiona
 
 const { ROLES, RESULT, pct } = exam;
 const Loading = () => <p className="xs muted"><LoaderCircle size={12} className="spin" /> Loading…</p>;
+/*
+ * Smooth reloads: the first load of a tab shows a placeholder table in the shape of the real one; after that, changing the
+ * term, class, section or subject keeps the current table on screen, dimmed and not clickable, until the new one arrives.
+ */
+const MARK_COLS = ['Roll', 'Student', 'Marks', 'Absent', 'Status'];
 const when = (t) => formatDateTime(t);
 const TABS = ['Mark entry', 'Broadsheet', 'Rank list', 'Incomplete entries', 'Unlock tickets'];
 const resultPill = (code) => { const [t, c] = RESULT[code] || [code, '']; return <Pill tone={c}>{t}</Pill>; };
@@ -64,6 +69,12 @@ export function AssessmentsLive() {
   const pending = (tickets.data || []).filter((t) => t.status === 'PENDING').length;
   const o = overall.data;
   const ready = term && gradeId && classSections.some((s) => s.sectionId === sectionId);
+  // While a new class's sections load (the section resets), keep showing the last class and section, dimmed, instead of
+  // an empty "choose a class" message; the tabs switch to the new choice as soon as it is complete.
+  const shown = useRef(null);
+  if (ready) shown.current = { term, gradeId, sectionId };
+  const view = ready ? { term, gradeId, sectionId } : shown.current;
+  const switching = !ready && !!view;
   // Nothing set up yet (no terms or classes): show a dash, not a loader that never ends
   const noData = terms.loading || grades.loading ? '…' : '—';
 
@@ -91,22 +102,23 @@ export function AssessmentsLive() {
       ]} />
       {outlookOpen && <AcademicOutlookModal terms={terms} onClose={() => setOutlookOpen(false)} />}
       <Card id="academics-tabs">
-        <div className="filters" style={{ marginBottom: 14 }}>
+        <Tabs items={TABS.map((t, i) => (i === 4 && pending ? `${t} (${pending})` : t))} value={tab} onChange={setTab} />
+        {/* the term, class and section pickers sit under the tabs, like the class pickers on Teaching & learning */}
+        <div className="filters" style={{ marginTop: 16 }}>
           {terms.error ? <ApiErr error={terms.error} /> : <Picker label="Term" value={termId} onChange={setTermId} options={(terms.data || []).map((t) => [t.examTermId, `${t.termName} · ${t.sessionName}`])} />}
           {grades.error ? <ApiErr error={grades.error} /> : <Picker label="Class" value={gradeId} onChange={setGradeId} options={(grades.data || []).filter((g) => g.sequenceOrder >= 4).map((g) => [g.gradeId, g.gradeName])} />}
           <Picker label="Section" value={sectionId} onChange={setSectionId} options={classSections.map((s) => [s.sectionId, `Section ${s.sectionName}`])} />
         </div>
-        <Tabs items={TABS.map((t, i) => (i === 4 && pending ? `${t} (${pending})` : t))} value={tab} onChange={setTab} />
-        <div style={{ marginTop: 16 }}>
-          {!ready && (terms.loading || grades.loading) ? <Loading />
-            : !ready && !term ? <EmptyState title="No assessment terms yet">Set up the academic year and its terms in Settings → Academic setup, then pick a term here.</EmptyState>
-            : !ready && !(grades.data || []).length ? <EmptyState title="No classes yet">Add classes and sections in Settings → Academic setup to enter marks.</EmptyState>
-            : !ready ? <EmptyState title="Choose a class and section">Pick a class and section above to see its mark entry.</EmptyState>
-            : tab === 0 ? <MarkEntryTab term={term} gradeId={gradeId} sectionId={sectionId} branchId={branchId} onChanged={() => { overall.reload(); tickets.reload(); }} />
-              : tab === 1 ? <BroadsheetTab term={term} sectionId={sectionId} branchId={branchId} />
-                : tab === 2 ? <RankTab term={term} gradeId={gradeId} branchId={branchId} />
+        <div style={{ marginTop: 14, minHeight: 280 }}>
+          {!view && (terms.loading || grades.loading || sections.loading) ? <SkeletonTable cols={MARK_COLS} rows={6} />
+            : !view && !term ? <EmptyState title="No assessment terms yet">Set up the academic year and its terms in Settings → Academic setup, then pick a term here.</EmptyState>
+            : !view && !(grades.data || []).length ? <EmptyState title="No classes yet">Add classes and sections in Settings → Academic setup to enter marks.</EmptyState>
+            : !view ? <EmptyState title="Choose a class and section">Pick a class and section to see its mark entry.</EmptyState>
+            : <Stale busy={switching}>{tab === 0 ? <MarkEntryTab term={view.term} gradeId={view.gradeId} sectionId={view.sectionId} branchId={branchId} onChanged={() => { overall.reload(); tickets.reload(); }} />
+              : tab === 1 ? <BroadsheetTab term={view.term} sectionId={view.sectionId} branchId={branchId} />
+                : tab === 2 ? <RankTab term={view.term} gradeId={view.gradeId} branchId={branchId} />
                   : tab === 3 ? <IncompleteTab data={overall} />
-                    : <TicketsTab tickets={tickets} onChanged={() => { tickets.reload(); }} />}
+                    : <TicketsTab tickets={tickets} onChanged={() => { tickets.reload(); }} />}</Stale>}
         </div>
       </Card>
       <Footer />
@@ -120,7 +132,12 @@ function MarkEntryTab({ term, gradeId, sectionId, branchId, onChanged }) {
   const subjects = useApi(() => exam.listSubjects(term.examTermId, gradeId), [term.examTermId, gradeId]);
   const [code, setCode] = useState('');
   useEffect(() => { if (subjects.data?.length && !subjects.data.some((s) => s.subjectCode === code)) setCode(subjects.data[0].subjectCode); }, [subjects.data, code]);
-  const sheet = useApi(() => exam.markSheet(term.examTermId, sectionId, code, branchId), [term.examTermId, sectionId, code, branchId], !!code);
+  // ask for the sheet only once the subject belongs to the class now chosen; until then the last sheet stays on screen (dimmed)
+  const codeFits = !!code && !subjects.loading && !!subjects.data?.some((x) => x.subjectCode === code);
+  const asked = useRef(null);
+  if (codeFits) asked.current = { termId: term.examTermId, sectionId, code };
+  const q = asked.current;
+  const sheet = useApi(() => exam.markSheet(q.termId, q.sectionId, q.code, branchId), [q?.termId, q?.sectionId, q?.code, branchId], !!q);
   const [draft, setDraft] = useState({});
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -128,9 +145,8 @@ function MarkEntryTab({ term, gradeId, sectionId, branchId, onChanged }) {
   useEffect(() => { setDraft({}); }, [sheet.data]);
   useEffect(() => { setMsg(null); }, [term.examTermId, sectionId, code]);
 
-  if (subjects.loading) return <Loading />;
-  if (subjects.error) return <ApiErr error={subjects.error} />;
-  if (!subjects.data.length) return <ApiNote>No subjects are set up for this class in {term.termName}.</ApiNote>;
+  if (!subjects.data) return subjects.error ? <ApiErr error={subjects.error} /> : <SkeletonTable cols={MARK_COLS} rows={6} />;
+  if (!subjects.data.length && !subjects.loading) return <ApiNote>No subjects are set up for this class in {term.termName}.</ApiNote>;
   const s = sheet.data;
   const canEdit = hasRole(...ROLES.enterMarks) && s && !s.locked;
   const value = (r) => draft[r.studentId] ?? (r.absent ? { absent: true, marks: '' } : { absent: false, marks: r.marksObtained ?? '' });
@@ -150,15 +166,15 @@ function MarkEntryTab({ term, gradeId, sectionId, branchId, onChanged }) {
     <div className="filters" style={{ marginBottom: 12 }}>
       <Picker label="Subject" value={code} onChange={setCode} options={subjects.data.map((x) => [x.subjectCode, `${x.subjectName} (out of ${Number(x.maxMarks)})`])} />
     </div>
-    {sheet.loading || !s ? <Loading /> : sheet.error ? <ApiErr error={sheet.error} /> : (<>
+    {sheet.error ? <ApiErr error={sheet.error} /> : !s ? <SkeletonTable cols={MARK_COLS} rows={6} /> : (<Stale busy={sheet.loading || subjects.loading || !subjects.data.some((x) => x.subjectCode === code)}>
       {s.locked ? (
         <div className="api-note" style={{ marginBottom: 12 }}><Lock size={14} style={{ flex: 'none' }} />
           <span>{s.lockReason}. {hasRole(...ROLES.requestUnlock) ? 'Ask the principal to reopen it if marks need correcting.' : ''}</span>
-          {hasRole(...ROLES.requestUnlock) && <button className="btn" style={{ marginLeft: 'auto' }} onClick={() => setAsking(true)}><Unlock size={14} />Request unlock</button>}
+          {hasRole(...ROLES.requestUnlock) && s.rows.length > 0 && <button className="btn" style={{ marginLeft: 'auto' }} onClick={() => setAsking(true)}><Unlock size={14} />Request unlock</button>}
         </div>
       ) : s.lockReason ? <ApiNote>{s.lockReason}</ApiNote> : null}
       <p className="xs muted" style={{ marginBottom: 10 }}>{s.className} · {s.subjectName} · out of {Number(s.maxMarks)}, pass {Number(s.passMarks)} · {s.enteredCount} entered, {s.missingCount} missing</p>
-      <DataTable boxed cols={[
+      {!s.rows.length ? <EmptyState title={`No students in ${s.className}`}>There is nobody on the roll of this section, so there are no marks to enter. Pick another section, or add students to {s.className} first.</EmptyState> : <DataTable boxed cols={[
         { label: 'Roll', render: (r) => r.rollNumber ?? '—' },
         { label: 'Student', render: (r) => <span className="cell-id"><b>{r.studentName}</b><small>{r.studentUid}</small></span> },
         { label: 'Marks', render: (r) => {
@@ -173,8 +189,8 @@ function MarkEntryTab({ term, gradeId, sectionId, branchId, onChanged }) {
           : r.absent ? 'Yes' : '') },
         { label: 'Status', render: (r) => (draft[r.studentId] ? <Pill tone="purple">Unsaved</Pill>
           : !r.entered ? <Pill tone="amber">Missing</Pill> : !r.absent && Number(r.marksObtained) < Number(s.passMarks) ? <Pill tone="amber">Below pass</Pill> : <Pill tone="green">Entered</Pill>) },
-      ]} rows={s.rows} />
-      {canEdit && (
+      ]} rows={s.rows} />}
+      {canEdit && s.rows.length > 0 && (
         <div className="row" style={{ marginTop: 12, gap: 12 }}>
           <button className="btn primary" disabled={busy || !changed.length} onClick={save}>{busy ? <LoaderCircle size={14} className="spin" /> : <Save size={14} />}Save marks{changed.length ? ` (${changed.length})` : ''}</button>
           {msg?.ok && <span className="xs" style={{ color: 'var(--gr)' }}>{msg.ok}</span>}
@@ -182,7 +198,7 @@ function MarkEntryTab({ term, gradeId, sectionId, branchId, onChanged }) {
       )}
       {msg?.error && <div style={{ marginTop: 10 }}><ApiErr error={msg.error} /></div>}
       {!hasRole(...ROLES.enterMarks) && <p className="xs muted" style={{ marginTop: 10 }}>Marks are entered by subject teachers, class teachers and the exam controller.</p>}
-    </>)}
+    </Stale>)}
     {asking && <UnlockModal term={term} sheet={s} onClose={() => setAsking(false)} onSaved={onChanged} />}
   </>);
 }
@@ -214,9 +230,10 @@ function BroadsheetTab({ term, sectionId, branchId }) {
   const { hasRole } = useAuth();
   const sheet = useApi(() => exam.broadsheet(term.examTermId, sectionId, branchId), [term.examTermId, sectionId, branchId]);
   const [pub, setPub] = useState(null);
-  if (sheet.loading) return <Loading />;
   if (sheet.error) return <ApiErr error={sheet.error} />;
+  if (!sheet.data) return <SkeletonTable cols={['Student', 'Subjects', '%', 'Grade', 'Result', 'Rank']} rows={6} />;
   const b = sheet.data;
+  const empty = !b.rows.length;
   const publish = async () => {
     setPub('busy');
     try { const r = await exam.publish(term.examTermId, sectionId, branchId); setPub({ ok: `${r.published} progress card${r.published === 1 ? '' : 's'} published${r.alreadyPublished ? `, ${r.alreadyPublished} already published` : ''}.` }); } catch (e) { setPub({ error: e }); }
@@ -225,15 +242,16 @@ function BroadsheetTab({ term, sectionId, branchId }) {
     ['Roll', 'Student UID', 'Student', ...b.subjects.map((x) => `${x.subjectName} (${Number(x.maxMarks)})`), 'Total', 'Percentage', 'Grade', 'Result', 'Rank'],
     b.rows.map((r) => [r.rollNumber ?? '', r.studentUid, r.studentName, ...r.marks.map((m) => (!m.entered ? '' : m.absent ? 'AB' : Number(m.marksObtained))),
       `${Number(r.totalObtained)}/${Number(r.totalMax)}`, r.percentage ?? '', r.grade ?? '', r.result, r.rank ?? '']));
-  return (<>
+  return (<Stale busy={sheet.loading}>
     <div className="row" style={{ gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
-      <span className="xs muted">{b.className} · class average {pct(b.classAveragePercent)}</span>
+      <span className="xs muted">{b.className}{empty ? ' · no students on roll' : ` · class average ${pct(b.classAveragePercent)}`}</span>
       <span style={{ marginLeft: 'auto' }} />
-      <button className="btn" onClick={exportCsv}><Download size={14} />Export CSV</button>
-      {hasRole(...ROLES.publish) && <button className="btn primary" disabled={pub === 'busy'} onClick={publish}><Send size={14} />Publish progress cards</button>}
+      <button className="btn" onClick={exportCsv} disabled={empty} title={empty ? 'Nothing to export: no students on roll' : undefined}><Download size={14} />Export CSV</button>
+      {hasRole(...ROLES.publish) && <button className="btn primary" disabled={pub === 'busy' || empty} title={empty ? 'Nothing to publish: no students on roll' : undefined} onClick={publish}><Send size={14} />Publish progress cards</button>}
     </div>
     {pub?.ok && <div className="api-note ok"><Check size={14} style={{ flex: 'none' }} /><span>{pub.ok}</span></div>}
     {pub?.error && <ApiErr error={pub.error} />}
+    {empty ? <EmptyState title={`No students in ${b.className}`}>There is nobody on the roll of this section, so there is no broadsheet and no progress card to publish. Pick another section.</EmptyState> : (<>
     <DataTable boxed cols={[
       { label: 'Student', render: (r) => <span className="cell-id"><b>{r.studentName}</b><small>Roll {r.rollNumber ?? '—'}</small></span> },
       ...b.subjects.map((x) => ({ label: x.subjectCode, className: 'num', render: (r) => { const m = r.marks.find((c) => c.subjectCode === x.subjectCode); return !m?.entered ? <span className="muted">—</span> : m.absent ? 'AB' : Number(m.marksObtained); } })),
@@ -243,16 +261,18 @@ function BroadsheetTab({ term, sectionId, branchId }) {
       { label: 'Rank', render: (r) => r.rank ?? '—' },
     ]} rows={b.rows} />
     <p className="xs muted" style={{ marginTop: 10 }}>{b.subjects.map((x) => `${x.subjectName}: avg ${x.averageMarks ?? '—'}, top ${x.highestMarks ?? '—'}, ${x.failed} below pass`).join(' · ')}</p>
-  </>);
+    </>)}
+  </Stale>);
 }
 
 /** Rank list of the whole class: GET …/rank-list?gradeId (US-05011). */
 function RankTab({ term, gradeId, branchId }) {
   const ranks = useApi(() => exam.rankList(term.examTermId, { gradeId, branchId }), [term.examTermId, gradeId, branchId]);
-  if (ranks.loading) return <Loading />;
   if (ranks.error) return <ApiErr error={ranks.error} />;
+  if (!ranks.data) return <SkeletonTable cols={['Rank', 'Student', '%', 'Grade', 'Band']} rows={6} />;
   const r = ranks.data;
-  return (<>
+  if (!r.ranks?.length) return <Stale busy={ranks.loading}><EmptyState title={`Nobody to rank in ${r.scope}`}>No student in this class has marks for the term yet, so there is no rank list.</EmptyState></Stale>;
+  return (<Stale busy={ranks.loading}>
     <SectionHead title={`Rank list · ${r.scope}`} sub={`${r.rankedStudents} students ranked`} />
     <div style={{ margin: '12px 0' }} className="pills">
       {r.subjectToppers.filter((t) => t.topMarks !== null).map((t) => <Pill key={t.subjectCode} tone="purple">{t.subjectName}: {t.students.join(', ')} ({Number(t.topMarks)}/{Number(t.maxMarks)})</Pill>)}
@@ -264,16 +284,16 @@ function RankTab({ term, gradeId, branchId }) {
       { label: 'Grade', render: (e) => e.grade || '—' },
       { label: 'Band', render: (e) => <Pill tone={e.percentileBand === 'Top 10%' ? 'green' : e.percentileBand === 'Below median' ? '' : 'purple'}>{e.percentileBand}</Pill> },
     ]} rows={r.ranks} />
-  </>);
+  </Stale>);
 }
 
 /** Incomplete entries of the term: GET …/completeness (US-05016). */
 function IncompleteTab({ data }) {
-  if (data.loading || !data.data) return <Loading />;
   if (data.error) return <ApiErr error={data.error} />;
+  if (!data.data) return <SkeletonTable cols={['Class', 'Subject', 'Entered', 'Missing']} rows={5} />;
   const d = data.data;
   if (d.complete) return <ApiNote>Every mark of {d.termName} is entered ({d.enteredEntries} entries); report cards can be compiled.</ApiNote>;
-  return (<>
+  return (<Stale busy={data.loading}>
     <p className="xs muted" style={{ marginBottom: 10 }}>{d.missingEntries} of {d.expectedEntries} entries missing in {d.termName}. Publishing is blocked for these sections.</p>
     <DataTable boxed cols={[
       { label: 'Class', render: (i) => i.className },
@@ -281,15 +301,15 @@ function IncompleteTab({ data }) {
       { label: 'Entered', render: (i) => `${i.entered} / ${i.expected}` },
       { label: 'Missing', render: (i) => <small className="xs">{i.missing.map((m) => m.studentName).join(', ')}</small> },
     ]} rows={d.items} />
-  </>);
+  </Stale>);
 }
 
 /** Unlock tickets: GET …/unlock-tickets, PATCH /unlock-tickets/{id}/decision (US-05006). */
 function TicketsTab({ tickets, onChanged }) {
   const { hasRole } = useAuth();
   const [deciding, setDeciding] = useState(null);
-  if (tickets.loading) return <Loading />;
   if (tickets.error) return <ApiErr error={tickets.error} />;
+  if (!tickets.data) return <SkeletonTable cols={['Class · subject', 'Reason', 'Status']} rows={4} />;
   if (!tickets.data.length) return <p className="xs muted">No unlock tickets for this term.</p>;
   return (<>
     <DataTable boxed cols={[

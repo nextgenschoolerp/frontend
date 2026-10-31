@@ -5,7 +5,7 @@ import { useAuth } from '../auth.jsx';
 import * as authApi from '../api/authService.js';
 import AuthShell, { AuthAlert, PasswordInput, PASSWORD_HINT, PASSWORD_RULE } from '../components/AuthShell.jsx';
 
-function checkNewPassword(next, confirm) {
+export function checkNewPassword(next, confirm) {
   if (!PASSWORD_RULE.test(next)) return PASSWORD_HINT;
   if (next !== confirm) return 'The two new passwords do not match.';
   return '';

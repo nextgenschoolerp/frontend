@@ -58,7 +58,10 @@ export const promoteBatch = (body) => api.post(`${ACADEMIC}/batch-promotion`, bo
 // --- Daily attendance: AM / PM registers, absences, guardian follow-up, school figures ---------------
 const ATTENDANCE = '/api/v1/attendance';
 export const getRegister = (sectionId, date) => api.get(`${ATTENDANCE}/sections/${sectionId}/register`, { query: { date } });
-/** body: { date, session: 'AM' | 'PM', entries: [{ studentId, status, reason }] } */
+/** body: { date, session: 'AM' | 'PM' (only when the school takes AM and PM registers), entries: [{ studentId, status, reason }] } */
+/** The school's register mode: { mode: 'DAILY' | 'AM_PM', sessionsPerDay, updatedBy, updatedAt } */
+export const attendanceSettings = () => api.get('/api/v1/attendance/settings');
+export const saveAttendanceSettings = (mode) => api.put('/api/v1/attendance/settings', { mode });
 export const saveRegister = (sectionId, body) => api.put(`${ATTENDANCE}/sections/${sectionId}/register`, body);
 export const attendanceSummary = (date, branchId) => api.get(`${ATTENDANCE}/summary`, { query: { date, branchId } });
 export const attendanceTrend = (from, to, branchId) => api.get(`${ATTENDANCE}/trend`, { query: { from, to, branchId } });
@@ -115,6 +118,8 @@ export const ROLES = {
   classes: ['REGISTRAR', 'OFFICE_CLERK', 'SCHOOL_PRINCIPAL', 'CLASS_TEACHER', 'SUBJECT_TEACHER', 'EXAM_CONTROLLER', 'VICE_PRINCIPAL', 'ACADEMIC_AUDITOR', 'ACADEMIC_HEAD', 'SUPER_ADMIN'],
   attendanceView: ['CLASS_TEACHER', 'ACADEMIC_HEAD', 'VICE_PRINCIPAL', 'SCHOOL_PRINCIPAL', 'REGISTRAR', 'OFFICE_CLERK', 'SUPER_ADMIN'],
   attendanceMark: ['CLASS_TEACHER', 'ACADEMIC_HEAD', 'VICE_PRINCIPAL', 'SCHOOL_PRINCIPAL', 'SUPER_ADMIN'],
+  /** Settings → Academic setup → Attendance registers: one register a day or morning and afternoon */
+  attendanceSettings: ['SCHOOL_PRINCIPAL', 'PRINCIPAL', 'SUPER_ADMIN'],
   attendanceFollowUp: ['CLASS_TEACHER', 'OFFICE_CLERK', 'VICE_PRINCIPAL', 'SCHOOL_PRINCIPAL', 'SUPER_ADMIN'],
   /** Registers older than 7 days */
   attendanceLateCorrection: ['SCHOOL_PRINCIPAL', 'VICE_PRINCIPAL', 'SUPER_ADMIN'],

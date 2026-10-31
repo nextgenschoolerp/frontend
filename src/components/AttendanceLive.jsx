@@ -112,6 +112,8 @@ export function AttendanceLive() {
   useEffect(() => { if (sectionList.length && !sectionList.some((s) => s.sectionId === sectionId)) setSectionId(sectionList[0].sectionId); }, [sectionList, sectionId]);
 
   const s = summary.data;
+  // one register a day (DAILY, the default) or morning and afternoon registers (AM_PM): Settings → Academic setup
+  const daily = (s?.mode || register.data?.mode || 'DAILY') !== 'AM_PM';
   const isToday = date === todayIso();
   const [outlookOpen, setOutlookOpen] = useState(false);
   const canOutlook = canOpenAttendanceOutlook(hasRole);
@@ -119,12 +121,13 @@ export function AttendanceLive() {
   // A weekend or break with no marks: nothing was due, so show "school closed" rather than zeros
   useSchoolCalendar();
   const dayInfo = schoolDay(date);
-  const closedDay = !!s && !dayInfo.open && s.unmarked === s.totalStudents;
+  const closedDay = !!s && !dayInfo.open && s.unmarked === s.possible;
   const refresh = () => { register.reload(); summary.reload(); followUps.reload(); };
   const reg = register.data;
   const exportRegister = () => reg && downloadCsv(`attendance-${reg.gradeName}-${reg.sectionName}-${reg.date}`.replace(/\s+/g, '-'),
-    ['Roll', 'Student', 'Student ID', 'AM', 'PM', 'Reason'],
-    reg.students.map((r) => [r.rollNumber ?? '', r.fullName, r.studentUid, label(r.am?.status), label(r.pm?.status), [r.am?.reason, r.pm?.reason].filter(Boolean).join(' / ')]));
+    daily ? ['Roll', 'Student', 'Student ID', 'Attendance', 'Reason'] : ['Roll', 'Student', 'Student ID', 'AM', 'PM', 'Reason'],
+    reg.students.map((r) => (daily ? [r.rollNumber ?? '', r.fullName, r.studentUid, label(r.am?.status), r.am?.reason || '']
+      : [r.rollNumber ?? '', r.fullName, r.studentUid, label(r.am?.status), label(r.pm?.status), [r.am?.reason, r.pm?.reason].filter(Boolean).join(' / ')])));
 
   return (
     <>
@@ -135,14 +138,14 @@ export function AttendanceLive() {
       />
       {summary.error ? <ApiErr error={summary.error} /> : (
         <Metrics items={s ? [
-          [isToday ? 'Present today' : `Present on ${dayLabel(date, { day: 'numeric', month: 'short' })}`, closedDay ? '—' : formatNumber(s.present),
-            closedDay ? `${dayInfo.status} · no registers expected` : s.unmarked === s.totalStudents ? `No registers in yet · ${formatNumber(s.totalStudents)} on roll`
-              : `${pctText(s.presentRate)} of ${formatNumber(s.totalStudents - s.unmarked)} marked${s.unmarked ? ` · ${formatNumber(s.unmarked)} not yet marked` : ''}`,
+          [`${isToday ? 'Present today' : `Present on ${dayLabel(date, { day: 'numeric', month: 'short' })}`}${daily ? '' : ' (half-days)'}`, closedDay ? '—' : formatNumber(s.present),
+            closedDay ? `${dayInfo.status} · no registers expected` : s.unmarked === s.possible ? `No registers in yet · ${formatNumber(s.totalStudents)} on roll`
+              : `${pctText(s.presentRate)} of ${formatNumber(s.possible - s.unmarked)} ${daily ? 'marked' : 'half-day marks'}${s.unmarked ? ` · ${formatNumber(s.unmarked)} not yet marked` : ''}`,
             null, false, null, { onClick: () => { setTab(0); setNotice(null); scrollToId('attendance-tabs'); }, hint: 'Open the daily register' }],
           ['Excused absences', closedDay ? '—' : s.excused, closedDay ? 'School closed' : s.excused ? 'Reasons recorded' : 'None recorded', null, false, null,
             { onClick: () => { setTab(1); setNotice(null); scrollToId('attendance-tabs'); }, hint: 'Open absence history' }],
-          ['Class registers', closedDay ? '—' : `${s.amRegistersSubmitted} / ${s.registersExpected}`,
-            closedDay ? 'School closed · none due' : `Morning registers submitted · ${s.pmRegistersSubmitted} afternoon`, null, false, null,
+          ['Class registers', closedDay ? '—' : `${s.registersSubmitted} / ${s.registersExpected}`,
+            closedDay ? 'School closed · none due' : daily ? 'Day registers submitted · one a day' : `${s.amRegistersSubmitted} morning · ${s.pmRegistersSubmitted} afternoon submitted`, null, false, null,
             { onClick: () => { setTab(0); setNotice(null); scrollToId('attendance-tabs'); }, hint: 'Open the daily register' }],
           // Leader view: unexcused absences whose guardian has not been reached; opens trend, chronic absence and register compliance
           ['Attendance outlook', canOutlook ? (followUps.data ? formatNumber(backlog.open.length) : '…') : '—',
@@ -156,6 +159,8 @@ export function AttendanceLive() {
         <Card id="attendance-tabs" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <div className="sh"><div><h3>Class register</h3>
             <p>{reg ? `${reg.gradeName}-${reg.sectionName} · ${plural(reg.students.length, 'student')} · ${dayLabel(reg.date, { weekday: 'long', day: 'numeric', month: 'long' })}` : 'Choose a class'}</p></div></div>
+          {/* tabs first, then the date, class and section they apply to (as on Academics and Teaching & learning) */}
+          <Tabs items={['Daily register', 'Absence history', 'Staff attendance']} value={tab} onChange={(i) => { setTab(i); setNotice(null); }} />
           <div className="filters">
             <input type="date" className="select" aria-label="Date" value={date} max={todayIso()} onChange={(e) => e.target.value && setDate(e.target.value)} />
             {canClasses ? (<>
@@ -163,18 +168,17 @@ export function AttendanceLive() {
               <Picker label="Section" value={sectionId} onChange={setSectionId} options={sectionList.map((x) => [x.sectionId, `Section ${x.sectionName}`])} />
             </>) : <ApiNote>Class lists are not available for your role.</ApiNote>}
           </div>
-          <Tabs items={['Daily register', 'Absence history', 'Staff attendance']} value={tab} onChange={(i) => { setTab(i); setNotice(null); }} />
           {notice && <Ok>{notice}</Ok>}
           {tab === 0 && (grades.error ? <ApiErr error={grades.error} /> : !sectionId ? (grades.loading || sections.loading ? <Loading /> : <ApiNote>No sections in this class.</ApiNote>)
             : register.error ? <ApiErr error={register.error} /> : !reg ? <Loading />
-              : <RegisterEditor key={`${sectionId}|${date}`} reg={reg} busy={register.loading} canMark={canMark}
+              : <RegisterEditor key={`${sectionId}|${date}|${daily}`} reg={reg} daily={daily} busy={register.loading} canMark={canMark}
                   canLate={hasRole(...ROLES.attendanceLateCorrection)} onSaved={(msg) => { setNotice(msg); refresh(); }} />)}
-          {tab === 1 && <AbsenceHistory sectionId={sectionId} className={reg ? `${reg.gradeName}-${reg.sectionName}` : ''} branchId={branchId} />}
+          {tab === 1 && <AbsenceHistory daily={daily} sectionId={sectionId} className={reg ? `${reg.gradeName}-${reg.sectionName}` : ''} branchId={branchId} />}
           {tab === 2 && <ApiNote>Staff attendance comes from the HR & payroll module (Module 07), which is not connected yet.</ApiNote>}
         </Card>
         <div className="stack">
-          <ClassSummary reg={reg} />
-          <FollowUps res={followUps} canFollowUp={canFollowUp} onSaved={(msg) => { setNotice(msg); refresh(); }} />
+          <ClassSummary reg={reg} daily={daily} />
+          <FollowUps daily={daily} res={followUps} canFollowUp={canFollowUp} onSaved={(msg) => { setNotice(msg); refresh(); }} />
         </div>
       </div>
       <Card className="notice">
@@ -189,11 +193,11 @@ export function AttendanceLive() {
   );
 }
 
-/** One session of the register is edited at a time; the other shows its saved marks. */
-function RegisterEditor({ reg, busy, canMark, canLate, onSaved }) {
+/** One register a day (stored as AM), or AM and PM: one session is edited at a time, the other shows its saved marks. */
+function RegisterEditor({ reg, daily, busy, canMark, canLate, onSaved }) {
   const old = reg.date < addDays(todayIso(), -CORRECTION_DAYS);
   const editable = canMark && (!old || canLate);
-  const [session, setSession] = useState(() => (!reg.am.submitted || new Date().getHours() < 12 ? 'AM' : 'PM'));
+  const [session, setSession] = useState(() => (daily || !reg.am.submitted || new Date().getHours() < 12 ? 'AM' : 'PM'));
   const key = session === 'AM' ? 'am' : 'pm';
   const fromServer = () => Object.fromEntries(reg.students.map((r) => [r.studentId, { status: r[key]?.status || '', reason: r[key]?.reason || '' }]));
   const [draft, setDraft] = useState(fromServer);
@@ -217,8 +221,8 @@ function RegisterEditor({ reg, busy, canMark, canLate, onSaved }) {
     if (!entries.length) { setError({ detail: 'Mark at least one student.' }); return; }
     setSaving(true); setError(null);
     try {
-      await studentApi.saveRegister(reg.sectionId, { date: reg.date, session, entries });
-      onSaved(`${session} register for ${reg.gradeName}-${reg.sectionName} saved · ${plural(entries.length, 'student')} marked${unmarked ? `, ${unmarked} unmarked` : ''}.`);
+      await studentApi.saveRegister(reg.sectionId, { date: reg.date, session: daily ? undefined : session, entries });
+      onSaved(`${daily ? 'Register' : `${session} register`} for ${reg.gradeName}-${reg.sectionName} saved · ${plural(entries.length, 'student')} marked${unmarked ? `, ${unmarked} unmarked` : ''}.`);
     } catch (e) { setError(e); } finally { setSaving(false); }
   };
 
@@ -227,7 +231,7 @@ function RegisterEditor({ reg, busy, canMark, canLate, onSaved }) {
     if (s !== session || !editable) return statusPill(r[k]?.status);
     const v = draft[r.studentId]?.status || '';
     return (
-      <select className={`mark ${(v || 'unmarked').toLowerCase()}`} aria-label={`${r.fullName} ${s}`} value={v} onChange={(e) => set(r.studentId, { status: e.target.value })}>
+      <select className={`mark ${(v || 'unmarked').toLowerCase()}`} aria-label={daily ? `${r.fullName} attendance` : `${r.fullName} ${s}`} value={v} onChange={(e) => set(r.studentId, { status: e.target.value })}>
         <option value="" disabled>Unmarked</option>
         {Object.entries(ATTENDANCE_STATUS).map(([code, [t]]) => <option key={code} value={code}>{t}</option>)}
       </select>
@@ -239,18 +243,18 @@ function RegisterEditor({ reg, busy, canMark, canLate, onSaved }) {
       return <input className="select" style={{ width: '100%', minWidth: 140 }} aria-label={`${r.fullName} reason`} maxLength={500}
         placeholder={d.status === 'EXCUSED' ? 'Reason (required)' : 'Reason'} value={d.reason} onChange={(e) => set(r.studentId, { reason: e.target.value })} />;
     }
-    const reasons = [r.am?.reason && `AM: ${r.am.reason}`, r.pm?.reason && `PM: ${r.pm.reason}`].filter(Boolean).join(' · ');
+    const reasons = daily ? r.am?.reason : [r.am?.reason && `AM: ${r.am.reason}`, r.pm?.reason && `PM: ${r.pm.reason}`].filter(Boolean).join(' · ');
     return <span className="muted">{reasons || '—'}</span>;
   };
 
   const submitted = (s, i) => (i.submitted
-    ? `${s} submitted at ${timeLabel(i.submittedAt)} by ${i.submittedBy}${i.lastChangedAt ? ` · changed ${timeLabel(i.lastChangedAt)} by ${i.lastChangedBy}` : ''}`
-    : `${s} not submitted`);
+    ? `${daily ? 'Register' : s} submitted at ${timeLabel(i.submittedAt)} by ${i.submittedBy}${i.lastChangedAt ? ` · changed ${timeLabel(i.lastChangedAt)} by ${i.lastChangedBy}` : ''}`
+    : `${daily ? 'Register' : s} not submitted`);
   return (<>
     <div className="row" style={{ flexWrap: 'wrap' }}>
-      <div className="pills" role="group" aria-label="Register session">
+      {daily ? <span className="xs muted">One register a day</span> : <div className="pills" role="group" aria-label="Register session">
         {['AM', 'PM'].map((s) => <button key={s} type="button" className={`btn${session === s ? ' primary' : ''}`} onClick={() => setSession(s)}>{s === 'AM' ? 'Morning (AM)' : 'Afternoon (PM)'}{reg[s.toLowerCase()].submitted && <Check size={13} />}</button>)}
-      </div>
+      </div>}
       <Picker label="Status" value={filter} onChange={setFilter} empty="All statuses"
         options={[...Object.entries(ATTENDANCE_STATUS).map(([c, [t]]) => [c, t]), ['UNMARKED', 'Unmarked']]} />
     </div>
@@ -260,22 +264,21 @@ function RegisterEditor({ reg, busy, canMark, canLate, onSaved }) {
       <div className="tablebox" aria-busy={busy || saving} style={{ opacity: busy ? 0.6 : 1, transition: 'opacity 150ms ease' }}>
         <DataTable cols={[
           { label: 'Student', render: (r) => <Person name={r.fullName} sub={`${r.studentUid}${r.rollNumber ? ` · Roll ${r.rollNumber}` : ''}`} /> },
-          { label: 'AM', render: (r) => cell(r, 'AM') },
-          { label: 'PM', render: (r) => cell(r, 'PM') },
+          ...(daily ? [{ label: 'Attendance', render: (r) => cell(r, 'AM') }] : [{ label: 'AM', render: (r) => cell(r, 'AM') }, { label: 'PM', render: (r) => cell(r, 'PM') }]),
           { label: 'Absence reason', render: reasonCell },
-          { label: 'Follow-up', render: (r) => followPill(r.am?.followUpStatus) || followPill(r.pm?.followUpStatus) || <span className="muted">—</span> },
+          { label: 'Follow-up', render: (r) => followPill(r.am?.followUpStatus) || (!daily && followPill(r.pm?.followUpStatus)) || <span className="muted">—</span> },
         ]} rows={rows} />
-        <div className="pager"><span>{rows.length === reg.students.length ? `${plural(reg.students.length, 'student')}` : `Showing ${rows.length} of ${reg.students.length}`} · {info.present} present · {info.late} late · {info.excused} excused · {info.unexcused} unexcused · {info.unmarked} unmarked ({session}, saved)</span></div>
+        <div className="pager"><span>{rows.length === reg.students.length ? `${plural(reg.students.length, 'student')}` : `Showing ${rows.length} of ${reg.students.length}`} · {info.present} present · {info.late} late · {info.excused} excused · {info.unexcused} unexcused · {info.unmarked} unmarked ({daily ? 'saved' : `${session}, saved`})</span></div>
       </div>
     )}
     {error && <ApiErr error={error} />}
     <div className="row" style={{ flexWrap: 'wrap' }}>
-      <span className="xs muted">{submitted('AM', reg.am)} · {submitted('PM', reg.pm)}</span>
+      <span className="xs muted">{daily ? submitted('AM', reg.am) : `${submitted('AM', reg.am)} · ${submitted('PM', reg.pm)}`}</span>
       {editable && reg.students.length > 0 && (
         <div className="pills">
           <button type="button" className="btn" disabled={!unmarked} onClick={() => setDraft((d) => Object.fromEntries(Object.entries(d).map(([id, m]) => [id, m.status ? m : { ...m, status: 'PRESENT' }])))}>Mark all present</button>
           <button type="button" className="btn primary" disabled={saving || (info.submitted && !changed.length)} onClick={save}>
-            {saving ? <LoaderCircle size={14} className="spin" /> : <Check size={14} />}{info.submitted ? `Save changes (${changed.length})` : `Submit ${session} register`}
+            {saving ? <LoaderCircle size={14} className="spin" /> : <Check size={14} />}{info.submitted ? `Save changes (${changed.length})` : daily ? 'Submit register' : `Submit ${session} register`}
           </button>
         </div>
       )}
@@ -283,16 +286,16 @@ function RegisterEditor({ reg, busy, canMark, canLate, onSaved }) {
   </>);
 }
 
-function ClassSummary({ reg }) {
+function ClassSummary({ reg, daily }) {
   if (!reg) return <Card><h3 style={{ fontSize: 15, fontWeight: 600 }}>Class summary</h3><p className="small muted" style={{ marginTop: 4 }}>Choose a class.</p></Card>;
-  const i = reg.am.submitted || !reg.pm.submitted ? reg.am : reg.pm;
+  const i = daily || reg.am.submitted || !reg.pm.submitted ? reg.am : reg.pm;
   const session = i === reg.am ? 'AM' : 'PM';
   const total = reg.students.length;
   const rate = total ? ((i.present + i.late) / total) * 100 : null;
   return (
     <Card>
       <h3 style={{ fontSize: 15, fontWeight: 600 }}>Class summary</h3>
-      <p className="small muted" style={{ margin: '4px 0 8px' }}>{reg.gradeName}-{reg.sectionName} · {dayLabel(reg.date, { day: 'numeric', month: 'short' })} · {session} register</p>
+      <p className="small muted" style={{ margin: '4px 0 8px' }}>{reg.gradeName}-{reg.sectionName} · {dayLabel(reg.date, { day: 'numeric', month: 'short' })} · {daily ? 'day register' : `${session} register`}</p>
       {[['Present', i.present], ['Late', i.late], ['Excused', i.excused], ['Unexcused', i.unexcused], ['Unmarked', i.unmarked]].filter(([, n], k) => n || k === 0).map(([a, n]) => (
         <div className="attrow" key={a}><span>{a}</span><span className="muted small">{plural(n, 'student')}</span></div>
       ))}
@@ -301,7 +304,7 @@ function ClassSummary({ reg }) {
   );
 }
 
-function FollowUps({ res, canFollowUp, onSaved }) {
+function FollowUps({ res, daily, canFollowUp, onSaved }) {
   const [all, setAll] = useState(false);
   const [open, setOpen] = useState(null);
   const list = res.data || [];
@@ -312,7 +315,7 @@ function FollowUps({ res, canFollowUp, onSaved }) {
       {res.error ? <div style={{ marginTop: 12 }}><ApiErr error={res.error} /></div> : !res.data ? <div style={{ marginTop: 12 }}><Loading /></div>
         : !list.length ? <p className="xs muted" style={{ marginTop: 12 }}>No unexcused absences waiting for a guardian follow-up.</p> : shown.map((a) => (
           <div key={a.attendanceId} style={{ marginTop: 18 }}>
-            <div className="row" style={{ justifyContent: 'flex-start' }}><Person name={a.fullName} sub={`${a.gradeName}-${a.sectionName} · Absent ${a.session} · ${dayLabel(a.date, { day: 'numeric', month: 'short' })}`} /></div>
+            <div className="row" style={{ justifyContent: 'flex-start' }}><Person name={a.fullName} sub={`${a.gradeName}-${a.sectionName} · Absent${daily ? '' : ` ${a.session}`} · ${dayLabel(a.date, { day: 'numeric', month: 'short' })}`} /></div>
             <div style={{ margin: '10px 0 8px' }}>{followPill(a.followUpStatus)}</div>
             <p className="body-s">{a.followUpNote ? `${a.followUpNote} — ${a.followUpBy}` : 'Please contact the primary guardian and record the reason.'}</p>
             {a.emergencyContactPhone && <p className="xs muted" style={{ marginTop: 4 }}><Phone size={11} style={{ verticalAlign: -1 }} /> {a.emergencyContactPhone}</p>}
@@ -320,12 +323,12 @@ function FollowUps({ res, canFollowUp, onSaved }) {
           </div>
         ))}
       {list.length > 3 && <button type="button" className="link" style={{ marginTop: 14 }} onClick={() => setAll(!all)}>{all ? 'Show fewer' : `View all ${list.length} →`}</button>}
-      {open && <FollowUpModal absence={open} onClose={() => setOpen(null)} onSaved={(msg) => { setOpen(null); onSaved(msg); }} />}
+      {open && <FollowUpModal daily={daily} absence={open} onClose={() => setOpen(null)} onSaved={(msg) => { setOpen(null); onSaved(msg); }} />}
     </Card>
   );
 }
 
-function FollowUpModal({ absence, onClose, onSaved }) {
+function FollowUpModal({ absence, daily, onClose, onSaved }) {
   const [status, setStatus] = useState(absence.followUpStatus === 'OPEN' ? 'GUARDIAN_CONTACTED' : 'RESOLVED');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
@@ -338,7 +341,7 @@ function FollowUpModal({ absence, onClose, onSaved }) {
     } catch (e) { setError(e); } finally { setBusy(false); }
   };
   return (
-    <Modal title="Guardian follow-up" sub={`${absence.fullName} · ${absence.gradeName}-${absence.sectionName} · absent ${absence.session}, ${dayLabel(absence.date)}`} onClose={onClose}
+    <Modal title="Guardian follow-up" sub={`${absence.fullName} · ${absence.gradeName}-${absence.sectionName} · absent${daily ? '' : ` ${absence.session}`}, ${dayLabel(absence.date)}`} onClose={onClose}
       footer={<><button className="btn" onClick={onClose}>Cancel</button>
         <button className="btn primary" disabled={busy || !note.trim()} onClick={save}>{busy && <LoaderCircle size={14} className="spin" />}Save follow-up</button></>}>
       <KV rows={[['Emergency contact', absence.emergencyContactPhone || 'Not recorded'], ['Marked by', absence.markedBy || '—'],
@@ -356,7 +359,7 @@ function FollowUpModal({ absence, onClose, onSaved }) {
   );
 }
 
-function AbsenceHistory({ sectionId, className, branchId }) {
+function AbsenceHistory({ sectionId, className, branchId, daily }) {
   const [scope, setScope] = useState(sectionId ? 'class' : 'school');
   const [from, setFrom] = useState(addDays(todayIso(), -29));
   const [to, setTo] = useState(todayIso());
@@ -373,15 +376,15 @@ function AbsenceHistory({ sectionId, className, branchId }) {
     </div>
     {res.error ? <ApiErr error={res.error} /> : !res.data ? <Loading /> : !rows.length ? <p className="xs muted">No late arrivals or absences in this period.</p> : (<>
       <DataTable boxed cols={[
-        { label: 'Date', render: (a) => `${dayLabel(a.date, { day: '2-digit', month: 'short' })} · ${a.session}` },
+        { label: 'Date', render: (a) => `${dayLabel(a.date, { day: '2-digit', month: 'short' })}${daily ? '' : ` · ${a.session}`}` },
         { label: 'Student', render: (a) => <span className="cell-id"><b>{a.fullName}</b><small>{a.studentUid} · {a.gradeName}-{a.sectionName}</small></span> },
         { label: 'Status', render: (a) => statusPill(a.status) },
         { label: 'Reason', render: (a) => <span className="muted">{a.reason || '—'}</span> },
         { label: 'Follow-up', render: (a) => followPill(a.followUpStatus) || <span className="muted">—</span> },
       ]} rows={rows} />
       <div className="row"><span className="xs muted">{plural(rows.length, 'record')} · {dayLabel(from)} – {dayLabel(to)}</span>
-        <button type="button" className="link strong" onClick={() => downloadCsv(`absences-${from}-${to}`, ['Date', 'Session', 'Student', 'Student ID', 'Class', 'Status', 'Reason', 'Follow-up'],
-          rows.map((a) => [a.date, a.session, a.fullName, a.studentUid, `${a.gradeName}-${a.sectionName}`, label(a.status), a.reason || '', a.followUpStatus ? FOLLOW_UP_STATUS[a.followUpStatus][0] : '']))}>
+        <button type="button" className="link strong" onClick={() => downloadCsv(`absences-${from}-${to}`, ['Date', ...(daily ? [] : ['Session']), 'Student', 'Student ID', 'Class', 'Status', 'Reason', 'Follow-up'],
+          rows.map((a) => [a.date, ...(daily ? [] : [a.session]), a.fullName, a.studentUid, `${a.gradeName}-${a.sectionName}`, label(a.status), a.reason || '', a.followUpStatus ? FOLLOW_UP_STATUS[a.followUpStatus][0] : '']))}>
           <Download size={13} /> Export</button></div>
     </>)}
   </>);
@@ -409,14 +412,14 @@ export function StudentAttendanceCard({ student, detailed }) {
           : !a.sessionsMarked ? <div style={{ marginTop: 14 }}><ApiNote>No attendance marked for {student.firstName} yet this session.</ApiNote><div style={{ marginTop: 12 }}>{todayPill}</div></div> : (<>
             <div className="bignum" style={{ marginTop: 18 }}>{pctText(rate)}</div>
             <div className="bar" style={{ margin: '14px 0 12px' }}><i style={{ width: `${Math.min(100, Number(rate || 0))}%`, background: Number(rate) < 90 ? 'var(--rd)' : undefined }} /></div>
-            <p className="xs muted" style={{ marginBottom: 14 }}>{a.present} present · {a.late} late · {a.excused} excused · {a.unexcused} unexcused <span title="Each school day has an AM and a PM register">({plural(a.sessionsMarked, 'session')})</span></p>
+            <p className="xs muted" style={{ marginBottom: 14 }}>{a.present} present · {a.late} late · {a.excused} excused · {a.unexcused} unexcused {a.mode === 'AM_PM' ? <span title="Each school day has an AM and a PM register">({plural(a.sessionsMarked, 'half-day session')})</span> : <span>({plural(a.sessionsMarked, 'school day')})</span>}</p>
             {todayPill}
             {detailed && (
               <div style={{ marginTop: 18 }}>
                 <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Late arrivals and absences</h4>
                 {!a.absences.length ? <p className="xs muted">None this session.</p> : (
                   <DataTable boxed cols={[
-                    { label: 'Date', render: (x) => `${dayLabel(x.date, { weekday: 'short', day: '2-digit', month: 'short' })} · ${x.session}` },
+                    { label: 'Date', render: (x) => `${dayLabel(x.date, { weekday: 'short', day: '2-digit', month: 'short' })}${a.mode === 'AM_PM' ? ` · ${x.session}` : ''}` },
                     { label: 'Status', render: (x) => statusPill(x.status) },
                     { label: 'Reason', render: (x) => <span className="muted">{x.reason || '—'}</span> },
                     { label: 'Follow-up', render: (x) => followPill(x.followUpStatus) || <span className="muted">—</span> },

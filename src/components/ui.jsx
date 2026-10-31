@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowUpRight, Check, ArrowLeft, FileText, Search, ChevronDown, ChevronUp, ChevronsUpDown, Calendar, AlertTriangle, XCircle } from 'lucide-react';
+import { ArrowUpRight, Check, ArrowLeft, FileText, Search, ChevronDown, ChevronUp, ChevronsUpDown, Calendar, AlertTriangle, XCircle, LoaderCircle } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { todayIso, formatDate, formatTime, timeZoneNames } from '../regional.js';
 
@@ -319,7 +319,8 @@ export function PanelSkeleton({ title, cards = [], sections = [] }) {
   );
 }
 
-export function DataTable({ cols, rows, boxed, sort, cards }) {
+/** `busy`: the rows are being refreshed (a filter changed): the table stays, dimmed and inert, until the new rows arrive. */
+export function DataTable({ cols, rows, boxed, sort, cards, busy }) {
   const t = (
     <div className="tablewrap">
       <table className={'t' + (cards ? ' cards' : '')}>
@@ -341,7 +342,8 @@ export function DataTable({ cols, rows, boxed, sort, cards }) {
       </table>
     </div>
   );
-  return boxed ? <div className="tablebox">{t}</div> : t;
+  const out = boxed ? <div className="tablebox">{t}</div> : t;
+  return busy === undefined ? out : <div className="stale" aria-busy={busy || undefined}>{out}</div>;
 }
 
 /**
@@ -435,7 +437,22 @@ export const Person = ({ name, sub, initials }) => (
   </>
 );
 
+/** Content being refreshed after a filter change: kept on screen, dimmed and inert (see .stale). */
+export const Stale = ({ busy, children }) => <div className="stale" aria-busy={busy || undefined}>{children}</div>;
+
 export const Actions = ({ children }) => <span className="act">{children}</span>;
+
+/**
+ * A row action shown as an icon (edit, remove, view, cancel …). `label` is the tooltip and the name screen readers read,
+ * so it says what happens to what: "Remove English", "View profile of Asha Rao". `to` makes it a link; `danger` colours it red.
+ */
+export const IconAction = ({ icon: Icon, label, onClick, to, danger, disabled, busy }) => {
+  const cls = `iconact${danger ? ' danger' : ''}`;
+  const inner = busy ? <LoaderCircle size={15} className="spin" /> : <Icon size={15} aria-hidden="true" />;
+  return to
+    ? <Link className={cls} to={to} aria-label={label} title={label}>{inner}</Link>
+    : <button type="button" className={cls} aria-label={label} title={label} onClick={onClick} disabled={disabled || busy}>{inner}</button>;
+};
 
 export const KV = ({ rows }) => (
   <div className="kv">{rows.map(([k, v]) => <div className="detail" key={k}>{k}<span>·</span><b>{v}</b></div>)}</div>
